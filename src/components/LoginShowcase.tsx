@@ -87,11 +87,18 @@ export function LoginShowcase() {
       </div>
 
       {/* Highlight text */}
-      <div className="relative z-10 px-10 pb-24 xl:px-12" aria-live="polite">
+      {/* Slides share one grid cell (bottom-aligned); the outgoing slide fades out
+          before the incoming one fades in, so the text never overlaps. */}
+      <div className="relative z-10 grid px-10 pb-24 xl:px-12" aria-live="polite">
         {SLIDES.map((s, idx) => (
           <div
             key={idx}
-            className={cn('transition-all duration-500', idx === i ? 'opacity-100' : 'pointer-events-none absolute inset-x-10 opacity-0 xl:inset-x-12')}
+            className={cn(
+              'self-end transition-[opacity,transform] [grid-area:1/1]',
+              idx === i
+                ? 'translate-y-0 opacity-100 delay-300 duration-500'
+                : 'pointer-events-none translate-y-2 opacity-0 duration-300',
+            )}
             aria-hidden={idx !== i}
           >
             <h1 className="max-w-xl font-display text-[38px] font-semibold leading-[1.1] tracking-tight text-heading xl:text-[44px]">{s.title}</h1>

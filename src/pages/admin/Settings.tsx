@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Bell, Building2, Database, Palette, RotateCcw, ShieldCheck, SunMoon, User } from 'lucide-react';
+import { Bell, Building2, Palette, SunMoon, User } from 'lucide-react';
+import { AccountSecurityCard, AuditLogCard, UsersAccessCard } from '../../components/SecurityPanels';
+import { supabase } from '../../auth/auth';
+import { useAuth } from '../../auth/AuthProvider';
 import { ThemeSegmented } from '../../components/ThemeSwitcher';
 import { Avatar, Button, Card, CardHeader, Field, Input, PageHeader } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
-import { useConfirm, useToast } from '../../components/feedback';
-import { useStore } from '../../store/store';
+import { useToast } from '../../components/feedback';
 import { cn } from '../../lib/utils';
 
 const BRAND = [
@@ -15,30 +17,32 @@ const BRAND = [
 ];
 
 export default function Settings() {
-  const { session, actions } = useStore();
+  const { realSession, refresh } = useAuth();
   const toast = useToast();
-  const confirm = useConfirm();
-  const [name, setName] = useState(session?.name ?? '');
-  const [email, setEmail] = useState(session?.email ?? '');
+  const [name, setName] = useState(realSession?.name ?? '');
+  const superAdmin = realSession?.userRole === 'super_admin';
   const [prefs, setPrefs] = useState({ statusEmails: true, weeklyDigest: true, partnerSignups: false, smsAlerts: false });
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="Organisation, profile and prototype preferences." />
+      <PageHeader title="Settings" subtitle="Your profile, security and organisation preferences." />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>
-            <CardHeader title="Profile" subtitle="Your Super Admin account" action={<User className="h-5 w-5 text-ink-mute" />} />
+            <CardHeader title="Profile" subtitle={realSession?.title} action={<User className="h-5 w-5 text-ink-mute" />} />
             <div className="grid gap-4 p-5 sm:grid-cols-[auto_1fr_1fr] sm:items-end">
               <Avatar name={name || 'A'} size={56} />
               <Field label="Full name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-              <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+              <Field label="Email" hint="Managed by your sign-in account."><Input type="email" value={realSession?.email ?? ''} disabled /></Field>
             </div>
             <div className="flex justify-end border-t border-line px-5 py-3">
               <Button
-                onClick={() => {
-                  if (!name.trim() || !/^\S+@\S+\.\S+$/.test(email)) return toast.error('Enter a valid name and email');
-                  actions.login({ ...session!, name: name.trim(), email }, true);
+                onClick={async () => {
+                  const clean = name.trim().slice(0, 100);
+                  if (clean.length < 2) return toast.error('Enter your name');
+                  const { error } = await supabase!.from('profiles').update({ full_name: clean }).eq('id', realSession!.userId);
+                  if (error) return toast.error('Profile not saved');
+                  await refresh();
                   toast.success('Profile saved');
                 }}
               >
@@ -46,6 +50,8 @@ export default function Settings() {
               </Button>
             </div>
           </Card>
+          {superAdmin && <UsersAccessCard />}
+          {superAdmin && <AuditLogCard />}
           <Card>
             <CardHeader title="Organisation" action={<Building2 className="h-5 w-5 text-ink-mute" />} />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
@@ -109,31 +115,7 @@ export default function Settings() {
               </div>
             </div>
           </Card>
-          <Card>
-            <CardHeader title="Security" action={<ShieldCheck className="h-5 w-5 text-ink-mute" />} />
-            <p className="p-5 text-sm leading-relaxed text-ink-soft">
-              With Supabase configured, sign-in and roles come from Supabase Auth and the profiles table (row-level security). Without it, built-in prototype accounts are used and CRM data stays in this browser — see README before going live.
-            </p>
-          </Card>
-          <Card>
-            <CardHeader title="Demo data" action={<Database className="h-5 w-5 text-ink-mute" />} />
-            <div className="p-5">
-              <p className="mb-4 text-sm text-ink-soft">Data is saved in this browser. Reset to restore the original sample records before a presentation.</p>
-              <Button
-                variant="secondary"
-                icon={RotateCcw}
-                className="w-full"
-                onClick={async () => {
-                  if (await confirm({ title: 'Reset demo data?', message: 'All changes made in this browser will be replaced with the original sample data.', confirmLabel: 'Reset data', danger: true })) {
-                    actions.resetDemo();
-                    toast.success('Demo data restored');
-                  }
-                }}
-              >
-                Reset demo data
-              </Button>
-            </div>
-          </Card>
+          <AccountSecurityCard />
         </div>
       </div>
     </>

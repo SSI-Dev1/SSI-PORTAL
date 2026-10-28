@@ -24,6 +24,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - name: Check Supabase configuration
         env:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -37,7 +38,6 @@ jobs:
           # Browser-safe values; they end up in the public bundle by design.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://goiyhrlhczygeweykwqq.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_ENABLE_DEMO_ACCOUNTS: 'false'
           VITE_ENABLE_GOOGLE_AUTH: ${{ vars.VITE_ENABLE_GOOGLE_AUTH || 'false' }}
       - uses: actions/upload-pages-artifact@v3
         with:

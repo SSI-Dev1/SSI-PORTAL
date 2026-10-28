@@ -1,0 +1,156 @@
+# SSI GLOBAL CRM — Security architecture & report
+
+This document describes how the CRM protects student and partner data, what was
+tested, what you must configure before going live, and the risks that remain.
+
+> **Status:** a secure *foundation*. It is not certified, pen-tested or "fully secure".
+> Treat the "Required configuration" and "Remaining risks" sections as release blockers.
+
+## 1. Architecture
+
+```
+Browser (static React app, HTTPS only, strict CSP)
+   │  publishable anon key + user JWT (never a secret)
+   ▼
+Supabase (managed Postgres 15 + Auth + Storage, TLS, encrypted at rest)
+   ├─ Auth: bcrypt password hashes, TOTP MFA, PKCE OAuth, rate limits, audit logs
+   ├─ Postgres: Row-Level Security on every table → tenant + role isolation
+   ├─ Storage: private bucket "student-documents", per-partner folder policies
+   └─ Edge Function "admin-users": the only code holding the service-role key
+Your VPS (nginx): serves static files only; holds no database credentials
+```
+
+Security is enforced **server-side**. The React app's route guards, hidden menus and
+form validation are usability features only; every read and write is re-authorised by
+Postgres RLS, triggers and storage policies, which were tested directly (section 6).
+
+## 2. Authentication & passwords
+
+| Control | Implementation |
+| --- | --- |
+| Password storage | Supabase Auth (bcrypt, per-password salt). The app never stores, logs or hashes passwords itself. |
+| Transport | HTTPS only (HSTS on your server; Supabase is TLS-only). |
+| Demo / offline login | **Removed.** No credentials or hashes in the bundle. Without a configured backend, sign-in is refused. |
+| Role resolution | Read from `profiles` on every load via a server-validated session (`auth.getUser()`); never from browser storage. |
+| MFA | TOTP (authenticator app). **Mandatory for SSI GLOBAL staff**: the app forces enrolment, and the database grants staff privileges only to sessions with `aal = aal2`. |
+| Password policy | 12+ chars, upper/lower, digit, symbol, not containing the email name (client hint); enforce the same in Supabase (section 5). |
+| Password reset | Supabase single-use, time-limited email links (PKCE); response never reveals whether an email exists; all other sessions revoked after a change. |
+| Brute force / stuffing | Supabase Auth rate limits (429 surfaced as a friendly message); generic error messages; add CAPTCHA (section 5). |
+| Google OAuth | Supabase OAuth with PKCE + state. Off until `VITE_ENABLE_GOOGLE_AUTH=true`; the button never fakes a login. Google users still need a `profiles` row. |
+| Sessions | Short-lived JWT + rotating refresh token. Stored in `sessionStorage` (cleared on browser close) unless "Remember me". Auto sign-out after 30 min idle. Sign-out, "sign out all devices", and suspension revoke access. |
+| Account suspension | `profiles.status = 'suspended'` removes all data access immediately (every RLS helper checks it) and the edge function bans the auth user (no new sign-ins/refresh). |
+
+## 3. Authorisation (RBAC + tenant isolation)
+
+Roles (`profiles.role`): `super_admin`, `admin_staff` (SSI GLOBAL), `partner_admin`,
+`partner_staff` (consultancy). A user's organisation is `profiles.partner_id`, set only
+by a Super Admin.
+
+| Data | Super Admin (aal2) | Admin Staff (aal2) | Partner Admin | Partner Staff |
+| --- | --- | --- | --- | --- |
+| Students, applications, documents, assessments | all | all | own org only | own org only |
+| Application offer/visa stages, document verification, assessment review | ✔ | ✔ | — | — |
+| Invoices / finance | all | all | own org, read | — |
+| Partner records | all; delete | create/update | own contact details | read own |
+| Announcements | manage | manage | published + addressed only | same |
+| Users, roles, suspension | ✔ | — | — | — |
+| Audit log | read | — | — | — |
+
+IDOR/BOLA defences: rows are filtered by RLS, so guessing another record's id returns
+nothing. `partner_id` is **derived on the server** (from the user's profile, or from the
+student for child records); a browser-supplied value is ignored. Records cannot be
+re-parented to another organisation. Application refs, timelines and dates are
+server-managed. No user can change their own role, organisation or status.
+
+## 4. Data & documents
+
+* **Database:** Supabase Postgres (AES-256 encryption at rest, TLS in transit). Anonymous
+  role has no table privileges. All access is via PostgREST (parameterised; no SQL
+  string building in the app). Security-definer functions use an empty `search_path`.
+* **Documents:** private bucket, 10 MB limit, MIME allow-list (PDF, JPG, PNG, DOC/DOCX),
+  path `partner/student/uuid.ext` (user file names never become paths). Upload type is
+  verified from file content (magic bytes) before upload. Download: server checks access
+  (`authorize_document_download`, RLS), logs it, then issues a **60-second signed URL**.
+  Files are immutable; deleting a student deletes their files.
+* **Audit log:** append-only (`audit_log`, no update/delete for anyone); records actor,
+  role, action, record id, organisation, and *names* of changed fields (plus status/role
+  transitions) — never field values, passwords or tokens. Covers sign-in/out, MFA,
+  password change, idle timeout, document downloads, invites/suspensions, and every
+  insert/update/delete on CRM tables. Failed sign-ins are in Supabase Auth logs.
+* **Privacy (DPDP Act 2023):** data minimisation (no analytics, no third-party fonts or
+  CDNs — zero third-party requests), generic error messages, retention function
+  `purge_audit_log()`, secure deletion of documents. You remain the Data Fiduciary:
+  publish a privacy notice, record consent, define retention per record type, and
+  handle access/correction/erasure requests (Super Admin can delete student records).
+
+## 5. Required production configuration (you must do this)
+
+**Supabase dashboard**
+1. SQL Editor: run `supabase/migrations/0002_security_hardening.sql` (0001 is already applied), then `supabase/seed.sql`. Never run `demo_data.sql` on production.
+2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are invite-only). Enable "Secure email change".
+3. Authentication → Policies (Passwords): minimum length 12; require lower, upper, digits, symbols. Enable leaked-password protection (Pro plan).
+4. Authentication → Multi-Factor: TOTP enabled (default).
+5. Authentication → Sessions: JWT expiry 15–60 min; refresh-token rotation on (reuse interval ≤10 s); inactivity timeout/time-box (Pro plan).
+6. Authentication → Rate Limits: review sign-in/OTP limits. Attack Protection → enable CAPTCHA (Cloudflare Turnstile/hCaptcha) — requires a small app change to pass the token.
+7. Authentication → URL Configuration: Site URL and Redirect URLs = your exact production URL only.
+8. Authentication → SMTP: your own SMTP (default is heavily rate-limited).
+9. Database → Settings: **Enforce SSL**; Network Restrictions to your backup host IP.
+10. Edge Function: `supabase functions deploy admin-users --project-ref goiyhrlhczygeweykwqq` and `supabase secrets set ALLOWED_ORIGINS=https://crm.example.com SITE_URL=https://crm.example.com/`.
+11. First Super Admin: create the user in Authentication → Users, then
+    `insert into public.profiles (id, role, full_name, email) select id, 'super_admin', 'Name', email from auth.users where email = '…';`
+    They will be forced to set up MFA at first sign-in. Invite everyone else from Settings → Users & access.
+12. Backups: Pro plan daily backups / PITR, or `deploy/backup.sh` (encrypted) — test restores.
+13. Run Advisors → Security after applying migrations; resolve findings.
+
+**Your server:** follow `deploy/SERVER-HARDENING.md` and `deploy/nginx.conf`
+(TLS, HSTS, CSP header incl. `frame-ancestors 'none'`, firewall, SSH keys, fail2ban,
+unattended upgrades, rate limiting, CDN/WAF for DDoS).
+
+**GitHub Pages** cannot send security headers (no HSTS, no `frame-ancestors`/clickjacking
+protection). Use it for demos only; host production on your server.
+
+## 6. Security tests performed
+
+| Test | Result |
+| --- | --- |
+| `npm run test:security` — 67 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; staff without MFA (aal1) gets nothing; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
+| Secret scan (source + built bundle) for service keys, private keys, JWTs, demo passwords | Clean. Anon key is only in git-ignored `.env` / CI secret |
+| Removed client-side auth: demo account hashes deleted; role no longer stored in browser | Verified in `dist/` |
+| Browser test of production build under CSP: no violations, 0 third-party requests, wrong-password sign-in returns generic error, only `ssi-remember` flag in storage, protected routes redirect to sign-in | Pass |
+| Upload validation (magic bytes vs extension, size, safe names) | Implemented; storage policy also enforces |
+| XSS review: no `dangerouslySetInnerHTML`, `eval`, `innerHTML`; React escapes output; strict CSP with hashed inline script | Pass |
+| CSRF: no cookie-based auth (bearer tokens in headers), so classic CSRF does not apply; edge function checks Origin | Pass |
+| SQL injection: no raw SQL from the client; PostgREST parameterises; DB functions take typed args | Pass |
+| `npm audit --omit=dev` | No high/critical in production deps (see risks) |
+| Edge function type-check (`deno check`) | Pass |
+
+**Not tested (requires your live project):** end-to-end sign-in with real users, MFA
+enrolment against your Supabase project, Google OAuth, the edge function deployed, and the
+migration on your actual database. Run `supabase/tests/run.sh` logic again after any
+schema change, and ideally commission an external penetration test before storing real
+passports and financial documents.
+
+## 7. Remaining risks & recommendations
+
+1. **Tokens in browser storage.** Supabase JS keeps the session in session/localStorage,
+   so a successful XSS could steal it. Mitigated by strict CSP, no HTML injection sinks,
+   no third-party scripts, short JWT lifetime. Stronger option: a small backend-for-frontend
+   on your VPS using HttpOnly, Secure, SameSite=Strict cookies.
+2. **Malware scanning** of uploads is not available on Supabase Storage. Add a scanning
+   step (e.g. ClamAV via an edge function/worker) before staff open files.
+3. **Field-level encryption** for passport numbers is not implemented (disk encryption
+   only). Consider pgsodium/Vault column encryption if required by your policy.
+4. **Dev-only advisories:** `vite` 5 dev server (path traversal) and `react-router` 6
+   (open redirect via `<Link>` backslashes; SSR hydration). The dev server is bound to
+   localhost and not used in production; the app only navigates to fixed internal
+   paths. Upgrade to vite 8 / react-router 7 when convenient.
+5. **Client-reported events** (`log_event`) are recorded with the verified user id but
+   their occurrence is reported by the client; authoritative sign-in records are in
+   Supabase Auth logs.
+6. **Partner admins cannot yet manage their own staff** (Super Admin invites everyone).
+7. **CAPTCHA, leaked-password protection, session time-box** need dashboard
+   configuration (some require a paid Supabase plan).
+8. **Git history** still contains the removed prototype account hashes (weak demo
+   passwords). They never worked against Supabase; do not reuse those passwords.
+9. **Alerting:** Supabase/nginx logs are available but no automated alerting is wired
+   up. Add log drains or a SIEM and alert on repeated failures, role changes, and bulk downloads.

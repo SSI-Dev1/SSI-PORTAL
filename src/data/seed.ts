@@ -366,7 +366,7 @@ export function createSeed(): DB {
       tasks,
       announcements,
       activities,
-      readAt: { admin: daysFromNow(-2), client: {} },
+      readAt: '',
     } satisfies DB),
   );
 }

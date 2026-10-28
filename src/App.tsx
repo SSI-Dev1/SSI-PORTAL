@@ -1,8 +1,8 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { ThemeProvider } from './theme/theme';
-import { watchAuth } from './auth/auth';
-import { useToast } from './components/feedback';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { StoreProvider, useStore } from './store/store';
 import { FeedbackProvider } from './components/feedback';
 import AppShell from './layouts/AppShell';
@@ -27,51 +27,28 @@ import Assessments from './pages/shared/Assessments';
 import Documents from './pages/shared/Documents';
 import Finance from './pages/shared/Finance';
 
+function FullScreenLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-canvas" role="status" aria-label="Loading">
+      <Loader2 className="h-7 w-7 animate-spin text-rust" />
+    </div>
+  );
+}
+
+// UX routing only — authorisation is enforced by the database (RLS), not by this guard.
 function RequireRole({ role, children }: { role: 'admin' | 'client'; children: ReactNode }) {
+  const { status } = useAuth();
   const { session } = useStore();
+  if (status === 'loading') return <FullScreenLoader />;
   if (!session) return <Navigate to="/login" replace />;
   if (session.role !== role) return <Navigate to={`/${session.role}/dashboard`} replace />;
   return <>{children}</>;
 }
 
-/**
- * Mirrors the Supabase auth session into the app session (OAuth redirects,
- * expiry, sign-out elsewhere). No-op in demo mode.
- */
-function AuthSync() {
-  const { session, actions } = useStore();
-  const navigate = useNavigate();
-  const toast = useToast();
-  const ref = useRef(session);
-  ref.current = session;
-
-  useEffect(
-    () =>
-      watchAuth(
-        (s) => {
-          const cur = ref.current;
-          // Keep an admin's partner preview, and avoid re-logging an identical session.
-          if (cur?.previewOf?.email === s.email || (cur?.email === s.email && cur.role === s.role)) return;
-          actions.login(s, true);
-          navigate(`/${s.role}/dashboard`, { replace: true });
-        },
-        () => {
-          // With a backend configured, any app session without a Supabase session
-          // (including stale prototype sessions) is dropped.
-          if (ref.current) {
-            actions.logout();
-            navigate('/login', { replace: true });
-          }
-        },
-        (msg) => toast.error('Sign-in failed', msg),
-      ),
-    [], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  return null;
-}
-
 function Home() {
+  const { status } = useAuth();
   const { session } = useStore();
+  if (status === 'loading') return <FullScreenLoader />;
   return <Navigate to={session ? `/${session.role}/dashboard` : '/login'} replace />;
 }
 
@@ -91,10 +68,10 @@ const sharedRoutes = (
 export default function App() {
   return (
     <ThemeProvider>
-      <StoreProvider>
-        <FeedbackProvider>
+      <FeedbackProvider>
+        <AuthProvider>
+          <StoreProvider>
           <HashRouter>
-            <AuthSync />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
@@ -136,8 +113,9 @@ export default function App() {
               <Route path="*" element={<Home />} />
             </Routes>
           </HashRouter>
-        </FeedbackProvider>
-      </StoreProvider>
+          </StoreProvider>
+        </AuthProvider>
+      </FeedbackProvider>
     </ThemeProvider>
   );
 }

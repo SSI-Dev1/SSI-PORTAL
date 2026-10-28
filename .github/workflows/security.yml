@@ -1,0 +1,38 @@
+name: Security checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Type check
+        run: npm run typecheck
+      - name: No secrets or demo credentials in source
+        run: |
+          if git grep -nIE "service_role|SERVICE_ROLE_KEY=|sk_live_|BEGIN [A-Z ]*PRIVATE KEY|eyJhbGciOiJIUzI1Ni" -- ':!supabase/functions/**' ':!*.md' ':!.github/**'; then
+            echo "::error::Possible secret committed"; exit 1
+          fi
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: RLS / authorisation tests on PostgreSQL
+        run: |
+          export PATH="/usr/lib/postgresql/$(ls /usr/lib/postgresql | sort -n | tail -1)/bin:$PATH"
+          bash supabase/tests/run.sh

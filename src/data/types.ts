@@ -138,6 +138,7 @@ export interface DocumentRecord {
   name: string;
   type: DocType;
   fileName: string;
+  storagePath?: string;
   size: number;
   uploadedAt: string;
   status: DocStatus;
@@ -217,14 +218,21 @@ export interface Activity {
   detail: string;
 }
 
+export type UserRole = 'super_admin' | 'admin_staff' | 'partner_admin' | 'partner_staff';
+
+/**
+ * The signed-in user, always derived from the server (Supabase Auth + profiles table).
+ * It is held in memory only; the database enforces access regardless of this value.
+ */
 export interface Session {
   role: 'admin' | 'client';
+  userRole: UserRole;
+  userId: string;
   partnerId?: ID;
   name: string;
   email: string;
   title: string;
-  provider?: 'demo' | 'supabase';
-  /** Set while an admin previews a partner's portal; holds the admin session to return to. */
+  /** Set while staff preview a partner's portal (UI only); holds the staff session to return to. */
   previewOf?: Session;
 }
 
@@ -241,5 +249,6 @@ export interface DB {
   tasks: Task[];
   announcements: Announcement[];
   activities: Activity[];
-  readAt: { admin: string; client: Record<ID, string> };
+  /** When the current user last opened notifications (kept per user in this browser). */
+  readAt: string;
 }

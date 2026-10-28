@@ -31,7 +31,7 @@ import { Avatar, Badge, IconButton, Menu, useClickOutside } from '../components/
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
 import { ThemeMenu } from '../components/ThemeSwitcher';
-import { signOut as authSignOut } from '../auth/auth';
+import { useAuth } from '../auth/AuthProvider';
 import { cn, countryFlag, fullName, matches, timeAgo, updateStatus } from '../lib/utils';
 
 interface NavItem {
@@ -69,7 +69,8 @@ const clientNav: NavItem[] = [
 ];
 
 export default function AppShell() {
-  const { session, actions } = useStore();
+  const { session, loading } = useStore();
+  const auth = useAuth();
   const scoped = useScoped();
   const navigate = useNavigate();
   const location = useLocation();
@@ -77,7 +78,8 @@ export default function AppShell() {
   const toast = useToast();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isAdmin = session?.role === 'admin';
-  const nav = isAdmin ? adminNav : clientNav;
+  // Partner staff have no finance access (the database returns no invoices to them either).
+  const nav = isAdmin ? adminNav : clientNav.filter((n) => n.to !== 'finance' || session?.userRole === 'partner_admin');
   const base = scoped.base;
 
   useEffect(() => {
@@ -91,8 +93,7 @@ export default function AppShell() {
   const signOut = async () => {
     const ok = await confirm({ title: 'Sign out?', message: 'You will be returned to the login screen.', confirmLabel: 'Sign out' });
     if (ok) {
-      await authSignOut().catch(() => {});
-      actions.logout();
+      await auth.signOut().catch(() => {});
       toast.info('Signed out', 'See you soon.');
       navigate('/login');
     }
@@ -173,8 +174,9 @@ export default function AppShell() {
             <button
               type="button"
               onClick={() => {
-                actions.login(session.previewOf!, true);
-                navigate(`/admin/partners/${session.partnerId}`);
+                const pid = session.partnerId;
+                auth.setPreview(null);
+                navigate(`/admin/partners/${pid}`);
               }}
               className="rounded-lg bg-white/20 px-2.5 py-1 font-semibold transition hover:bg-white/30"
             >
@@ -184,7 +186,13 @@ export default function AppShell() {
         )}
         <Topbar onMenu={() => setMobileOpen(true)} onSignOut={signOut} />
         <main key={location.pathname} className="mx-auto max-w-[1440px] animate-fade-up px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-          <Outlet />
+          {loading ? (
+            <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading data">
+              <span className="h-7 w-7 animate-spin rounded-full border-2 border-rust border-t-transparent" />
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>
@@ -331,7 +339,7 @@ function Notifications() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open);
-  const readAt = session?.role === 'client' && session.partnerId ? db.readAt.client[session.partnerId] ?? '' : db.readAt.admin;
+  const readAt = db.readAt;
   const items = scoped.activities.slice(0, 12);
   const unread = items.filter((a) => a.at > readAt).length;
 

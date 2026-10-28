@@ -1,11 +1,10 @@
 import type { Partner, Session } from './types';
 
-/** Session used when an admin previews a partner's Client Portal. */
-export const partnerPreviewSession = (p: Partner, admin: Session): Session => ({
+/** UI-only preview of a partner's portal for SSI GLOBAL staff (data access is unchanged). */
+export const partnerPreviewSession = (p: Partner, staff: Session): Session => ({
+  ...staff,
   role: 'client',
   partnerId: p.id,
-  name: p.contactName,
-  email: p.email,
   title: p.name,
-  previewOf: admin,
+  previewOf: staff,
 });

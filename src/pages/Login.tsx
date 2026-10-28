@@ -1,20 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
 import { Logo } from '../components/brand';
 import { Button, Field, Input, Modal } from '../components/ui';
 import { useToast } from '../components/feedback';
 import { ThemeMenu } from '../components/ThemeSwitcher';
 import { EducationIllustration } from '../components/EducationIllustration';
-import { useStore } from '../store/store';
-import { AuthError, googleEnabled, sendPasswordReset, signInWithGoogle, signInWithPassword } from '../auth/auth';
+import { useAuth } from '../auth/AuthProvider';
+import { AuthError, authConfigured, googleEnabled, sendPasswordReset, signInWithGoogle, signInWithPassword } from '../auth/auth';
+import { MfaChallenge, MfaEnroll, SetNewPassword } from './LoginSteps';
 import { cn } from '../lib/utils';
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export default function Login() {
-  const { actions } = useStore();
-  const navigate = useNavigate();
+  const auth = useAuth();
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,8 +26,8 @@ export default function Login() {
   const [forgotOpen, setForgotOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
-  // Returning from an OAuth provider (PKCE adds ?code=…); AuthSync finishes sign-in.
-  const [oauthReturn] = useState(() => new URLSearchParams(window.location.search).has('code'));
+  // Returning from Google or an email link (PKCE adds ?code=…); AuthProvider finishes sign-in.
+  const oauthReturn = auth.status === 'loading' && new URLSearchParams(window.location.search).has('code');
 
   useEffect(() => {
     document.title = 'Sign in · SSI GLOBAL';
@@ -46,10 +46,11 @@ export default function Login() {
     if (Object.keys(next).length) return;
     setLoading('password');
     try {
-      const session = await signInWithPassword(email, password);
-      actions.login(session, remember);
-      toast.success(`Welcome back, ${session.name.split(' ')[0]}`);
-      navigate(`/${session.role}/dashboard`, { replace: true });
+      const stage = await signInWithPassword(email, password, remember);
+      setPassword('');
+      if (stage.kind === 'signed-in') toast.success(`Welcome back, ${stage.session.name.split(' ')[0]}`);
+      await auth.refresh();
+      setLoading(null);
     } catch (err) {
       setFormError(err instanceof AuthError ? err.message : 'Something went wrong. Please try again.');
       setLoading(null);
@@ -79,6 +80,17 @@ export default function Login() {
     setForgotOpen(false);
     toast.success('Check your inbox', `If an account exists for ${resetEmail.trim()}, we’ve sent password reset instructions.`);
   };
+
+  if (auth.status === 'signed-in' && auth.session) return <Navigate to={`/${auth.session.role}/dashboard`} replace />;
+
+  const step =
+    auth.status === 'mfa-enroll' ? (
+      <MfaEnroll onDone={auth.refresh} onCancel={() => auth.signOut()} />
+    ) : auth.status === 'mfa-challenge' && auth.factorId ? (
+      <MfaChallenge factorId={auth.factorId} onDone={auth.refresh} onCancel={() => auth.signOut()} />
+    ) : auth.status === 'recovery' ? (
+      <SetNewPassword onDone={auth.refresh} />
+    ) : null;
 
   return (
     <div className="flex min-h-screen bg-canvas">
@@ -112,7 +124,7 @@ export default function Login() {
         <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
           <div className="w-full max-w-[420px] animate-fade-up">
             <div className="rounded-[28px] border border-line bg-surface p-7 shadow-lift sm:p-10">
-              {oauthReturn ? (
+              {step ?? (oauthReturn || auth.status === 'loading' ? (
                 <div className="flex flex-col items-center py-12 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-rust" />
                   <p className="mt-4 font-display text-lg font-semibold text-heading">Signing you in…</p>
@@ -123,10 +135,16 @@ export default function Login() {
                   <h2 className="font-display text-[28px] font-semibold tracking-tight text-heading">Welcome back</h2>
                   <p className="mt-1.5 text-[15px] text-ink-soft">Sign in to your SSI GLOBAL account</p>
 
-                  {formError && (
+                  {!authConfigured && (
+                    <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-700">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      Sign-in is not configured for this site yet. Please contact SSI GLOBAL.
+                    </div>
+                  )}
+                  {(formError || auth.notice) && (
                     <div role="alert" className="mt-6 flex animate-fade-in items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700">
                       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                      {formError}
+                      {formError || auth.notice}
                     </div>
                   )}
 
@@ -187,7 +205,7 @@ export default function Login() {
                         Forgot password?
                       </button>
                     </div>
-                    <Button type="submit" size="lg" className="w-full" loading={loading === 'password'} disabled={!!loading}>
+                    <Button type="submit" size="lg" className="w-full" loading={loading === 'password'} disabled={!!loading || !authConfigured}>
                       Sign in {loading !== 'password' && <ArrowRight className="h-4 w-4" />}
                     </Button>
                   </form>
@@ -216,7 +234,7 @@ export default function Login() {
                     </a>
                   </p>
                 </>
-              )}
+              ))}
             </div>
           </div>
         </div>

@@ -11,42 +11,36 @@ npm run dev             # http://localhost:5173
 npm run build           # static build in dist/
 ```
 
+## Security
+
+Read **[SECURITY.md](SECURITY.md)** before going live. In short: sign-in, roles and data
+access are enforced by Supabase (Auth + Postgres row-level security + private Storage).
+Staff accounts require two-step verification; partners only ever see their own
+organisation's data. There is no offline or demo login.
+
+```bash
+npm run test:security   # database authorisation tests (needs PostgreSQL 15+ locally)
+npm run audit           # production dependency audit
+```
+
 ## Sign-in
 
-Users sign in with email and password; the app reads their role and sends admins to the Admin Dashboard and partner users to their own Client Dashboard. There is no role picker.
-
-Two modes, chosen by environment:
-
-| Mode | When | Accounts and roles |
-| --- | --- | --- |
-| **Supabase** | `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set | Supabase Auth; role and partner from the `profiles` table, enforced by row-level security |
-| **Prototype** | Supabase not configured | Built-in accounts in `src/auth/demoAccounts.ts` (passwords stored as SHA-256 hashes) |
-
-Prototype accounts (one admin, one per sample partner) are defined in `src/auth/demoAccounts.ts`; their passwords are shared privately, not in this repository.
-
-> Prototype accounts are checked in the browser and are not secure. Set `VITE_ENABLE_DEMO_ACCOUNTS=false` (the default once Supabase is configured) for any public deployment.
-
-**Continue with Google** uses Supabase's Google provider. Until `VITE_ENABLE_GOOGLE_AUTH=true`, the button tells the user Google sign-in isn't enabled yet — it never fakes a login.
-
-Admins can open **Preview portal** on a partner's profile to see that partner's Client Portal, and return with **Exit preview**.
+Users sign in with email and password (or Google, once enabled). The app reads their
+role from the server and sends SSI GLOBAL staff to the Admin Portal and partner users to
+their own Client Portal. Accounts are invite-only: a Super Admin invites users from
+**Settings → Users & access**.
 
 ## Configuration
 
-All settings are `VITE_*` variables (see `.env.example`). They are baked into the build, so only public keys belong there — never a Supabase service-role key.
+All settings are `VITE_*` variables (see `.env.example`). They are baked into the public
+build, so only public values belong there — never the service-role key.
 
 ### Connecting Supabase (project `goiyhrlhczygeweykwqq`)
 
-1. In Supabase → SQL Editor, run `supabase/migrations/0001_crm_auth_and_rls.sql`, then `supabase/seed.sql`.
-2. Authentication → Users: create the staff and partner users.
-3. Give each user a role (examples at the bottom of `supabase/seed.sql`):
-   `insert into public.profiles (id, role, partner_id, full_name) select id, 'partner', 'p1', 'Meera Krishnan' from auth.users where email = 'meera@horizonedu.in';`
-4. Project Settings → API: copy the anon/publishable key into `VITE_SUPABASE_ANON_KEY`.
-5. Authentication → URL Configuration: add your site URL (e.g. `https://crm.example.com/`) to Redirect URLs.
-6. Google (optional): Authentication → Providers → Google, add the Google OAuth client ID/secret, then set `VITE_ENABLE_GOOGLE_AUTH=true`. Google users still need a `profiles` row to get in.
-
-The migration creates every CRM table with partner-scoped RLS: partners only ever read and write rows with their own `partner_id`, payments and announcements are admin-managed, and triggers stop partners from moving applications past *Pending Assessment* or verifying documents.
-
-**Current limitation:** authentication and roles use Supabase when configured, but CRM records (students, applications, …) are still stored in the browser via `src/store/store.tsx`. The tables and policies are ready; the next step is to replace the store actions with Supabase queries — pages read data only through `useScoped()` and won't need changes.
+1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `supabase/seed.sql`.
+2. For a demo/staging project only: `npm run demo:sql` and run `supabase/demo_data.sql`.
+3. Deploy the admin edge function: `supabase functions deploy admin-users`.
+4. Create the first Super Admin and complete the dashboard settings in SECURITY.md §5.
 
 ## Themes
 
@@ -59,6 +53,8 @@ Light, Dark and System themes, switchable from the sun/moon button in the top ba
 1. Settings → Pages → Source: **GitHub Actions**.
 2. Settings → Secrets and variables → Actions → New repository secret: `VITE_SUPABASE_ANON_KEY` = your anon key.
 3. Supabase → Authentication → URL Configuration: add `https://ssi-dev1.github.io/SSI-PORTAL/` to Redirect URLs (needed for password reset and Google).
+
+GitHub Pages cannot send security headers (HSTS, clickjacking protection), so use it for demos only and host production on your own server.
 
 ## Deploying to your own server
 
@@ -76,15 +72,16 @@ rsync -a dist/ user@your-server:/var/www/ssi-crm/
 
 ```
 src/
-  auth/       config.ts (env), auth.ts (Supabase / prototype adapter), demoAccounts.ts
+  auth/       config.ts (env), auth.ts (Supabase Auth, MFA, passwords), AuthProvider.tsx (session, idle timeout)
   theme/      theme.tsx (ThemeProvider, useTheme, useChartColors)
   data/       types.ts (domain model), seed.ts (sample data), demo.ts (partner preview)
-  store/      store.tsx — data layer; all writes are named actions
+  store/      store.tsx — Supabase data layer (RLS-scoped reads, server-checked writes)
+  lib/files.ts upload validation (content sniffing, size, safe names)
   components/ ui kit, charts, forms, theme switcher, application drawer
   layouts/    AppShell (sidebar, top bar, search, notifications)
   pages/      admin/, client/, shared/ (pages mounted in both portals, scoped by role)
-supabase/     migrations/ (schema + RLS), seed.sql
-deploy/       nginx.conf
+supabase/     migrations/ (schema, RLS, audit, storage), functions/admin-users, tests/ (security tests), seed.sql
+deploy/       nginx.conf (hardened), SERVER-HARDENING.md, backup.sh (encrypted backups)
 ```
 
-Data in prototype mode persists in `localStorage`; **Settings → Reset demo data** restores the sample records.
+All CRM data lives in Supabase; the browser keeps only theme and notification-read preferences.

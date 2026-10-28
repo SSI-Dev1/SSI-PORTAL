@@ -1,8 +1,8 @@
-// Prototype data layer: a single in-memory DB persisted to localStorage.
-// Every write goes through an action below, so replacing this provider with
-// Supabase (or any API) means re-implementing these actions — pages stay as-is.
+// Data layer backed by Supabase. Every read is filtered by row-level security on the
+// server (a partner only ever receives its own organisation's rows), and every write is
+// re-checked there (tenant, role, workflow and MFA rules live in supabase/migrations).
+// The UI keeps a local copy for fast rendering and re-syncs after each change.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createSeed, DB_VERSION } from '../data/seed';
 import type {
   Activity,
   Announcement,
@@ -13,337 +13,375 @@ import type {
   Course,
   DB,
   DocStatus,
-  DocumentRecord,
+  DocType,
   ID,
   Partner,
   Payment,
-  Session,
   Student,
   Task,
   University,
 } from '../data/types';
-import { fullName, uid } from '../lib/utils';
-
-const DB_KEY = 'ssi-crm-db';
-const SESSION_KEY = 'ssi-crm-session';
-
-function loadDB(): DB {
-  try {
-    const raw = localStorage.getItem(DB_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DB;
-      if (parsed.version === DB_VERSION) return parsed;
-    }
-  } catch {
-    /* storage unavailable or corrupted — fall back to seed */
-  }
-  return createSeed();
-}
-
-function loadSession(): Session | null {
-  for (const store of [sessionStorage, localStorage]) {
-    try {
-      const raw = store.getItem(SESSION_KEY);
-      if (raw) return JSON.parse(raw) as Session;
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
+import { useAuth } from '../auth/AuthProvider';
+import { supabase } from '../auth/auth';
+import { useToast } from '../components/feedback';
+import { prepareUpload } from '../lib/files';
 
 type Without<T, K extends keyof T> = Omit<T, K>;
+type Row = Record<string, unknown>;
+
+const BUCKET = 'student-documents';
+const emptyDB = (): DB => ({
+  version: 1,
+  partners: [],
+  students: [],
+  universities: [],
+  courses: [],
+  applications: [],
+  documents: [],
+  assessments: [],
+  payments: [],
+  tasks: [],
+  announcements: [],
+  activities: [],
+  readAt: '',
+});
+
+// ------------------------------------------------------------------ row mapping
+const snake = (k: string) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+const camel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+function toRow(obj: object, omit: string[] = []): Row {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (omit.includes(k) || v === undefined) continue;
+    out[snake(k)] = v === '' && (k === 'dob' || k === 'website') ? null : v;
+  }
+  if ('audience' in out) out.audience = out.audience === 'all' ? null : out.audience;
+  return out;
+}
+function fromRow<T>(row: Row): T {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) out[camel(k)] = v ?? (k === 'dob' || k === 'website' || k === 'notes' ? '' : v);
+  if ('audience' in out && out.audience == null) out.audience = 'all';
+  if (typeof out.id === 'number') out.id = String(out.id);
+  return out as T;
+}
+
+const TABLES = {
+  partners: 'partners',
+  students: 'students',
+  universities: 'universities',
+  courses: 'courses',
+  applications: 'applications',
+  documents: 'documents',
+  assessments: 'assessments',
+  payments: 'payments',
+  tasks: 'tasks',
+  announcements: 'announcements',
+} as const;
+type TableKey = keyof typeof TABLES;
 
 function useStoreValue() {
-  const [db, setDb] = useState<DB>(loadDB);
-  const [session, setSession] = useState<Session | null>(loadSession);
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  const { session, realSession, status } = useAuth();
+  const toastRaw = useToast();
+  const toastRef = useRef(toastRaw);
+  toastRef.current = toastRaw;
+  const toast = useMemo(() => ({ error: (t: string, m?: string) => toastRef.current.error(t, m) }), []);
+  const [db, setDb] = useState<DB>(emptyDB);
+  const [loading, setLoading] = useState(false);
+  const userId = realSession?.userId;
+  const readKey = userId ? `ssi-read-${userId}` : '';
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(DB_KEY, JSON.stringify(db));
-    } catch {
-      /* quota or private mode */
+  const load = useCallback(async () => {
+    if (!supabase || status !== 'signed-in' || !realSession) return;
+    const sb = supabase;
+    const keys = Object.keys(TABLES).filter((k) => k !== 'tasks' || realSession.role === 'admin') as TableKey[];
+    const results = await Promise.all([
+      ...keys.map((k) => sb.from(TABLES[k]).select('*').limit(5000)),
+      sb.from('activities').select('*').order('at', { ascending: false }).limit(80),
+    ]);
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      toast.error('Could not load data', 'Please refresh the page. If this continues, contact SSI GLOBAL.');
+      return;
     }
-  }, [db]);
+    const next = emptyDB();
+    keys.forEach((k, i) => {
+      (next[k] as unknown[]) = (results[i].data ?? []).map((r) => fromRow(r as Row));
+    });
+    next.activities = (results[results.length - 1].data ?? []).map((r) => fromRow<Activity>(r as Row));
+    try {
+      next.readAt = localStorage.getItem(readKey) ?? '';
+    } catch {
+      next.readAt = '';
+    }
+    setDb(next);
+    setLoading(false);
+  }, [status, realSession, readKey, toast]);
 
-  const mutate = useCallback((fn: (d: DB) => DB) => setDb((d) => fn(d)), []);
+  // Initial load, and re-sync when the tab regains focus (picks up other users' changes).
+  const loadedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (status !== 'signed-in' || !userId) {
+      loadedFor.current = null;
+      setDb(emptyDB());
+      return;
+    }
+    if (loadedFor.current !== userId) {
+      loadedFor.current = userId;
+      setLoading(true);
+      void load();
+    }
+    const h = () => document.visibilityState === 'visible' && void load();
+    document.addEventListener('visibilitychange', h);
+    return () => document.removeEventListener('visibilitychange', h);
+  }, [status, userId, load]);
 
-  const actorName = () => {
-    const s = sessionRef.current;
-    return s?.role === 'admin' ? 'SSI Admin' : s?.name ?? 'Partner';
+  const refreshActivities = useCallback(async () => {
+    if (!supabase) return;
+    const { data } = await supabase.from('activities').select('*').order('at', { ascending: false }).limit(80);
+    if (data) setDb((d) => ({ ...d, activities: data.map((r) => fromRow<Activity>(r as Row)) }));
+  }, []);
+
+  /** Runs a server write; on failure shows a safe message and re-syncs from the server. */
+  const commit = useCallback(
+    async (op: PromiseLike<{ error: unknown }>, failMsg = 'Your change could not be saved.') => {
+      const { error } = await op;
+      if (error) {
+        toast.error('Action not permitted', failMsg);
+        await load();
+        return false;
+      }
+      void refreshActivities();
+      return true;
+    },
+    [toast, load, refreshActivities],
+  );
+
+  const sb = () => {
+    if (!supabase) throw new Error('Not configured');
+    return supabase;
+  };
+  const patchLocal = <K extends TableKey>(key: K, id: ID, patch: Partial<DB[K][number]>) =>
+    setDb((d) => ({ ...d, [key]: (d[key] as { id: ID }[]).map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  const removeLocal = (key: TableKey, id: ID) => setDb((d) => ({ ...d, [key]: (d[key] as { id: ID }[]).filter((r) => r.id !== id) }));
+  const upsertLocal = <K extends TableKey>(key: K, row: DB[K][number]) =>
+    setDb((d) => {
+      const rows = d[key] as { id: ID }[];
+      const r = row as { id: ID };
+      return { ...d, [key]: rows.some((x) => x.id === r.id) ? rows.map((x) => (x.id === r.id ? r : x)) : [r, ...rows] };
+    });
+
+  /** Insert, then replace the optimistic row with the server's version (server-managed fields). */
+  const insert = async <K extends TableKey>(key: K, local: DB[K][number], row: Row, failMsg?: string) => {
+    upsertLocal(key, local);
+    const res = await sb().from(TABLES[key]).insert(row).select('*').single();
+    if (await commit(Promise.resolve(res), failMsg)) upsertLocal(key, fromRow<DB[K][number]>(res.data as Row));
+  };
+  const update = async <K extends TableKey>(key: K, id: ID, patch: Partial<DB[K][number]>, failMsg?: string) => {
+    patchLocal(key, id, patch);
+    const res = await sb().from(TABLES[key]).update(toRow(patch)).eq('id', id).select('*');
+    if (!res.error && (res.data?.length ?? 0) === 0) return void (await commit(Promise.resolve({ error: 'denied' }), failMsg));
+    if (await commit(Promise.resolve(res), failMsg) && res.data?.[0]) upsertLocal(key, fromRow<DB[K][number]>(res.data[0] as Row));
+  };
+  const remove = async (key: TableKey, id: ID, failMsg?: string) => {
+    removeLocal(key, id);
+    await commit(sb().from(TABLES[key]).delete().eq('id', id), failMsg);
   };
 
-  const log = (d: DB, a: Without<Activity, 'id' | 'at'>): Activity[] => [
-    { ...a, id: uid('ac'), at: new Date().toISOString() },
-    ...d.activities,
-  ].slice(0, 80);
-
-  const studentLabel = (d: DB, id: ID) => fullName(d.students.find((s) => s.id === id));
+  const now = () => new Date().toISOString();
+  const newId = () => crypto.randomUUID();
 
   const actions = {
-    // ---------- auth ----------
-    login(s: Session, remember: boolean) {
-      try {
-        (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(s));
-      } catch {
-        /* ignore */
-      }
-      setSession(s);
-    },
-    logout() {
-      try {
-        localStorage.removeItem(SESSION_KEY);
-        sessionStorage.removeItem(SESSION_KEY);
-      } catch {
-        /* ignore */
-      }
-      setSession(null);
-    },
-    resetDemo() {
-      setDb(createSeed());
-    },
     markNotificationsRead() {
-      const s = sessionRef.current;
-      const now = new Date().toISOString();
-      mutate((d) => ({
-        ...d,
-        readAt:
-          s?.role === 'client' && s.partnerId
-            ? { ...d.readAt, client: { ...d.readAt.client, [s.partnerId]: now } }
-            : { ...d.readAt, admin: now },
-      }));
+      const t = now();
+      try {
+        if (readKey) localStorage.setItem(readKey, t);
+      } catch {
+        /* ignore */
+      }
+      setDb((d) => ({ ...d, readAt: t }));
     },
+    reload: load,
 
-    // ---------- partners ----------
+    // ---------- partners
     addPartner(p: Without<Partner, 'id' | 'joinedAt'>) {
-      const id = uid('p');
-      mutate((d) => ({
-        ...d,
-        partners: [{ ...p, id, joinedAt: new Date().toISOString() }, ...d.partners],
-        activities: log(d, { kind: 'partner', title: 'New partner onboarded', detail: p.name, partnerId: id }),
-      }));
+      const id = newId();
+      void insert('partners', { ...p, id, joinedAt: now() }, toRow({ ...p, id }));
       return id;
     },
     updatePartner(id: ID, patch: Partial<Partner>) {
-      mutate((d) => ({ ...d, partners: d.partners.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
+      void update('partners', id, patch);
     },
     removePartner(id: ID) {
-      mutate((d) => ({
-        ...d,
-        partners: d.partners.filter((p) => p.id !== id),
-        students: d.students.filter((s) => s.partnerId !== id),
-        applications: d.applications.filter((a) => a.partnerId !== id),
-        documents: d.documents.filter((x) => x.partnerId !== id),
-        assessments: d.assessments.filter((x) => x.partnerId !== id),
-        payments: d.payments.filter((x) => x.partnerId !== id),
-      }));
+      void remove('partners', id, 'Only a Super Admin can remove partners.').then(load);
     },
 
-    // ---------- students ----------
+    // ---------- students
     addStudent(s: Without<Student, 'id' | 'createdAt'>) {
-      const id = uid('s');
-      mutate((d) => ({
-        ...d,
-        students: [{ ...s, id, createdAt: new Date().toISOString() }, ...d.students],
-        activities: log(d, { kind: 'student', title: 'New student added', detail: `${s.firstName} ${s.lastName}`, partnerId: s.partnerId }),
-      }));
+      const id = newId();
+      void insert('students', { ...s, id, createdAt: now() }, toRow({ ...s, id }));
       return id;
     },
     updateStudent(id: ID, patch: Partial<Student>) {
-      mutate((d) => ({ ...d, students: d.students.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
+      void update('students', id, patch);
     },
-    removeStudent(id: ID) {
-      mutate((d) => ({
+    async removeStudent(id: ID) {
+      const s = db.students.find((x) => x.id === id);
+      // Delete the student's files first so no orphaned personal documents remain in storage.
+      if (s) {
+        const folder = `${s.partnerId}/${id}`;
+        const { data: files } = await sb().storage.from(BUCKET).list(folder);
+        if (files?.length) await sb().storage.from(BUCKET).remove(files.map((f) => `${folder}/${f.name}`));
+      }
+      setDb((d) => ({
         ...d,
-        students: d.students.filter((s) => s.id !== id),
+        students: d.students.filter((x) => x.id !== id),
         applications: d.applications.filter((a) => a.studentId !== id),
         documents: d.documents.filter((x) => x.studentId !== id),
         assessments: d.assessments.filter((x) => x.studentId !== id),
       }));
+      await commit(sb().from('students').delete().eq('id', id));
     },
 
-    // ---------- applications ----------
+    // ---------- applications (ref, tenant and timeline are set by the server)
     addApplication(a: Without<Application, 'id' | 'ref' | 'appliedAt' | 'timeline'>) {
-      const id = uid('a');
-      const now = new Date().toISOString();
-      mutate((d) => {
-        const uni = d.universities.find((u) => u.id === a.universityId);
-        return {
-          ...d,
-          applications: [
-            {
-              ...a,
-              id,
-              ref: `SSI-${24100 + d.applications.length * 7 + Math.floor(Math.random() * 6)}`,
-              appliedAt: now,
-              timeline: [{ status: a.status, at: now, by: actorName(), note: 'Application created' }],
-            },
-            ...d.applications,
-          ],
-          activities: log(d, {
-            kind: 'application',
-            title: 'New application created',
-            detail: `${studentLabel(d, a.studentId)} · ${uni?.name ?? ''}`,
-            partnerId: a.partnerId,
-          }),
-        };
-      });
+      const id = newId();
+      const local: Application = { ...a, id, ref: '…', appliedAt: now(), timeline: [{ status: a.status, at: now(), by: session?.name ?? '' }] };
+      void insert('applications', local, toRow({ ...a, id }, ['partnerId']), 'Partners can create Draft or Pending Assessment applications only.');
       return id;
     },
     setApplicationStatus(id: ID, status: AppStatus, note?: string) {
-      mutate((d) => {
-        const app = d.applications.find((a) => a.id === id);
-        if (!app || app.status === status) return d;
-        const uni = d.universities.find((u) => u.id === app.universityId);
-        return {
-          ...d,
-          applications: d.applications.map((a) =>
-            a.id === id
-              ? { ...a, status, timeline: [...a.timeline, { status, at: new Date().toISOString(), by: actorName(), note: note || undefined }] }
-              : a,
-          ),
-          activities: log(d, {
-            kind: 'status',
-            title: `Status changed to ${status}`,
-            detail: `${studentLabel(d, app.studentId)} · ${uni?.name ?? ''}`,
-            partnerId: app.partnerId,
-          }),
-        };
-      });
+      void (async () => {
+        patchLocal('applications', id, { status });
+        const res = await sb().from('applications').update({ status, status_note: note || null }).eq('id', id).select('*');
+        if (await commit(Promise.resolve(res), 'Only SSI GLOBAL staff can change this status.') && res.data?.[0])
+          upsertLocal('applications', fromRow<Application>(res.data[0] as Row));
+      })();
     },
     toggleChecklist(id: ID, index: number) {
-      mutate((d) => ({
-        ...d,
-        applications: d.applications.map((a) =>
-          a.id === id ? { ...a, checklist: a.checklist.map((c, i) => (i === index ? { ...c, done: !c.done } : c)) } : a,
-        ),
-      }));
+      const app = db.applications.find((a) => a.id === id);
+      if (!app) return;
+      void update('applications', id, { checklist: app.checklist.map((c, i) => (i === index ? { ...c, done: !c.done } : c)) });
     },
     updateApplication(id: ID, patch: Partial<Application>) {
-      mutate((d) => ({ ...d, applications: d.applications.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+      void update('applications', id, patch);
     },
     removeApplication(id: ID) {
-      mutate((d) => ({ ...d, applications: d.applications.filter((a) => a.id !== id) }));
+      void remove('applications', id);
     },
 
-    // ---------- documents ----------
-    addDocument(doc: Without<DocumentRecord, 'id' | 'uploadedAt' | 'status'>) {
-      mutate((d) => ({
-        ...d,
-        documents: [{ ...doc, id: uid('d'), uploadedAt: new Date().toISOString(), status: 'Pending' }, ...d.documents],
-        activities: log(d, { kind: 'document', title: 'Document uploaded', detail: `${doc.type} · ${studentLabel(d, doc.studentId)}`, partnerId: doc.partnerId }),
-      }));
+    // ---------- documents (private storage + metadata row)
+    async addDocument(input: { studentId: ID; type: DocType; file: File }) {
+      const student = db.students.find((s) => s.id === input.studentId);
+      if (!student) throw new Error('Unknown student');
+      const prepared = await prepareUpload(input.file); // validates type by content, size and name
+      const id = newId();
+      const path = `${student.partnerId}/${student.id}/${id}.${prepared.ext}`;
+      const up = await sb().storage.from(BUCKET).upload(path, input.file, { contentType: prepared.mime, upsert: false });
+      if (up.error) throw new Error('Upload was rejected by the server.');
+      const row = { id, student_id: student.id, name: `${input.type} — ${student.firstName} ${student.lastName}`, type: input.type, file_name: prepared.safeName, size: input.file.size, storage_path: path };
+      const res = await sb().from('documents').insert(row).select('*').single();
+      if (res.error) {
+        await sb().storage.from(BUCKET).remove([path]);
+        throw new Error('The document could not be saved.');
+      }
+      upsertLocal('documents', fromRow(res.data as Row));
+      void refreshActivities();
+    },
+    /** Server checks access (RLS), logs the download and returns a 60-second signed URL. */
+    async documentUrl(id: ID): Promise<string> {
+      const { data: path, error } = await sb().rpc('authorize_document_download', { doc_id: id });
+      if (error || !path) throw new Error('You do not have access to this document.');
+      const { data, error: e2 } = await sb().storage.from(BUCKET).createSignedUrl(path as string, 60);
+      if (e2 || !data) throw new Error('The file is not available.');
+      return data.signedUrl;
     },
     setDocumentStatus(id: ID, status: DocStatus) {
-      mutate((d) => ({ ...d, documents: d.documents.map((x) => (x.id === id ? { ...x, status } : x)) }));
+      void update('documents', id, { status }, 'Only SSI GLOBAL staff can verify documents.');
     },
-    removeDocument(id: ID) {
-      mutate((d) => ({ ...d, documents: d.documents.filter((x) => x.id !== id) }));
+    async removeDocument(id: ID) {
+      const d = db.documents.find((x) => x.id === id);
+      removeLocal('documents', id);
+      if (await commit(sb().from('documents').delete().eq('id', id)) && d?.storagePath) await sb().storage.from(BUCKET).remove([d.storagePath]);
     },
 
-    // ---------- assessments ----------
+    // ---------- assessments
     addAssessment(a: Without<Assessment, 'id' | 'requestedAt' | 'status' | 'notes'>) {
-      mutate((d) => ({
-        ...d,
-        assessments: [{ ...a, id: uid('as'), requestedAt: new Date().toISOString(), status: 'Pending', notes: '' }, ...d.assessments],
-        activities: log(d, { kind: 'assessment', title: 'Assessment requested', detail: studentLabel(d, a.studentId), partnerId: a.partnerId }),
-      }));
+      const id = newId();
+      void insert('assessments', { ...a, id, requestedAt: now(), status: 'Pending', notes: '' }, toRow({ ...a, id }, ['partnerId']));
     },
     setAssessmentStatus(id: ID, status: AssessmentStatus, notes?: string) {
-      mutate((d) => {
-        const as = d.assessments.find((x) => x.id === id);
-        return {
-          ...d,
-          assessments: d.assessments.map((x) => (x.id === id ? { ...x, status, notes: notes ?? x.notes } : x)),
-          activities: as
-            ? log(d, { kind: 'assessment', title: `Assessment marked ${status}`, detail: studentLabel(d, as.studentId), partnerId: as.partnerId })
-            : d.activities,
-        };
-      });
+      void update('assessments', id, notes === undefined ? { status } : { status, notes }, 'Only SSI GLOBAL staff can review assessments.');
     },
 
-    // ---------- finance ----------
+    // ---------- finance (staff only on the server)
     addPayment(p: Without<Payment, 'id' | 'invoiceNo'>) {
-      mutate((d) => ({ ...d, payments: [{ ...p, id: uid('pay'), invoiceNo: `INV-${5100 + d.payments.length + 1}` }, ...d.payments] }));
+      const id = newId();
+      const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
+      void insert('payments', { ...p, id, invoiceNo }, toRow({ ...p, id, invoiceNo }));
     },
     recordPayment(id: ID, amount: number) {
-      mutate((d) => {
-        const p = d.payments.find((x) => x.id === id);
-        return {
-          ...d,
-          payments: d.payments.map((x) => {
-            if (x.id !== id) return x;
-            const paid = Math.min(x.amount, x.paid + amount);
-            return { ...x, paid, status: paid >= x.amount ? 'Paid' : 'Partially Paid' };
-          }),
-          activities: p ? log(d, { kind: 'payment', title: 'Payment recorded', detail: `${p.invoiceNo} · ${p.description}`, partnerId: p.partnerId }) : d.activities,
-        };
-      });
+      const p = db.payments.find((x) => x.id === id);
+      if (!p) return;
+      const paid = Math.min(p.amount, p.paid + amount);
+      void update('payments', id, { paid, status: paid >= p.amount ? 'Paid' : 'Partially Paid' });
     },
     removePayment(id: ID) {
-      mutate((d) => ({ ...d, payments: d.payments.filter((x) => x.id !== id) }));
+      void remove('payments', id);
     },
 
-    // ---------- tasks ----------
+    // ---------- tasks (staff only)
     addTask(t: Without<Task, 'id' | 'done'>) {
-      mutate((d) => ({ ...d, tasks: [{ ...t, id: uid('t'), done: false }, ...d.tasks] }));
+      const id = newId();
+      void insert('tasks', { ...t, id, done: false }, toRow({ ...t, id }));
     },
     toggleTask(id: ID) {
-      mutate((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }));
+      const t = db.tasks.find((x) => x.id === id);
+      if (t) void update('tasks', id, { done: !t.done });
     },
     removeTask(id: ID) {
-      mutate((d) => ({ ...d, tasks: d.tasks.filter((t) => t.id !== id) }));
+      void remove('tasks', id);
     },
 
-    // ---------- announcements ----------
+    // ---------- announcements (staff only on the server)
     saveAnnouncement(a: Without<Announcement, 'id' | 'createdAt'> & { id?: ID }) {
-      mutate((d) => {
-        if (a.id) return { ...d, announcements: d.announcements.map((x) => (x.id === a.id ? { ...x, ...a, id: x.id } : x)) };
-        return {
-          ...d,
-          announcements: [{ ...a, id: uid('n'), createdAt: new Date().toISOString() }, ...d.announcements],
-          activities: a.published ? log(d, { kind: 'update', title: 'Announcement published', detail: a.title }) : d.activities,
-        };
-      });
+      if (a.id) return void update('announcements', a.id, a);
+      const id = newId();
+      void insert('announcements', { ...a, id, createdAt: now() }, toRow({ ...a, id }));
     },
     setAnnouncementPublished(id: ID, published: boolean) {
-      mutate((d) => {
-        const a = d.announcements.find((x) => x.id === id);
-        const now = new Date().toISOString();
-        return {
-          ...d,
-          announcements: d.announcements.map((x) =>
-            x.id === id ? { ...x, published, publishAt: published && new Date(x.publishAt) > new Date() ? x.publishAt : published ? now : x.publishAt } : x,
-          ),
-          activities: a && published ? log(d, { kind: 'update', title: 'Announcement published', detail: a.title }) : d.activities,
-        };
-      });
+      const a = db.announcements.find((x) => x.id === id);
+      if (!a) return;
+      const publishAt = published && new Date(a.publishAt) > new Date() ? a.publishAt : published ? now() : a.publishAt;
+      void update('announcements', id, { published, publishAt });
     },
     removeAnnouncement(id: ID) {
-      mutate((d) => ({ ...d, announcements: d.announcements.filter((x) => x.id !== id) }));
+      void remove('announcements', id);
     },
 
-    // ---------- catalogue ----------
+    // ---------- catalogue (staff only on the server)
     addUniversity(u: Without<University, 'id'>) {
-      mutate((d) => ({ ...d, universities: [...d.universities, { ...u, id: uid('u') }] }));
+      const id = newId();
+      void insert('universities', { ...u, id }, toRow({ ...u, id }));
     },
     removeUniversity(id: ID) {
-      mutate((d) => ({ ...d, universities: d.universities.filter((u) => u.id !== id), courses: d.courses.filter((c) => c.universityId !== id) }));
+      setDb((d) => ({ ...d, courses: d.courses.filter((c) => c.universityId !== id) }));
+      void remove('universities', id);
     },
     addCourse(c: Without<Course, 'id'>) {
-      mutate((d) => ({ ...d, courses: [...d.courses, { ...c, id: uid('c') }] }));
+      const id = newId();
+      void insert('courses', { ...c, id }, toRow({ ...c, id }));
     },
     updateCourse(id: ID, patch: Partial<Course>) {
-      mutate((d) => ({ ...d, courses: d.courses.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+      void update('courses', id, patch);
     },
     removeCourse(id: ID) {
-      mutate((d) => ({ ...d, courses: d.courses.filter((c) => c.id !== id) }));
+      void remove('courses', id);
     },
   };
 
-  return { db, session, actions };
+  return { db, session, actions, loading };
 }
 
 type StoreValue = ReturnType<typeof useStoreValue>;
@@ -361,20 +399,19 @@ export function useStore() {
 }
 
 /**
- * Role-scoped view of the data. Admin sees everything; a client sees only its
- * own partner workspace. Pages should read records through this hook.
+ * Role-scoped view for rendering. The server has already filtered rows by RLS; this
+ * additionally narrows a staff member's partner preview to that partner.
  */
 export function useScoped() {
   const { db, session } = useStore();
   const partnerId = session?.role === 'client' ? session.partnerId : undefined;
   return useMemo(() => {
     const own = <T extends { partnerId: ID }>(rows: T[]) => (partnerId ? rows.filter((r) => r.partnerId === partnerId) : rows);
-    const announcements = db.announcements.filter(
-      (a) => !partnerId || a.audience === 'all' || a.audience.includes(partnerId),
-    );
+    const announcements = db.announcements.filter((a) => !partnerId || a.audience === 'all' || a.audience.includes(partnerId));
     return {
       isAdmin: !partnerId,
       partnerId,
+      userRole: session?.userRole,
       partner: partnerId ? db.partners.find((p) => p.id === partnerId) : undefined,
       students: own(db.students),
       applications: own(db.applications),
@@ -388,7 +425,7 @@ export function useScoped() {
       partners: db.partners,
       base: partnerId ? '/client' : '/admin',
     };
-  }, [db, partnerId]);
+  }, [db, partnerId, session?.userRole]);
 }
 
 /** Lookup helpers shared by many pages. */

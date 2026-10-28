@@ -1,102 +1,192 @@
-// Auth adapter. Pages call these functions and never talk to a provider directly.
-//
-//  - Supabase mode (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY): email/password and
-//    Google OAuth via Supabase Auth. The user's role and partner come from the
-//    `profiles` table, protected by row-level security (supabase/migrations).
-//  - Demo mode: built-in prototype accounts (src/auth/demoAccounts.ts).
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Session } from '../data/types';
-import { authRedirectUrl, demoAccountsEnabled, googleEnabled, SUPABASE_ANON_KEY, SUPABASE_URL, supabaseEnabled } from './config';
-import { DEMO_ACCOUNTS, sha256 } from './demoAccounts';
+// Auth adapter over Supabase Auth. Passwords go straight to Supabase over HTTPS and are
+// stored there with bcrypt; this app never stores or logs them. The user's role and
+// organisation come from the `profiles` table (RLS-protected) and are re-read from the
+// server on every load — the browser never decides who someone is.
+import { createClient, type SupabaseClient, type SupportedStorage, type User } from '@supabase/supabase-js';
+import type { Session, UserRole } from '../data/types';
+import { authConfigured, googleEnabled, siteUrl, SUPABASE_ANON_KEY, SUPABASE_URL } from './config';
 
 export class AuthError extends Error {}
 
-export const supabase: SupabaseClient | null = supabaseEnabled
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { flowType: 'pkce', persistSession: true, detectSessionInUrl: true } })
+// Tokens live in sessionStorage (cleared when the browser closes) unless the user ticks
+// "Remember me". Supabase access tokens are short-lived and refresh tokens rotate.
+const REMEMBER_KEY = 'ssi-remember';
+const remembered = () => {
+  try {
+    return localStorage.getItem(REMEMBER_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const tokenStorage: SupportedStorage = {
+  getItem: (k) => (remembered() ? localStorage : sessionStorage).getItem(k),
+  setItem: (k, v) => (remembered() ? localStorage : sessionStorage).setItem(k, v),
+  removeItem: (k) => {
+    localStorage.removeItem(k);
+    sessionStorage.removeItem(k);
+  },
+};
+
+export const supabase: SupabaseClient | null = authConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: tokenStorage },
+    })
   : null;
 
-export const authMode: 'supabase' | 'demo' = supabaseEnabled ? 'supabase' : 'demo';
-export { googleEnabled };
+export { authConfigured, googleEnabled };
+
+export function requireClient(): SupabaseClient {
+  if (!supabase) throw new AuthError('Sign-in is not configured for this site. Please contact SSI GLOBAL.');
+  return supabase;
+}
 
 const GENERIC = 'Incorrect email or password.';
+const STAFF: UserRole[] = ['super_admin', 'admin_staff'];
+export const isStaffRole = (r: UserRole) => STAFF.includes(r);
 
-/** Loads the signed-in Supabase user's role from `profiles`. */
-async function profileSession(userId: string, email: string): Promise<Session> {
-  if (!supabase) throw new AuthError('Authentication is not configured.');
-  const { data, error } = await supabase.from('profiles').select('role, partner_id, full_name, partners(name)').eq('id', userId).maybeSingle();
-  if (error) throw new AuthError('Could not load your account. Please try again.');
-  if (!data) throw new AuthError('Your account has not been assigned a role yet. Please contact SSI GLOBAL.');
-  const name = (data.full_name as string | null) || email.split('@')[0];
-  const partnerName = (data.partners as { name?: string } | null)?.name;
-  if (data.role === 'admin') return { role: 'admin', name, email, title: 'Super Admin', provider: 'supabase' };
-  if (data.role === 'partner' && data.partner_id) {
-    return { role: 'client', partnerId: data.partner_id as string, name, email, title: partnerName ?? 'Partner', provider: 'supabase' };
-  }
-  throw new AuthError('Your account has not been assigned a role yet. Please contact SSI GLOBAL.');
+/** Fire-and-forget security event (actor is taken from the verified JWT on the server). */
+export function logEvent(event: 'login' | 'logout' | 'idle_timeout' | 'mfa_enrolled' | 'mfa_verified' | 'password_changed') {
+  supabase?.rpc('log_event', { event }).then(
+    () => {},
+    () => {},
+  );
 }
 
-export async function signInWithPassword(email: string, password: string): Promise<Session> {
-  const normalized = email.trim().toLowerCase();
+export type AuthStage =
+  | { kind: 'signed-in'; session: Session }
+  | { kind: 'mfa-enroll'; session: Session }
+  | { kind: 'mfa-challenge'; session: Session; factorId: string };
 
-  if (supabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email: normalized, password });
-    if (error || !data.user) throw new AuthError(error?.message === 'Email not confirmed' ? 'Please confirm your email address first.' : GENERIC);
-    try {
-      return await profileSession(data.user.id, data.user.email ?? normalized);
-    } catch (e) {
-      await supabase.auth.signOut();
-      throw e;
+/** Reads the signed-in user's role from the server and decides what they must do next. */
+export async function resolveStage(user: User): Promise<AuthStage> {
+  const sb = requireClient();
+  const { data, error } = await sb
+    .from('profiles')
+    .select('role, partner_id, full_name, status, partners(name)')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (error) throw new AuthError('Could not load your account. Please try again.');
+  if (!data) throw new AuthError('Your account has not been set up yet. Please contact SSI GLOBAL.');
+  if (data.status !== 'active') throw new AuthError('Your account has been suspended. Please contact SSI GLOBAL.');
+
+  const userRole = data.role as UserRole;
+  const name = (data.full_name as string | null) || (user.email ?? '').split('@')[0];
+  const email = user.email ?? '';
+  const partnerName = (data.partners as { name?: string } | null)?.name;
+  const session: Session = isStaffRole(userRole)
+    ? { role: 'admin', userRole, userId: user.id, name, email, title: userRole === 'super_admin' ? 'Super Admin' : 'Admin Staff' }
+    : { role: 'client', userRole, userId: user.id, partnerId: data.partner_id as string, name, email, title: partnerName ?? 'Partner' };
+
+  // MFA is mandatory for SSI GLOBAL staff (the database also refuses staff access without aal2).
+  if (isStaffRole(userRole)) {
+    const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.currentLevel !== 'aal2') {
+      const { data: factors } = await sb.auth.mfa.listFactors();
+      const totp = factors?.totp.find((f) => f.status === 'verified');
+      return totp ? { kind: 'mfa-challenge', session, factorId: totp.id } : { kind: 'mfa-enroll', session };
     }
   }
-
-  if (demoAccountsEnabled) {
-    const account = DEMO_ACCOUNTS.find((a) => a.email === normalized);
-    const hash = await sha256(`${normalized}:${password}`);
-    // Small constant delay so responses don't reveal which emails exist.
-    await new Promise((r) => setTimeout(r, 450));
-    if (!account || account.hash !== hash) throw new AuthError(GENERIC);
-    return { role: account.role, partnerId: account.partnerId, name: account.name, email: account.email, title: account.title, provider: 'demo' };
-  }
-
-  throw new AuthError('Sign-in is not configured for this environment.');
+  return { kind: 'signed-in', session };
 }
 
-/** Redirects to Google. Only available when Supabase and its Google provider are configured. */
+export async function signInWithPassword(email: string, password: string, remember: boolean): Promise<AuthStage> {
+  const sb = requireClient();
+  try {
+    localStorage.setItem(REMEMBER_KEY, remember ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+  const { data, error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+  if (error || !data.user) {
+    if (error?.status === 429) throw new AuthError('Too many sign-in attempts. Please wait a few minutes and try again.');
+    if (error?.message === 'Email not confirmed') throw new AuthError('Please confirm your email address first.');
+    throw new AuthError(GENERIC);
+  }
+  try {
+    const stage = await resolveStage(data.user);
+    if (stage.kind === 'signed-in') logEvent('login');
+    return stage;
+  } catch (e) {
+    await sb.auth.signOut({ scope: 'local' });
+    throw e;
+  }
+}
+
+/** Redirects to Google (PKCE + state handled by Supabase). Only when configured. */
 export async function signInWithGoogle() {
-  if (!supabase || !googleEnabled) throw new AuthError('Google sign-in is not enabled yet. Please use your email and password.');
-  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: authRedirectUrl() } });
+  const sb = requireClient();
+  if (!googleEnabled) throw new AuthError('Google sign-in is not enabled yet. Please use your email and password.');
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: siteUrl() } });
   if (error) throw new AuthError('Could not start Google sign-in. Please try again.');
 }
 
+// ------------------------------------------------------------------ MFA (TOTP)
+
+export async function startTotpEnrollment() {
+  const sb = requireClient();
+  // Remove abandoned, unverified factors so enrolment can be restarted.
+  const { data: list } = await sb.auth.mfa.listFactors();
+  for (const f of list?.all ?? []) if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id });
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: `SSI GLOBAL ${new Date().toISOString().slice(0, 10)}` });
+  if (error || !data) throw new AuthError('Could not start two-factor setup. Please try again.');
+  return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret };
+}
+
+export async function verifyTotp(factorId: string, code: string, enrolling = false) {
+  const sb = requireClient();
+  if (!/^\d{6}$/.test(code)) throw new AuthError('Enter the 6-digit code from your authenticator app.');
+  const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code });
+  if (error) throw new AuthError(error.status === 429 ? 'Too many attempts. Please wait and try again.' : 'That code is not valid. Please try again.');
+  logEvent(enrolling ? 'mfa_enrolled' : 'mfa_verified');
+  logEvent('login');
+}
+
+export async function mfaFactors() {
+  if (!supabase) return [];
+  const { data } = await supabase.auth.mfa.listFactors();
+  return (data?.totp ?? []).filter((f) => f.status === 'verified');
+}
+
+// ------------------------------------------------------------------ passwords
+
+/** Mirrors the policy you should also set in Supabase → Authentication → Policies. */
+export function passwordProblems(pw: string, email = ''): string[] {
+  const issues: string[] = [];
+  if (pw.length < 12) issues.push('at least 12 characters');
+  if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw)) issues.push('upper- and lower-case letters');
+  if (!/\d/.test(pw)) issues.push('a number');
+  if (!/[^A-Za-z0-9]/.test(pw)) issues.push('a symbol');
+  const local = email.split('@')[0]?.toLowerCase();
+  if (local && local.length >= 3 && pw.toLowerCase().includes(local)) issues.push('not contain your email name');
+  return issues;
+}
+
 export async function sendPasswordReset(email: string) {
-  if (!supabase) return; // Demo mode: nothing to send.
-  await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: authRedirectUrl() });
+  if (!supabase) return;
+  // Supabase issues a single-use, time-limited link; the response never reveals whether the email exists.
+  await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${siteUrl()}?recovery=1` });
 }
 
-export async function signOut() {
-  if (supabase) await supabase.auth.signOut();
+export async function updatePassword(password: string) {
+  const sb = requireClient();
+  const { data: u } = await sb.auth.getUser();
+  const problems = passwordProblems(password, u.user?.email ?? '');
+  if (problems.length) throw new AuthError(`Password must have ${problems.join(', ')}.`);
+  const { error } = await sb.auth.updateUser({ password });
+  if (error) throw new AuthError(error.message.includes('different') ? 'Choose a password you have not used before.' : 'Could not update your password. Please try again.');
+  logEvent('password_changed');
+  // Revoke other sessions after a credential change.
+  await sb.auth.signOut({ scope: 'others' });
 }
 
-/**
- * Keeps the app session in step with Supabase (OAuth redirects, token expiry,
- * sign-out in another tab). Returns an unsubscribe function.
- */
-export function watchAuth(onSignedIn: (s: Session) => void, onSignedOut: () => void, onError: (msg: string) => void) {
-  if (!supabase) return () => {};
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') return onSignedOut();
-    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
-      // Defer: Supabase recommends not awaiting other calls inside this callback.
-      setTimeout(() => {
-        profileSession(session.user.id, session.user.email ?? '')
-          .then(onSignedIn)
-          .catch(async (e: Error) => {
-            await supabase!.auth.signOut();
-            onError(e.message);
-          });
-      }, 0);
-    }
-    if (event === 'INITIAL_SESSION' && !session) onSignedOut();
-  });
-  return () => data.subscription.unsubscribe();
+// ------------------------------------------------------------------ sign-out
+
+export async function signOut(scope: 'local' | 'global' = 'local', reason: 'logout' | 'idle_timeout' = 'logout') {
+  if (!supabase) return;
+  try {
+    await supabase.rpc('log_event', { event: reason });
+  } catch {
+    /* ignore */
+  }
+  await supabase.auth.signOut({ scope });
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, Globe, Mail, MapPin, Phone, ShieldCheck, SunMoon, User } from 'lucide-react';
 import { ThemeSegmented } from '../../components/ThemeSwitcher';
+import { AccountSecurityCard } from '../../components/SecurityPanels';
 import { Badge, Button, Card, CardHeader, Field, Input, PageHeader } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useScoped, useStore } from '../../store/store';
@@ -9,6 +10,7 @@ import { partnerStatusTone, tierTone } from '../admin/Partners';
 
 export default function Profile() {
   const { session, actions } = useStore();
+  const canEdit = session?.userRole === 'partner_admin' && !session.previewOf;
   const scoped = useScoped();
   const toast = useToast();
   const p = scoped.partner!;
@@ -21,7 +23,6 @@ export default function Profile() {
   const save = () => {
     if (!d.contactName.trim() || !/^\S+@\S+\.\S+$/.test(d.email) || d.phone.replace(/\D/g, '').length < 8) return toast.error('Please enter a valid name, email and phone');
     actions.updatePartner(p.id, d);
-    if (session) actions.login({ ...session, name: d.contactName, email: session.provider === 'supabase' ? session.email : d.email }, true);
     toast.success('Profile updated', 'SSI GLOBAL will see your updated details.');
   };
 
@@ -53,14 +54,14 @@ export default function Profile() {
           <Card>
             <CardHeader title="Contact details" action={<Building2 className="h-5 w-5 text-ink-mute" />} />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <Field label="Primary contact"><Input icon={User} value={d.contactName} onChange={(e) => setD({ ...d, contactName: e.target.value })} /></Field>
-              <Field label="Email"><Input icon={Mail} type="email" value={d.email} onChange={(e) => setD({ ...d, email: e.target.value })} /></Field>
-              <Field label="Phone"><Input icon={Phone} value={d.phone} onChange={(e) => setD({ ...d, phone: e.target.value })} /></Field>
-              <Field label="City"><Input icon={MapPin} value={d.city} onChange={(e) => setD({ ...d, city: e.target.value })} /></Field>
-              <Field label="Website" className="sm:col-span-2"><Input icon={Globe} value={d.website} onChange={(e) => setD({ ...d, website: e.target.value })} /></Field>
+              <Field label="Primary contact"><Input icon={User} value={d.contactName} disabled={!canEdit} onChange={(e) => setD({ ...d, contactName: e.target.value })} /></Field>
+              <Field label="Email"><Input icon={Mail} type="email" value={d.email} disabled={!canEdit} onChange={(e) => setD({ ...d, email: e.target.value })} /></Field>
+              <Field label="Phone"><Input icon={Phone} value={d.phone} disabled={!canEdit} onChange={(e) => setD({ ...d, phone: e.target.value })} /></Field>
+              <Field label="City"><Input icon={MapPin} value={d.city} disabled={!canEdit} onChange={(e) => setD({ ...d, city: e.target.value })} /></Field>
+              <Field label="Website" className="sm:col-span-2"><Input icon={Globe} value={d.website} disabled={!canEdit} onChange={(e) => setD({ ...d, website: e.target.value })} /></Field>
             </div>
             <div className="flex justify-end border-t border-line px-5 py-3">
-              <Button onClick={save}>Save changes</Button>
+              {canEdit ? <Button onClick={save}>Save changes</Button> : <span className="text-xs text-ink-mute">Only your organisation’s admin can edit these details.</span>}
             </div>
           </Card>
           <Card>
@@ -69,6 +70,7 @@ export default function Profile() {
               <ThemeSegmented />
             </div>
           </Card>
+          <AccountSecurityCard />
           <Card className="p-5">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><ShieldCheck className="h-5 w-5" /></span>

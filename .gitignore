@@ -6,3 +6,8 @@ dist
 .env.local
 .env.*.local
 .claude/
+*.pem
+*.key
+age-key.txt
+*.sql.gz.age
+supabase/.temp/

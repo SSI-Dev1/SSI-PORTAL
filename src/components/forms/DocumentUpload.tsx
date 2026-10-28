@@ -5,8 +5,7 @@ import { useToast } from '../feedback';
 import { useScoped, useStore } from '../../store/store';
 import { DOC_TYPES, type DocType } from '../../data/types';
 import { cn, fileSize, fullName } from '../../lib/utils';
-
-const MAX = 10 * 1024 * 1024;
+import { prepareUpload } from '../../lib/files';
 
 export function DocumentUpload({ open, onClose, studentId }: { open: boolean; onClose: () => void; studentId?: string }) {
   const { actions } = useStore();
@@ -29,28 +28,42 @@ export function DocumentUpload({ open, onClose, studentId }: { open: boolean; on
     }
   }, [open, studentId]);
 
-  const addFiles = (list: FileList | null) => {
+  // Files are checked by content (not just extension) before they are accepted.
+  const addFiles = async (list: FileList | null) => {
     if (!list) return;
-    const arr = Array.from(list);
-    const tooBig = arr.find((f) => f.size > MAX);
-    if (tooBig) return setError(`${tooBig.name} is larger than 10 MB.`);
+    const accepted: File[] = [];
+    for (const f of Array.from(list)) {
+      try {
+        await prepareUpload(f);
+        accepted.push(f);
+      } catch (e) {
+        return setError((e as Error).message);
+      }
+    }
     setError('');
-    setFiles((f) => [...f, ...arr].slice(0, 5));
+    setFiles((f) => [...f, ...accepted].slice(0, 5));
   };
 
-  const save = () => {
+  const save = async () => {
     if (!student) return setError('Select a student.');
     if (!files.length) return setError('Add at least one file.');
-    const s = scoped.students.find((x) => x.id === student)!;
+    const s = scoped.students.find((x) => x.id === student);
+    if (!s) return setError('Select a student.');
     setBusy(true);
-    // Simulated upload — metadata only. Swap for Supabase Storage later.
-    window.setTimeout(() => {
-      files.forEach((f) =>
-        actions.addDocument({ studentId: s.id, partnerId: s.partnerId, type, name: `${type} — ${fullName(s)}`, fileName: f.name, size: f.size }),
-      );
-      toast.success(`${files.length} document${files.length > 1 ? 's' : ''} uploaded`, `Pending verification by SSI GLOBAL.`);
-      onClose();
-    }, 700);
+    let done = 0;
+    for (const file of files) {
+      try {
+        await actions.addDocument({ studentId: s.id, type, file });
+        done++;
+      } catch (e) {
+        setError(`${file.name}: ${(e as Error).message}`);
+        break;
+      }
+    }
+    setBusy(false);
+    if (done) toast.success(`${done} document${done > 1 ? 's' : ''} uploaded for ${fullName(s)}`, 'Stored privately; pending verification by SSI GLOBAL.');
+    if (done === files.length) onClose();
+    else setFiles((f) => f.slice(done));
   };
 
   return (

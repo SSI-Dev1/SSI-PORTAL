@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, Eye, FileText, FileUp, FolderOpen, MoreHorizontal, ShieldCheck, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, ExternalLink, Eye, FileText, FileUp, FolderOpen, MoreHorizontal, ShieldCheck, Trash2, XCircle } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, FilterSelect, Menu, Modal, PageHeader, Pagination, SearchInput, Table, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { DocumentUpload } from '../../components/forms/DocumentUpload';
@@ -38,6 +38,22 @@ export default function Documents() {
     actions.setDocumentStatus(d.id, s);
     toast.success(`Document ${s.toLowerCase()}`, d.fileName);
   };
+  // Opens the file via a 60-second signed URL issued after a server-side access check.
+  // The tab is opened synchronously (so pop-up blockers allow it) and then pointed at the file.
+  const openFile = async (d: DocumentRecord) => {
+    const w = window.open('about:blank', '_blank');
+    try {
+      const url = await actions.documentUrl(d.id);
+      if (w) {
+        w.opener = null;
+        w.location.href = url;
+      }
+    } catch (e) {
+      w?.close();
+      toast.error('Cannot open document', (e as Error).message);
+    }
+  };
+
   const remove = async (d: DocumentRecord) => {
     if (await confirm({ title: 'Delete document?', message: `${d.fileName} will be permanently removed.`, confirmLabel: 'Delete', danger: true })) {
       actions.removeDocument(d.id);
@@ -124,7 +140,8 @@ export default function Documents() {
                           </button>
                         )}
                         items={[
-                          { label: 'Preview', icon: Eye, onClick: () => setPreview(d) },
+                          { label: 'Details', icon: Eye, onClick: () => setPreview(d) },
+                          ...(d.storagePath ? [{ label: 'Open file', icon: ExternalLink, onClick: () => void openFile(d) }] : []),
                           ...(scoped.isAdmin
                             ? [
                                 { label: 'Mark verified', icon: ShieldCheck, onClick: () => setDocStatus(d, 'Verified') },
@@ -191,7 +208,14 @@ export default function Documents() {
                   <dd className="mt-0.5 font-medium text-heading">{v}</dd>
                 </div>
               ))}
-              <p className="rounded-xl bg-canvas p-3 text-xs text-ink-soft">File contents are not stored in this prototype. Connect cloud storage (e.g. Supabase Storage) to enable real downloads.</p>
+              {preview.storagePath ? (
+                <Button variant="secondary" icon={ExternalLink} onClick={() => void openFile(preview)}>
+                  Open file
+                </Button>
+              ) : (
+                <p className="rounded-xl bg-canvas p-3 text-xs text-ink-soft">No file is attached to this record.</p>
+              )}
+              <p className="text-[11px] text-ink-mute">Files are stored privately. Each open is access-checked, logged, and uses a link that expires after 60 seconds.</p>
             </dl>
           </div>
         )}

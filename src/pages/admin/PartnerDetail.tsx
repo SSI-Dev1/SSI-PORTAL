@@ -7,6 +7,7 @@ import { ApplicationDrawer, StatusBadge, stageProgress } from '../../components/
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
+import { useAuth } from '../../auth/AuthProvider';
 import { partnerPreviewSession } from '../../data/demo';
 import { avatarColor, countryFlag, formatDate, fullName, initials, money } from '../../lib/utils';
 import { PartnerForm, partnerStatusTone, tierTone } from './Partners';
@@ -16,7 +17,8 @@ type Tab = 'overview' | 'students' | 'applications' | 'finance';
 
 export default function PartnerDetail() {
   const { id } = useParams();
-  const { db, session, actions } = useStore();
+  const { db } = useStore();
+  const { realSession, setPreview } = useAuth();
   const lk = useLookup();
   const navigate = useNavigate();
   const toast = useToast();
@@ -41,7 +43,8 @@ export default function PartnerDetail() {
   const outstanding = payments.reduce((s, x) => s + x.amount - x.paid, 0);
 
   const viewAs = () => {
-    actions.login(partnerPreviewSession(p, session!), false);
+    if (!realSession) return;
+    setPreview(partnerPreviewSession(p, realSession));
     toast.info(`Previewing ${p.name}`, 'Use “Exit preview” to return to the Admin Portal.');
     navigate('/client/dashboard');
   };

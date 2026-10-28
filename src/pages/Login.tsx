@@ -59,10 +59,6 @@ export default function Login() {
 
   const google = async () => {
     setFormError('');
-    if (!googleEnabled) {
-      toast.info('Google sign-in coming soon', 'It hasn’t been enabled for this workspace yet. Please sign in with your email and password.');
-      return;
-    }
     setLoading('google');
     try {
       await signInWithGoogle(); // Browser navigates away to Google.
@@ -193,22 +189,28 @@ export default function Login() {
                     </Button>
                   </form>
 
-                  <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-ink-mute">
-                    <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
-                  </div>
+                  {/* Shown only once Google sign-in is configured: a Google button that
+                      can't sign anyone in looks like a phishing page to browsers. */}
+                  {googleEnabled && (
+                    <>
+                    <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-ink-mute">
+                      <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={google}
-                    disabled={!!loading}
-                    className={cn(
-                      'flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-line bg-surface text-[15px] font-semibold text-heading shadow-sm transition',
-                      'hover:border-navy-200 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-60',
-                    )}
-                  >
-                    {loading === 'google' ? <Loader2 className="h-5 w-5 animate-spin" /> : <GoogleIcon />}
-                    Continue with Google
-                  </button>
+                    <button
+                      type="button"
+                      onClick={google}
+                      disabled={!!loading}
+                      className={cn(
+                        'flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-line bg-surface text-[15px] font-semibold text-heading shadow-sm transition',
+                        'hover:border-navy-200 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-60',
+                      )}
+                    >
+                      {loading === 'google' ? <Loader2 className="h-5 w-5 animate-spin" /> : <GoogleIcon />}
+                      Continue with Google
+                    </button>
+                    </>
+                  )}
 
                   <p className="mt-8 text-center text-sm text-ink-soft">
                     Need an account?{' '}

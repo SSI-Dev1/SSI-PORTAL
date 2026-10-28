@@ -5,7 +5,7 @@ import { Logo } from '../components/brand';
 import { Button, Field, Input, Modal } from '../components/ui';
 import { useToast } from '../components/feedback';
 import { ThemeMenu } from '../components/ThemeSwitcher';
-import { EducationIllustration } from '../components/EducationIllustration';
+import { LoginShowcase } from '../components/LoginShowcase';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthError, authConfigured, googleEnabled, sendPasswordReset, signInWithGoogle, signInWithPassword } from '../auth/auth';
 import { MfaChallenge, MfaEnroll, SetNewPassword } from './LoginSteps';
@@ -93,37 +93,20 @@ export default function Login() {
     ) : null;
 
   return (
-    <div className="flex min-h-screen bg-canvas">
-      {/* Brand panel */}
-      <section className="relative hidden w-[54%] flex-col overflow-hidden bg-gradient-to-br from-[#FFF9F0] via-[#FFFDF9] to-[#FFF1DC] lg:flex dark:from-[#0A2833] dark:via-[#082029] dark:to-[#06171E]">
-        <div className="pointer-events-none absolute -right-48 -top-48 h-[560px] w-[560px] rotate-45 rounded-[96px] bg-brand/10 dark:bg-brand/[0.045]" />
-        <div className="pointer-events-none absolute -bottom-56 -left-32 h-[480px] w-[480px] rotate-45 rounded-[88px] bg-rust/[0.06] dark:bg-rust/[0.07]" />
-        <div className="relative z-10 px-12 pt-10 xl:px-16">
-          <Logo />
-        </div>
-        <div className="relative z-10 px-12 pt-14 xl:px-16 xl:pt-20">
-          <h1 className="max-w-xl font-display text-[44px] font-semibold leading-[1.08] tracking-tight text-heading xl:text-[52px]">
-            Empowering Global <span className="bg-gradient-to-r from-rust to-brand bg-clip-text text-transparent">Education</span> Journeys
-          </h1>
-          <p className="mt-5 max-w-md text-[16px] leading-relaxed text-ink-soft">
-            Streamline applications, manage students and collaborate with every partner — in one secure workspace.
-          </p>
-        </div>
-        <div className="relative z-0 mt-auto px-6">
-          <EducationIllustration className="mx-auto max-h-[50vh] w-full" />
-        </div>
-      </section>
+    <div className="login-page flex min-h-screen items-stretch justify-center sm:p-4 lg:items-center lg:p-6">
+      <div className="flex w-full max-w-[1320px] bg-surface shadow-2xl sm:rounded-[32px] lg:min-h-[min(860px,calc(100vh-48px))] lg:p-3">
+      <LoginShowcase />
 
       {/* Sign-in */}
-      <section className="relative flex flex-1 flex-col">
-        <div className="flex items-center justify-between px-5 pt-5 sm:px-8 lg:justify-end">
+      <section className="relative flex flex-1 flex-col lg:pl-4">
+        <div className="flex items-center justify-between px-5 pt-5 sm:px-10 lg:justify-end">
           <Logo className="lg:hidden" />
           <ThemeMenu />
         </div>
 
-        <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
-          <div className="w-full max-w-[420px] animate-fade-up">
-            <div className="rounded-[28px] border border-line bg-surface p-7 shadow-lift sm:p-10">
+        <div className="flex flex-1 items-center justify-center px-5 py-8 sm:px-10">
+          <div className="w-full max-w-[400px] animate-fade-up">
+            <div>
               {step ?? (oauthReturn || auth.status === 'loading' ? (
                 <div className="flex flex-col items-center py-12 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-rust" />
@@ -132,8 +115,8 @@ export default function Login() {
                 </div>
               ) : (
                 <>
-                  <h2 className="font-display text-[28px] font-semibold tracking-tight text-heading">Welcome back</h2>
-                  <p className="mt-1.5 text-[15px] text-ink-soft">Sign in to your SSI GLOBAL account</p>
+                  <h2 className="font-display text-[30px] font-semibold tracking-tight text-heading">Welcome back</h2>
+                  <p className="mt-2 text-[15px] text-ink-soft">Sign in to your SSI GLOBAL account</p>
 
                   {!authConfigured && (
                     <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-700">
@@ -228,9 +211,9 @@ export default function Login() {
                   </button>
 
                   <p className="mt-8 text-center text-sm text-ink-soft">
-                    Don’t have an account?{' '}
+                    Need an account?{' '}
                     <a className="font-semibold text-rust hover:underline" href="mailto:partners@ssiglobal.com">
-                      Contact your administrator
+                      Contact SSI GLOBAL
                     </a>
                   </p>
                 </>
@@ -239,8 +222,14 @@ export default function Login() {
           </div>
         </div>
 
-        <footer className="px-5 pb-6 text-center text-xs text-ink-mute sm:px-8">© {new Date().getFullYear()} SSI GLOBAL. All rights reserved.</footer>
+        <footer className="flex flex-col items-center justify-between gap-2 px-5 pb-6 text-xs text-ink-mute sm:flex-row sm:px-10">
+          <span>© {new Date().getFullYear()} SSI GLOBAL. All rights reserved.</span>
+          <span className="flex items-center gap-1.5">
+            <Lock className="h-3 w-3" /> Secure, encrypted sign-in
+          </span>
+        </footer>
       </section>
+      </div>
 
       <Modal
         open={forgotOpen}

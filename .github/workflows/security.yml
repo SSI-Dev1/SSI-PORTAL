@@ -24,7 +24,8 @@ jobs:
         run: npm run typecheck
       - name: No secrets or demo credentials in source
         run: |
-          if git grep -nIE "service_role|SERVICE_ROLE_KEY=|sk_live_|BEGIN [A-Z ]*PRIVATE KEY|eyJhbGciOiJIUzI1Ni" -- ':!supabase/functions/**' ':!*.md' ':!.github/**'; then
+          # Key-shaped values only (role *names* such as service_role are fine).
+          if git grep -nIE "SERVICE_ROLE_KEY[\"' ]*[:=][\"' ]*[A-Za-z0-9._-]{20,}|sb_secret_[A-Za-z0-9]{10,}|sk_live_[A-Za-z0-9]{10,}|BEGIN [A-Z ]*PRIVATE KEY|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20,}" -- ':!*.md' ':!.github/**'; then
             echo "::error::Possible secret committed"; exit 1
           fi
 

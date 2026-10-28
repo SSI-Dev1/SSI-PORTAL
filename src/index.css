@@ -123,3 +123,54 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Login brand panel: soft glows + fading dot grid (pure CSS, CSP-safe). */
+.login-panel {
+  background:
+    radial-gradient(60% 50% at 85% 10%, rgb(251 165 30 / 0.22), transparent 70%),
+    radial-gradient(50% 45% at 10% 95%, rgb(185 74 18 / 0.12), transparent 70%),
+    linear-gradient(160deg, #fffaf2 0%, #fff4e3 55%, #ffe9cc 100%);
+}
+.dark .login-panel {
+  background:
+    radial-gradient(55% 45% at 90% 5%, rgb(251 165 30 / 0.16), transparent 70%),
+    radial-gradient(55% 50% at 0% 100%, rgb(42 120 140 / 0.22), transparent 70%),
+    linear-gradient(160deg, #0d3341 0%, #0a2833 50%, #061c24 100%);
+}
+.login-dots {
+  background-image: radial-gradient(rgb(6 36 47 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 75%);
+}
+.dark .login-dots {
+  background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+}
+
+/* Login page backdrop (brand navy in both themes). */
+.login-page {
+  background:
+    radial-gradient(50% 60% at 15% 20%, rgb(251 165 30 / 0.1), transparent 70%),
+    radial-gradient(45% 55% at 90% 90%, rgb(42 120 140 / 0.35), transparent 70%),
+    linear-gradient(150deg, #0b3442 0%, #06242f 55%, #041a22 100%);
+}
+.dark .login-page {
+  background:
+    radial-gradient(50% 60% at 15% 20%, rgb(251 165 30 / 0.06), transparent 70%),
+    radial-gradient(45% 55% at 90% 90%, rgb(42 120 140 / 0.18), transparent 70%),
+    linear-gradient(150deg, #072530 0%, #03141a 60%, #020e13 100%);
+}
+
+/* Notches cut into the login panel: the inverse-rounded joins are drawn in the
+   card colour so the panel's edge curves smoothly around each notch. */
+.notch::before,
+.notch::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+.notch-top::before { top: 0; left: 100%; background: radial-gradient(circle at 100% 100%, transparent 23.5px, rgb(var(--surface)) 24px); }
+.notch-top::after { top: 100%; left: 0; background: radial-gradient(circle at 100% 100%, transparent 23.5px, rgb(var(--surface)) 24px); }
+.notch-bottom::before { bottom: 0; left: 100%; background: radial-gradient(circle at 100% 0, transparent 23.5px, rgb(var(--surface)) 24px); }
+.notch-bottom::after { bottom: 100%; left: 0; background: radial-gradient(circle at 100% 0, transparent 23.5px, rgb(var(--surface)) 24px); }

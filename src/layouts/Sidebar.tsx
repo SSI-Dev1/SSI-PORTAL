@@ -12,6 +12,7 @@ import {
   BookOpen,
   Building2,
   ChevronDown,
+  ChevronLeft,
   ClipboardCheck,
   FileStack,
   FileText,
@@ -20,8 +21,6 @@ import {
   ListTodo,
   Megaphone,
   MousePointer2,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Sparkles,
   UserCircle2,
@@ -151,8 +150,6 @@ interface ContentProps {
   orgName?: string;
   badges: Record<string, number>;
   user: { name: string; title: string };
-  onToggle?: () => void;
-  toggleLabel?: string;
   onClose?: () => void;
   menuItems: { label: string; icon: LucideIcon; onClick: () => void; danger?: boolean }[];
   closedSections: string[];
@@ -167,8 +164,6 @@ function SidebarContent({
   orgName,
   badges,
   user,
-  onToggle,
-  toggleLabel,
   onClose,
   menuItems,
   closedSections,
@@ -178,21 +173,8 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Brand + toggle */}
-      <div className={cn('flex shrink-0 items-center pt-5', collapsed ? 'flex-col gap-3 px-3 pb-3' : 'justify-between gap-2 pb-5 pl-6 pr-4')}>
+      <div className={cn('flex h-[76px] shrink-0 items-center', collapsed ? 'justify-center px-3' : 'justify-between gap-2 pl-6 pr-4')}>
         {collapsed ? <LogoMark size={36} /> : <Logo />}
-        {onToggle && (
-          <Tooltip content={collapsed ? toggleLabel : undefined} side="right">
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-label={toggleLabel}
-              aria-expanded={!collapsed}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-ink-mute transition hover:bg-canvas hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
-            >
-              {collapsed ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
-            </button>
-          </Tooltip>
-        )}
         {onClose && (
           <button
             type="button"
@@ -308,7 +290,7 @@ function SidebarContent({
 
 // ------------------------------------------------------------------ shell pieces
 
-type SharedProps = Omit<ContentProps, 'collapsed' | 'onToggle' | 'toggleLabel' | 'onClose' | 'menuItems' | 'closedSections' | 'onToggleSection'> & {
+type SharedProps = Omit<ContentProps, 'collapsed' | 'onClose' | 'menuItems' | 'closedSections' | 'onToggleSection'> & {
   menuItems: ContentProps['menuItems'];
 };
 
@@ -376,12 +358,6 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
         <SidebarContent
           {...shared}
           collapsed={collapsed}
-          onToggle={() => {
-            setHovered(false);
-            if (isDesktop) prefs.update({ collapsed: !prefs.collapsed });
-            else onOpenDrawer();
-          }}
-          toggleLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           closedSections={closedSections}
           onToggleSection={(id) => setClosedSections((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
           menuItems={[
@@ -391,6 +367,22 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
             ...shared.menuItems,
           ]}
         />
+        {/* Round toggle on the sidebar edge (stays put while the width animates). */}
+        <Tooltip content={pinnedCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="right">
+          <button
+            type="button"
+            onClick={() => {
+              setHovered(false);
+              if (isDesktop) prefs.update({ collapsed: !prefs.collapsed });
+              else onOpenDrawer();
+            }}
+            aria-label={pinnedCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!pinnedCollapsed}
+            className="absolute -right-3.5 top-[24px] z-10 flex h-7 w-7 items-center justify-center rounded-full border border-line bg-surface text-ink-mute shadow-sm transition hover:border-rust hover:text-rust focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          >
+            <ChevronLeft className={cn('h-4 w-4 transition-transform duration-300', pinnedCollapsed && 'rotate-180')} />
+          </button>
+        </Tooltip>
     </aside>
   );
 }

@@ -38,7 +38,7 @@ export default function ShellDemo() {
             <ThemeMenu />
           </div>
         </header>
-        <main className="mx-auto grid max-w-[1440px] gap-6 px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+        <main className={cn('mx-auto grid max-w-[1440px] gap-6 px-4 pb-16 pt-6 sm:px-6 lg:px-8', prefs.collapsed && 'lg:max-w-[1628px]')}>
           <Card>
             <CardHeader title="Wide content" subtitle="Should never scroll horizontally" />
             <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">

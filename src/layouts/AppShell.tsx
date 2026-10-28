@@ -97,8 +97,8 @@ export default function AppShell() {
             </button>
           </div>
         )}
-        <Topbar onMenu={() => setMobileOpen(true)} onSignOut={signOut} />
-        <main key={location.pathname} className="mx-auto max-w-[1440px] animate-fade-up px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+        <Topbar onMenu={() => setMobileOpen(true)} onSignOut={signOut} wide={sidebarPrefs.collapsed} />
+        <main key={location.pathname} className={cn('mx-auto max-w-[1440px] animate-fade-up px-4 pb-16 pt-6 sm:px-6 lg:px-8', sidebarPrefs.collapsed && 'lg:max-w-[1628px]')}>
           {loading ? (
             <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading data">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-rust border-t-transparent" />
@@ -112,7 +112,7 @@ export default function AppShell() {
   );
 }
 
-function Topbar({ onMenu, onSignOut }: { onMenu: () => void; onSignOut: () => void }) {
+function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: () => void; wide: boolean }) {
   const { session } = useStore();
   const scoped = useScoped();
   const navigate = useNavigate();
@@ -120,7 +120,8 @@ function Topbar({ onMenu, onSignOut }: { onMenu: () => void; onSignOut: () => vo
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur-xl">
-      <div className="mx-auto flex h-[68px] max-w-[1440px] items-center gap-3 px-4 sm:px-6 lg:px-8">
+      {/* Collapsing the sidebar gives its 188px to the page instead of to empty margins. */}
+      <div className={cn('mx-auto flex h-[68px] max-w-[1440px] items-center gap-3 px-4 sm:px-6 lg:px-8', wide && 'lg:max-w-[1628px]')}>
         <IconButton icon={MenuIcon} label="Open menu" className="md:hidden" onClick={onMenu} />
         <div className="hidden items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-semibold text-heading md:flex">
           <Building2 className="h-4 w-4 text-ink-mute" />

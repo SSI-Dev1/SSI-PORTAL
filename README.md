@@ -52,6 +52,14 @@ The migration creates every CRM table with partner-scoped RLS: partners only eve
 
 Light, Dark and System themes, switchable from the sun/moon button in the top bar and on the login page, or under Settings / My Profile → Appearance. The choice is saved per device. Colours are CSS variables in `src/index.css` (`:root` for light, `.dark` for dark) exposed as Tailwind tokens (`bg-surface`, `bg-canvas`, `text-heading`, `border-line`, …). Charts get their palette from `useChartColors()` in `src/theme/theme.tsx`.
 
+## Live site (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` builds and publishes `main` to https://ssi-dev1.github.io/SSI-PORTAL/ on every push. One-time setup in the GitHub repo:
+
+1. Settings → Pages → Source: **GitHub Actions**.
+2. Settings → Secrets and variables → Actions → New repository secret: `VITE_SUPABASE_ANON_KEY` = your anon key.
+3. Supabase → Authentication → URL Configuration: add `https://ssi-dev1.github.io/SSI-PORTAL/` to Redirect URLs (needed for password reset and Google).
+
 ## Deploying to your own server
 
 The build is plain static files with relative paths and hash routing — no Vercel/Netlify required.

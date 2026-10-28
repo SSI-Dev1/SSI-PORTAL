@@ -1,10 +1,10 @@
-// Additional sign-in steps: authenticator (TOTP) setup and verification, and choosing
-// a new password from a reset link. Rendered inside the login card.
-import { useEffect, useState, type FormEvent } from 'react';
-import { AlertCircle, Check, KeyRound, Loader2, Lock, ShieldCheck, X } from 'lucide-react';
+// Additional sign-in step: choosing a new password from a reset link. Rendered inside
+// the login card.
+import { useState, type FormEvent } from 'react';
+import { AlertCircle, Check, Lock, ShieldCheck, X } from 'lucide-react';
 import { Button, Field, Input } from '../components/ui';
 import { useToast } from '../components/feedback';
-import { AuthError, passwordProblems, startTotpEnrollment, updatePassword, verifyTotp } from '../auth/auth';
+import { AuthError, passwordProblems, updatePassword } from '../auth/auth';
 import { cn } from '../lib/utils';
 
 function ErrorBox({ message }: { message: string }) {
@@ -17,23 +17,6 @@ function ErrorBox({ message }: { message: string }) {
   );
 }
 
-function CodeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <Input
-      icon={KeyRound}
-      inputMode="numeric"
-      autoComplete="one-time-code"
-      autoFocus
-      maxLength={6}
-      placeholder="6-digit code"
-      value={value}
-      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
-      className="h-12 tracking-[0.4em]"
-      aria-label="Authentication code"
-    />
-  );
-}
-
 function StepHeader({ title, sub }: { title: string; sub: string }) {
   return (
     <>
@@ -43,104 +26,6 @@ function StepHeader({ title, sub }: { title: string; sub: string }) {
       <h2 className="font-display text-[24px] font-semibold tracking-tight text-heading">{title}</h2>
       <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{sub}</p>
     </>
-  );
-}
-
-export function MfaChallenge({ factorId, onDone, onCancel }: { factorId: string; onDone: () => Promise<void>; onCancel: () => void }) {
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await verifyTotp(factorId, code);
-      await onDone();
-    } catch (err) {
-      setError(err instanceof AuthError ? err.message : 'Verification failed.');
-      setCode('');
-    }
-    setBusy(false);
-  };
-  return (
-    <form onSubmit={submit} noValidate>
-      <StepHeader title="Two-step verification" sub="Enter the 6-digit code from your authenticator app to finish signing in." />
-      <ErrorBox message={error} />
-      <div className="mt-6">
-        <CodeInput value={code} onChange={setCode} />
-      </div>
-      <Button type="submit" size="lg" className="mt-5 w-full" loading={busy} disabled={code.length !== 6}>
-        Verify
-      </Button>
-      <button type="button" onClick={onCancel} className="mt-4 w-full text-center text-sm font-semibold text-ink-soft hover:text-heading">
-        Use a different account
-      </button>
-    </form>
-  );
-}
-
-export function MfaEnroll({ onDone, onCancel }: { onDone: () => Promise<void>; onCancel: () => void }) {
-  const toast = useToast();
-  const [factor, setFactor] = useState<{ factorId: string; qrCode: string; secret: string } | null>(null);
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-
-  useEffect(() => {
-    startTotpEnrollment()
-      .then(setFactor)
-      .catch((e) => setError(e instanceof AuthError ? e.message : 'Could not start setup.'));
-  }, []);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!factor) return;
-    setBusy(true);
-    setError('');
-    try {
-      await verifyTotp(factor.factorId, code, true);
-      toast.success('Two-step verification enabled');
-      await onDone();
-    } catch (err) {
-      setError(err instanceof AuthError ? err.message : 'Verification failed.');
-      setCode('');
-    }
-    setBusy(false);
-  };
-
-  return (
-    <form onSubmit={submit} noValidate>
-      <StepHeader
-        title="Set up two-step verification"
-        sub="SSI GLOBAL staff accounts require an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). Scan the code, then enter the 6-digit code it shows."
-      />
-      <ErrorBox message={error} />
-      <div className="mt-6 flex justify-center">
-        {factor ? (
-          <img src={factor.qrCode} alt="QR code for your authenticator app" className="h-44 w-44 rounded-xl bg-white p-2 ring-1 ring-line" />
-        ) : (
-          <div className="flex h-44 w-44 items-center justify-center rounded-xl bg-canvas">
-            <Loader2 className="h-6 w-6 animate-spin text-rust" />
-          </div>
-        )}
-      </div>
-      {factor && (
-        <button type="button" onClick={() => setShowSecret((s) => !s)} className="mx-auto mt-3 block text-xs font-semibold text-rust hover:underline">
-          {showSecret ? <span className="select-all break-all font-mono text-ink-soft">{factor.secret}</span> : 'Can’t scan? Show setup key'}
-        </button>
-      )}
-      <div className="mt-5">
-        <CodeInput value={code} onChange={setCode} />
-      </div>
-      <Button type="submit" size="lg" className="mt-5 w-full" loading={busy} disabled={!factor || code.length !== 6}>
-        Verify and continue
-      </Button>
-      <button type="button" onClick={onCancel} className="mt-4 w-full text-center text-sm font-semibold text-ink-soft hover:text-heading">
-        Cancel and sign out
-      </button>
-    </form>
   );
 }
 

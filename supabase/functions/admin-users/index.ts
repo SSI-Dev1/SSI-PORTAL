@@ -2,7 +2,7 @@
 //
 // Runs server-side with the service-role key (provided by Supabase as an environment
 // secret — never shipped to the browser). Every request is re-authorised here:
-// the caller must be an active super_admin whose JWT is MFA-verified (aal2).
+// the caller must be an active super_admin.
 //
 // Deploy:  supabase functions deploy admin-users --project-ref <ref>
 // Secrets: supabase secrets set ALLOWED_ORIGINS="https://crm.example.com" SITE_URL="https://crm.example.com/"
@@ -32,15 +32,6 @@ function cors(origin: string | null) {
 const json = (status: number, body: unknown, origin: string | null) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors(origin), 'Content-Type': 'application/json' } });
 
-function jwtClaims(token: string): Record<string, unknown> {
-  try {
-    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=')));
-  } catch {
-    return {};
-  }
-}
-
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) });
@@ -53,7 +44,6 @@ Deno.serve(async (req) => {
   const asCaller = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: who, error: whoErr } = await asCaller.auth.getUser(token);
   if (whoErr || !who.user) return json(401, { error: 'Unauthorized' }, origin);
-  if (jwtClaims(token).aal !== 'aal2') return json(403, { error: 'Two-step verification required' }, origin);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const { data: me } = await admin.from('profiles').select('role, status').eq('id', who.user.id).maybeSingle();

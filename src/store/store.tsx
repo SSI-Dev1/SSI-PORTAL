@@ -1,6 +1,6 @@
 // Data layer backed by Supabase. Every read is filtered by row-level security on the
 // server (a partner only ever receives its own organisation's rows), and every write is
-// re-checked there (tenant, role, workflow and MFA rules live in supabase/migrations).
+// re-checked there (tenant, role and workflow rules live in supabase/migrations).
 // The UI keeps a local copy for fast rendering and re-syncs after each change.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {

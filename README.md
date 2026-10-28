@@ -15,8 +15,8 @@ npm run build           # static build in dist/
 
 Read **[SECURITY.md](SECURITY.md)** before going live. In short: sign-in, roles and data
 access are enforced by Supabase (Auth + Postgres row-level security + private Storage).
-Staff accounts require two-step verification; partners only ever see their own
-organisation's data. There is no offline or demo login.
+Partners only ever see their own organisation's data. Two-step verification is not
+enabled in this base release. There is no offline or demo login.
 
 ```bash
 npm run test:security   # database authorisation tests (needs PostgreSQL 15+ locally)
@@ -37,7 +37,7 @@ build, so only public values belong there — never the service-role key.
 
 ### Connecting Supabase (project `goiyhrlhczygeweykwqq`)
 
-1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `supabase/seed.sql`.
+1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `0003_remove_mfa_requirement.sql`, then `supabase/seed.sql`.
 2. For a demo/staging project only: `npm run demo:sql` and run `supabase/demo_data.sql`.
 3. Deploy the admin edge function: `supabase functions deploy admin-users`.
 4. Create the first Super Admin and complete the dashboard settings in SECURITY.md §5.
@@ -72,7 +72,7 @@ rsync -a dist/ user@your-server:/var/www/ssi-crm/
 
 ```
 src/
-  auth/       config.ts (env), auth.ts (Supabase Auth, MFA, passwords), AuthProvider.tsx (session, idle timeout)
+  auth/       config.ts (env), auth.ts (Supabase Auth, passwords), AuthProvider.tsx (session, idle timeout)
   theme/      theme.tsx (ThemeProvider, useTheme, useChartColors)
   data/       types.ts (domain model), seed.ts (sample data), demo.ts (partner preview)
   store/      store.tsx — Supabase data layer (RLS-scoped reads, server-checked writes)

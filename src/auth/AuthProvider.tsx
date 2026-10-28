@@ -4,7 +4,7 @@ import type { Session } from '../data/types';
 import { AuthError, resolveStage, signOut as authSignOut, supabase } from './auth';
 import { IDLE_TIMEOUT_MINUTES } from './config';
 
-export type AuthStatus = 'loading' | 'signed-out' | 'mfa-enroll' | 'mfa-challenge' | 'recovery' | 'signed-in';
+export type AuthStatus = 'loading' | 'signed-out' | 'recovery' | 'signed-in';
 
 interface AuthValue {
   status: AuthStatus;
@@ -12,10 +12,9 @@ interface AuthValue {
   session: Session | null;
   /** The real, server-derived session. */
   realSession: Session | null;
-  factorId?: string;
   /** Message to show on the login screen (suspension, idle timeout…). */
   notice: string;
-  /** Re-reads the user's role/MFA state from the server (after MFA or a recovery). */
+  /** Re-reads the user's role from the server (e.g. after a password recovery). */
   refresh: () => Promise<void>;
   signOut: (reason?: 'logout' | 'idle_timeout') => Promise<void>;
   setPreview: (s: Session | null) => void;
@@ -30,7 +29,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(supabase ? 'loading' : 'signed-out');
   const [realSession, setRealSession] = useState<Session | null>(null);
   const [preview, setPreview] = useState<Session | null>(null);
-  const [factorId, setFactorId] = useState<string>();
   const [notice, setNotice] = useState('');
   const [idleSecondsLeft, setIdleSecondsLeft] = useState<number | null>(null);
   const resetIdle = useRef<() => void>(() => {});
@@ -53,7 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const stage = await resolveStage(user);
       resolvedFor.current = user.id;
       setRealSession(stage.session);
-      setFactorId(stage.kind === 'mfa-challenge' ? stage.factorId : undefined);
       setStatus(stage.kind);
     } catch (e) {
       setNotice(e instanceof AuthError ? e.message : 'Could not verify your account.');
@@ -91,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Automatic sign-out after inactivity.
   useEffect(() => {
-    if (status !== 'signed-in' && status !== 'mfa-enroll' && status !== 'mfa-challenge') return;
+    if (status !== 'signed-in') return;
     let timer = 0;
     let warn = 0;
     let tick = 0;
@@ -135,7 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       session: status === 'signed-in' ? preview ?? realSession : null,
       realSession,
-      factorId,
       notice,
       refresh,
       signOut,
@@ -143,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       idleSecondsLeft,
       stayActive: () => resetIdle.current(),
     }),
-    [status, preview, realSession, factorId, notice, refresh, signOut, idleSecondsLeft],
+    [status, preview, realSession, notice, refresh, signOut, idleSecondsLeft],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

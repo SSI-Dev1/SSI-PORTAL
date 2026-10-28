@@ -11,3 +11,4 @@ dist
 age-key.txt
 *.sql.gz.age
 supabase/.temp/
+supabase/functions/.env

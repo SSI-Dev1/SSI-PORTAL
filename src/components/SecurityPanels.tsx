@@ -5,7 +5,7 @@ import { KeyRound, LogOut, MailPlus, ShieldAlert, ShieldCheck, UserCog } from 'l
 import { Badge, Button, Card, CardHeader, Field, Input, Modal, Select, Table } from './ui';
 import { useConfirm, useToast } from './feedback';
 import { useAuth } from '../auth/AuthProvider';
-import { mfaFactors, sendPasswordReset, signOut, supabase } from '../auth/auth';
+import { sendPasswordReset, signOut, supabase } from '../auth/auth';
 import { useStore } from '../store/store';
 import type { UserRole } from '../data/types';
 import { formatDateTime } from '../lib/utils';
@@ -21,24 +21,10 @@ export function AccountSecurityCard() {
   const { realSession } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
-  const [factorCount, setFactorCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    void mfaFactors().then((f) => setFactorCount(f.length));
-  }, []);
-
-  const staff = realSession?.role === 'admin';
   return (
     <Card>
       <CardHeader title="Sign-in & security" action={<ShieldCheck className="h-5 w-5 text-ink-mute" />} />
       <div className="space-y-4 p-5 text-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="font-semibold text-heading">Two-step verification</div>
-            <div className="text-xs text-ink-mute">{staff ? 'Required for SSI GLOBAL staff.' : 'Authenticator app codes at sign-in.'}</div>
-          </div>
-          {factorCount === null ? null : factorCount > 0 ? <Badge tone="green" dot>On</Badge> : <Badge tone="amber" dot>Off</Badge>}
-        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
@@ -105,7 +91,7 @@ export function UsersAccessCard() {
     const staffRole = role === 'super_admin' || role === 'admin_staff';
     if (!staffRole && !r.partner_id) return toast.error('Assign a partner first', 'Partner roles need an organisation. Re-invite the user to a partner.');
     const { error } = await supabase!.from('profiles').update({ role, partner_id: staffRole ? null : r.partner_id }).eq('id', r.id);
-    if (error) toast.error('Role not changed', 'Only a Super Admin with verified two-step sign-in can change roles.');
+    if (error) toast.error('Role not changed', 'Only a Super Admin can change roles.');
     else toast.success('Role updated');
     await load();
   };
@@ -233,7 +219,7 @@ export function AuditLogCard() {
         action={
           <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-9 w-40 text-[13px]" aria-label="Filter events">
             <option value="">All events</option>
-            {['login', 'logout', 'idle_timeout', 'mfa_enrolled', 'mfa_verified', 'password_changed', 'document_download', 'insert', 'update', 'delete'].map((a) => (
+            {['login', 'logout', 'idle_timeout', 'password_changed', 'document_download', 'insert', 'update', 'delete'].map((a) => (
               <option key={a} value={a}>{a}</option>
             ))}
           </Select>
@@ -248,7 +234,7 @@ export function AuditLogCard() {
                 <div className="font-mono text-heading">{r.actor_id?.slice(0, 8) ?? 'system'}</div>
                 <div className="text-ink-mute">{r.actor_role ?? ''}</div>
               </td>
-              <td className="px-5 py-2.5"><Badge tone={r.action === 'delete' ? 'red' : r.action.startsWith('login') || r.action.startsWith('mfa') ? 'blue' : 'slate'}>{r.action}</Badge></td>
+              <td className="px-5 py-2.5"><Badge tone={r.action === 'delete' ? 'red' : r.action.startsWith('login') ? 'blue' : 'slate'}>{r.action}</Badge></td>
               <td className="px-5 py-2.5 text-xs text-ink-soft">{r.entity ?? '—'} {r.entity_id ? <span className="font-mono">{r.entity_id.slice(0, 8)}</span> : null}</td>
               <td className="px-5 py-2.5 text-xs text-ink-soft">
                 {r.changes?.status ? `status: ${r.changes.status[0]} → ${r.changes.status[1]}` : r.changes?.role ? `role: ${r.changes.role[0]} → ${r.changes.role[1]}` : r.changes?.fields?.join(', ') ?? ''}

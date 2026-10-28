@@ -8,7 +8,7 @@ import { ThemeMenu } from '../components/ThemeSwitcher';
 import { LoginShowcase } from '../components/LoginShowcase';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthError, authConfigured, googleEnabled, sendPasswordReset, signInWithGoogle, signInWithPassword } from '../auth/auth';
-import { MfaChallenge, MfaEnroll, SetNewPassword } from './LoginSteps';
+import { SetNewPassword } from './LoginSteps';
 import { cn } from '../lib/utils';
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
@@ -48,7 +48,7 @@ export default function Login() {
     try {
       const stage = await signInWithPassword(email, password, remember);
       setPassword('');
-      if (stage.kind === 'signed-in') toast.success(`Welcome back, ${stage.session.name.split(' ')[0]}`);
+      toast.success(`Welcome back, ${stage.session.name.split(' ')[0]}`);
       await auth.refresh();
       setLoading(null);
     } catch (err) {
@@ -80,11 +80,7 @@ export default function Login() {
   if (auth.status === 'signed-in' && auth.session) return <Navigate to={`/${auth.session.role}/dashboard`} replace />;
 
   const step =
-    auth.status === 'mfa-enroll' ? (
-      <MfaEnroll onDone={auth.refresh} onCancel={() => auth.signOut()} />
-    ) : auth.status === 'mfa-challenge' && auth.factorId ? (
-      <MfaChallenge factorId={auth.factorId} onDone={auth.refresh} onCancel={() => auth.signOut()} />
-    ) : auth.status === 'recovery' ? (
+    auth.status === 'recovery' ? (
       <SetNewPassword onDone={auth.refresh} />
     ) : null;
 

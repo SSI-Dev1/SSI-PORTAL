@@ -13,7 +13,7 @@ Browser (static React app, HTTPS only, strict CSP)
    │  publishable anon key + user JWT (never a secret)
    ▼
 Supabase (managed Postgres 15 + Auth + Storage, TLS, encrypted at rest)
-   ├─ Auth: bcrypt password hashes, TOTP MFA, PKCE OAuth, rate limits, audit logs
+   ├─ Auth: bcrypt password hashes, PKCE OAuth, rate limits, audit logs
    ├─ Postgres: Row-Level Security on every table → tenant + role isolation
    ├─ Storage: private bucket "student-documents", per-partner folder policies
    └─ Edge Function "admin-users": the only code holding the service-role key
@@ -32,7 +32,7 @@ Postgres RLS, triggers and storage policies, which were tested directly (section
 | Transport | HTTPS only (HSTS on your server; Supabase is TLS-only). |
 | Demo / offline login | **Removed.** No credentials or hashes in the bundle. Without a configured backend, sign-in is refused. |
 | Role resolution | Read from `profiles` on every load via a server-validated session (`auth.getUser()`); never from browser storage. |
-| MFA | TOTP (authenticator app). **Mandatory for SSI GLOBAL staff**: the app forces enrolment, and the database grants staff privileges only to sessions with `aal = aal2`. |
+| Two-step verification | **Not enabled in this base release** (removed by `0003_remove_mfa_requirement.sql`). Sign-in is email + password (or Google). Recommended before storing real data — see §7. |
 | Password policy | 12+ chars, upper/lower, digit, symbol, not containing the email name (client hint); enforce the same in Supabase (section 5). |
 | Password reset | Supabase single-use, time-limited email links (PKCE); response never reveals whether an email exists; all other sessions revoked after a change. |
 | Brute force / stuffing | Supabase Auth rate limits (429 surfaced as a friendly message); generic error messages; add CAPTCHA (section 5). |
@@ -46,7 +46,7 @@ Roles (`profiles.role`): `super_admin`, `admin_staff` (SSI GLOBAL), `partner_adm
 `partner_staff` (consultancy). A user's organisation is `profiles.partner_id`, set only
 by a Super Admin.
 
-| Data | Super Admin (aal2) | Admin Staff (aal2) | Partner Admin | Partner Staff |
+| Data | Super Admin | Admin Staff | Partner Admin | Partner Staff |
 | --- | --- | --- | --- | --- |
 | Students, applications, documents, assessments | all | all | own org only | own org only |
 | Application offer/visa stages, document verification, assessment review | ✔ | ✔ | — | — |
@@ -74,7 +74,7 @@ server-managed. No user can change their own role, organisation or status.
   Files are immutable; deleting a student deletes their files.
 * **Audit log:** append-only (`audit_log`, no update/delete for anyone); records actor,
   role, action, record id, organisation, and *names* of changed fields (plus status/role
-  transitions) — never field values, passwords or tokens. Covers sign-in/out, MFA,
+  transitions) — never field values, passwords or tokens. Covers sign-in/out,
   password change, idle timeout, document downloads, invites/suspensions, and every
   insert/update/delete on CRM tables. Failed sign-ins are in Supabase Auth logs.
 * **Privacy (DPDP Act 2023):** data minimisation (no analytics, no third-party fonts or
@@ -89,7 +89,7 @@ server-managed. No user can change their own role, organisation or status.
 1. SQL Editor: run `supabase/migrations/0002_security_hardening.sql` (0001 is already applied), then `supabase/seed.sql`. Never run `demo_data.sql` on production.
 2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are invite-only). Enable "Secure email change".
 3. Authentication → Policies (Passwords): minimum length 12; require lower, upper, digits, symbols. Enable leaked-password protection (Pro plan).
-4. Authentication → Multi-Factor: TOTP enabled (default).
+4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql` (removes the staff MFA requirement from 0002; deploy together with this frontend).
 5. Authentication → Sessions: JWT expiry 15–60 min; refresh-token rotation on (reuse interval ≤10 s); inactivity timeout/time-box (Pro plan).
 6. Authentication → Rate Limits: review sign-in/OTP limits. Attack Protection → enable CAPTCHA (Cloudflare Turnstile/hCaptcha) — requires a small app change to pass the token.
 7. Authentication → URL Configuration: Site URL and Redirect URLs = your exact production URL only.
@@ -98,7 +98,7 @@ server-managed. No user can change their own role, organisation or status.
 10. Edge Function: `supabase functions deploy admin-users --project-ref goiyhrlhczygeweykwqq` and `supabase secrets set ALLOWED_ORIGINS=https://crm.example.com SITE_URL=https://crm.example.com/`.
 11. First Super Admin: create the user in Authentication → Users, then
     `insert into public.profiles (id, role, full_name, email) select id, 'super_admin', 'Name', email from auth.users where email = '…';`
-    They will be forced to set up MFA at first sign-in. Invite everyone else from Settings → Users & access.
+    Invite everyone else from Settings → Users & access.
 12. Backups: Pro plan daily backups / PITR, or `deploy/backup.sh` (encrypted) — test restores.
 13. Run Advisors → Security after applying migrations; resolve findings.
 
@@ -113,7 +113,7 @@ protection). Use it for demos only; host production on your server.
 
 | Test | Result |
 | --- | --- |
-| `npm run test:security` — 67 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; staff without MFA (aal1) gets nothing; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
+| `npm run test:security` — 65 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
 | Secret scan (source + built bundle) for service keys, private keys, JWTs, demo passwords | Clean. Anon key is only in git-ignored `.env` / CI secret |
 | Removed client-side auth: demo account hashes deleted; role no longer stored in browser | Verified in `dist/` |
 | Browser test of production build under CSP: no violations, 0 third-party requests, wrong-password sign-in returns generic error, only `ssi-remember` flag in storage, protected routes redirect to sign-in | Pass |
@@ -124,8 +124,7 @@ protection). Use it for demos only; host production on your server.
 | `npm audit --omit=dev` | No high/critical in production deps (see risks) |
 | Edge function type-check (`deno check`) | Pass |
 
-**Not tested (requires your live project):** end-to-end sign-in with real users, MFA
-enrolment against your Supabase project, Google OAuth, the edge function deployed, and the
+**Not tested (requires your live project):** end-to-end sign-in with real users, Google OAuth, the edge function deployed, and the
 migration on your actual database. Run `supabase/tests/run.sh` logic again after any
 schema change, and ideally commission an external penetration test before storing real
 passports and financial documents.
@@ -152,5 +151,8 @@ passports and financial documents.
    configuration (some require a paid Supabase plan).
 8. **Git history** still contains the removed prototype account hashes (weak demo
    passwords). They never worked against Supabase; do not reuse those passwords.
-9. **Alerting:** Supabase/nginx logs are available but no automated alerting is wired
+9. **No second factor.** A stolen or phished password gives full access to that account's
+   data. Add two-step verification (email code, authenticator app or passkeys) before
+   storing real student documents, at least for Super Admin and Admin Staff.
+10. **Alerting:** Supabase/nginx logs are available but no automated alerting is wired
    up. Add log drains or a SIEM and alert on repeated failures, role changes, and bulk downloads.

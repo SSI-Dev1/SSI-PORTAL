@@ -403,7 +403,7 @@ export function Menu({
   items: MenuItem[];
   align?: 'left' | 'right';
   width?: string;
-  side?: 'top' | 'bottom';
+  side?: 'top' | 'bottom' | 'right';
 }) {
   const [open, setOpen] = useState(false);
   const container = usePortalContainer();

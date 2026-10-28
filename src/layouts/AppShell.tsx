@@ -1,72 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {
-  BarChart3,
-  Bell,
-  BookOpen,
-  Building2,
-  CheckCheck,
-  ChevronDown,
-  Eye,
-  ClipboardCheck,
-  FileStack,
-  FileText,
-  Landmark,
-  LayoutDashboard,
-  ListTodo,
-  LogOut,
-  Megaphone,
-  Menu as MenuIcon,
-  Search,
-  Settings,
-  Sparkles,
-  UserCircle2,
-  Users,
-  Wallet,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import { Logo } from '../components/brand';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Bell, Building2, CheckCheck, ChevronDown, Eye, LogOut, Menu as MenuIcon, Search, Settings, UserCircle2 } from 'lucide-react';
+import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from './Sidebar';
 import { Alert, Avatar, Badge, Button, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
 import { ThemeMenu } from '../components/ThemeSwitcher';
 import { useAuth } from '../auth/AuthProvider';
 import { cn, countryFlag, fullName, matches, timeAgo, updateStatus } from '../lib/utils';
-
-interface NavItem {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-}
-
-const adminNav: NavItem[] = [
-  { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: 'partners', label: 'Clients & Branches', icon: Building2 },
-  { to: 'students', label: 'Students', icon: Users },
-  { to: 'applications', label: 'Applications', icon: FileStack },
-  { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
-  { to: 'providers', label: 'Education Providers', icon: Landmark },
-  { to: 'courses', label: 'Courses', icon: BookOpen },
-  { to: 'documents', label: 'Documents', icon: FileText },
-  { to: 'finance', label: 'Finance', icon: Wallet },
-  { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
-  { to: 'updates', label: 'Important Updates', icon: Megaphone },
-  { to: 'reports', label: 'Reports', icon: BarChart3 },
-  { to: 'settings', label: 'Settings', icon: Settings },
-];
-
-const clientNav: NavItem[] = [
-  { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: 'students', label: 'My Students', icon: Users },
-  { to: 'applications', label: 'Applications', icon: FileStack },
-  { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
-  { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
-  { to: 'documents', label: 'Documents', icon: FileText },
-  { to: 'finance', label: 'Finance', icon: Wallet },
-  { to: 'updates', label: 'Important Updates', icon: Megaphone },
-  { to: 'profile', label: 'My Profile', icon: UserCircle2 },
-];
 
 export default function AppShell() {
   const { session, loading } = useStore();
@@ -77,9 +18,9 @@ export default function AppShell() {
   const confirm = useConfirm();
   const toast = useToast();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const closeDrawer = useCallback(() => setMobileOpen(false), []);
+  const sidebarPrefs = useSidebarPrefs();
   const isAdmin = session?.role === 'admin';
-  // Partner staff have no finance access (the database returns no invoices to them either).
-  const nav = isAdmin ? adminNav : clientNav.filter((n) => n.to !== 'finance' || session?.userRole === 'partner_admin');
   const base = scoped.base;
 
   useEffect(() => {
@@ -99,74 +40,23 @@ export default function AppShell() {
     }
   };
 
-  const sidebar = (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pb-6 pt-6">
-        <Logo />
-        <IconButton icon={X} label="Close menu" className="lg:hidden" onClick={() => setMobileOpen(false)} />
-      </div>
-      <div className="mx-4 mb-4 rounded-xl bg-gradient-to-br from-navy to-navy-600 px-3.5 py-3 text-white">
-        <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{isAdmin ? 'Super Admin Portal' : 'Partner Portal'}</div>
-        <div className="mt-0.5 truncate text-[13px] font-semibold">{isAdmin ? 'SSI GLOBAL · Head Office' : scoped.partner?.name}</div>
-      </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4" aria-label="Main">
-        {nav.map((item) => (
-          <NavLink
-            key={item.to}
-            to={`${base}/${item.to}`}
-            className={({ isActive }) =>
-              cn(
-                'group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14px] font-medium transition-all duration-200',
-                isActive ? 'bg-gradient-to-r from-brand-50 to-brand-50/30 text-rust' : 'text-ink-soft hover:bg-canvas hover:text-heading',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {isActive && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-rust" />}
-                <item.icon className={cn('h-[18px] w-[18px] transition', isActive ? 'text-rust' : 'text-ink-mute group-hover:text-heading')} strokeWidth={1.9} />
-                <span className="flex-1">{item.label}</span>
-                {item.to === 'updates' && !isAdmin && liveUpdates > 0 && (
-                  <span className="rounded-full bg-rust px-1.5 py-px text-[10.5px] font-bold text-white">{liveUpdates}</span>
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="border-t border-line p-3">
-        <Menu
-          align="left"
-          side="top"
-          width="w-56"
-          trigger={(open) => (
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-canvas">
-              <Avatar name={session?.name ?? 'User'} size={38} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-heading">{session?.name}</div>
-                <div className="truncate text-xs text-ink-mute">{session?.title}</div>
-              </div>
-              <ChevronDown className={cn('h-4 w-4 text-ink-mute transition', open && 'rotate-180')} />
-            </button>
-          )}
-          items={[
-            { label: isAdmin ? 'Settings' : 'My Profile', icon: isAdmin ? Settings : UserCircle2, onClick: () => navigate(`${base}/${isAdmin ? 'settings' : 'profile'}`) },
-            { label: 'Sign out', icon: LogOut, onClick: signOut, danger: true },
-          ]}
-        />
-      </div>
-    </div>
-  );
+  const sharedNav = {
+    sections: navFor(isAdmin, session?.userRole),
+    base,
+    isAdmin,
+    orgName: scoped.partner?.name,
+    badges: (!isAdmin && liveUpdates > 0 ? { updates: liveUpdates } : {}) as Record<string, number>,
+    user: { name: session?.name ?? 'User', title: session?.title ?? '' },
+    menuItems: [
+      { label: isAdmin ? 'Settings' : 'My Profile', icon: isAdmin ? Settings : UserCircle2, onClick: () => navigate(`${base}/${isAdmin ? 'settings' : 'profile'}`) },
+      { label: 'Sign out', icon: LogOut, onClick: signOut, danger: true },
+    ],
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[264px] border-r border-line bg-surface lg:block">{sidebar}</aside>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 animate-fade-in bg-navy/40 dark:bg-black/60" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[280px] animate-fade-up bg-surface shadow-2xl">{sidebar}</aside>
-        </div>
-      )}
+      <DesktopSidebar shared={sharedNav} prefs={sidebarPrefs} onOpenDrawer={() => setMobileOpen(true)} />
+      <MobileDrawer open={mobileOpen} onClose={closeDrawer} shared={sharedNav} />
       <Modal
         open={auth.idleSecondsLeft !== null}
         onClose={auth.stayActive}
@@ -188,7 +78,8 @@ export default function AppShell() {
           Any unsaved changes will be lost.
         </Alert>
       </Modal>
-      <div className="lg:pl-[264px]">
+      {/* Clears the fixed sidebar; hover-expansion floats over the page instead of pushing it. */}
+      <div className={cn('min-w-0 transition-[padding] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] md:pl-[76px]', sidebarPrefs.collapsed ? 'lg:pl-[76px]' : 'lg:pl-[264px]')}>
         {session?.previewOf && (
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-gradient-to-r from-rust to-[#D9671A] px-4 py-2 text-center text-[13px] font-medium text-white">
             <Eye className="h-4 w-4" />
@@ -230,7 +121,7 @@ function Topbar({ onMenu, onSignOut }: { onMenu: () => void; onSignOut: () => vo
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur-xl">
       <div className="mx-auto flex h-[68px] max-w-[1440px] items-center gap-3 px-4 sm:px-6 lg:px-8">
-        <IconButton icon={MenuIcon} label="Open menu" className="lg:hidden" onClick={onMenu} />
+        <IconButton icon={MenuIcon} label="Open menu" className="md:hidden" onClick={onMenu} />
         <div className="hidden items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-semibold text-heading md:flex">
           <Building2 className="h-4 w-4 text-ink-mute" />
           {isAdmin ? 'Head Office' : scoped.partner?.city ?? 'Workspace'}

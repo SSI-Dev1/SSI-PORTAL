@@ -63,6 +63,7 @@ export default {
       keyframes: {
         'fade-up': { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'none' } },
         'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'slide-in-left': { from: { transform: 'translateX(-100%)' }, to: { transform: 'none' } },
         'scale-in': { from: { opacity: '0', transform: 'scale(.96) translateY(6px)' }, to: { opacity: '1', transform: 'none' } },
         'slide-in': { from: { transform: 'translateX(100%)' }, to: { transform: 'none' } },
         float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-10px)' } },
@@ -73,6 +74,7 @@ export default {
       animation: {
         'fade-up': 'fade-up .45s cubic-bezier(.2,.8,.2,1) both',
         'fade-in': 'fade-in .25s ease both',
+        'slide-in-left': 'slide-in-left .3s cubic-bezier(.2,.8,.2,1) both',
         'scale-in': 'scale-in .25s cubic-bezier(.2,.8,.2,1) both',
         'slide-in': 'slide-in .32s cubic-bezier(.2,.8,.2,1) both',
         float: 'float 6s ease-in-out infinite',

@@ -29,7 +29,7 @@ const SLIDES = [
         Private <span className="bg-gradient-to-r from-rust to-brand bg-clip-text text-transparent">by design</span>
       </>
     ),
-    body: 'Two-step verification, encrypted records and strict partner-level privacy for every student file.',
+    body: 'Role-based access, encrypted records and strict partner-level privacy for every student file.',
   },
 ];
 
@@ -66,7 +66,7 @@ export function LoginShowcase() {
         </div>
         <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-heading">
           {[
-            [ShieldCheck, 'Two-step verification'],
+            [ShieldCheck, 'Role-based access control'],
             [Lock, 'Encrypted in transit & at rest'],
             [Users, 'Partner-level privacy'],
           ].map(([Icon, label]) => {

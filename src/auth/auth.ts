@@ -45,17 +45,14 @@ const STAFF: UserRole[] = ['super_admin', 'admin_staff'];
 export const isStaffRole = (r: UserRole) => STAFF.includes(r);
 
 /** Fire-and-forget security event (actor is taken from the verified JWT on the server). */
-export function logEvent(event: 'login' | 'logout' | 'idle_timeout' | 'mfa_enrolled' | 'mfa_verified' | 'password_changed') {
+export function logEvent(event: 'login' | 'logout' | 'idle_timeout' | 'password_changed') {
   supabase?.rpc('log_event', { event }).then(
     () => {},
     () => {},
   );
 }
 
-export type AuthStage =
-  | { kind: 'signed-in'; session: Session }
-  | { kind: 'mfa-enroll'; session: Session }
-  | { kind: 'mfa-challenge'; session: Session; factorId: string };
+export type AuthStage = { kind: 'signed-in'; session: Session };
 
 /** Reads the signed-in user's role from the server and decides what they must do next. */
 export async function resolveStage(user: User): Promise<AuthStage> {
@@ -77,15 +74,6 @@ export async function resolveStage(user: User): Promise<AuthStage> {
     ? { role: 'admin', userRole, userId: user.id, name, email, title: userRole === 'super_admin' ? 'Super Admin' : 'Admin Staff' }
     : { role: 'client', userRole, userId: user.id, partnerId: data.partner_id as string, name, email, title: partnerName ?? 'Partner' };
 
-  // MFA is mandatory for SSI GLOBAL staff (the database also refuses staff access without aal2).
-  if (isStaffRole(userRole)) {
-    const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.currentLevel !== 'aal2') {
-      const { data: factors } = await sb.auth.mfa.listFactors();
-      const totp = factors?.totp.find((f) => f.status === 'verified');
-      return totp ? { kind: 'mfa-challenge', session, factorId: totp.id } : { kind: 'mfa-enroll', session };
-    }
-  }
   return { kind: 'signed-in', session };
 }
 
@@ -104,7 +92,7 @@ export async function signInWithPassword(email: string, password: string, rememb
   }
   try {
     const stage = await resolveStage(data.user);
-    if (stage.kind === 'signed-in') logEvent('login');
+    logEvent('login');
     return stage;
   } catch (e) {
     await sb.auth.signOut({ scope: 'local' });
@@ -118,33 +106,6 @@ export async function signInWithGoogle() {
   if (!googleEnabled) throw new AuthError('Google sign-in is not enabled yet. Please use your email and password.');
   const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: siteUrl() } });
   if (error) throw new AuthError('Could not start Google sign-in. Please try again.');
-}
-
-// ------------------------------------------------------------------ MFA (TOTP)
-
-export async function startTotpEnrollment() {
-  const sb = requireClient();
-  // Remove abandoned, unverified factors so enrolment can be restarted.
-  const { data: list } = await sb.auth.mfa.listFactors();
-  for (const f of list?.all ?? []) if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id });
-  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: `SSI GLOBAL ${new Date().toISOString().slice(0, 10)}` });
-  if (error || !data) throw new AuthError('Could not start two-factor setup. Please try again.');
-  return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret };
-}
-
-export async function verifyTotp(factorId: string, code: string, enrolling = false) {
-  const sb = requireClient();
-  if (!/^\d{6}$/.test(code)) throw new AuthError('Enter the 6-digit code from your authenticator app.');
-  const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code });
-  if (error) throw new AuthError(error.status === 429 ? 'Too many attempts. Please wait and try again.' : 'That code is not valid. Please try again.');
-  logEvent(enrolling ? 'mfa_enrolled' : 'mfa_verified');
-  logEvent('login');
-}
-
-export async function mfaFactors() {
-  if (!supabase) return [];
-  const { data } = await supabase.auth.mfa.listFactors();
-  return (data?.totp ?? []).filter((f) => f.status === 'verified');
 }
 
 // ------------------------------------------------------------------ passwords

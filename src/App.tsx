@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import { lazy, Suspense } from 'react';
 // Component gallery for development only; the import is dropped from production builds.
 const DesignSystem = import.meta.env.DEV ? lazy(() => import('./pages/DesignSystem')) : null;
+const ShellDemo = import.meta.env.DEV ? lazy(() => import('./pages/ShellDemo')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -80,6 +81,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {ShellDemo && (
+              <Route
+                path="/ui/shell/*"
+                element={
+                  <Suspense fallback={null}>
+                    <ShellDemo />
+                  </Suspense>
+                }
+              />
+            )}
             {DesignSystem && (
               <Route
                 path="/ui"

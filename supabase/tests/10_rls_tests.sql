@@ -1,4 +1,4 @@
--- Security tests for the CRM schema: tenant isolation, MFA enforcement, role
+-- Security tests for the CRM schema: tenant isolation, role
 -- separation, server-managed fields, audit log and storage policies.
 -- Each test runs in its own transaction and rolls back. A failing test raises
 -- SQLSTATE TF001 and stops the run (psql ON_ERROR_STOP).
@@ -47,7 +47,7 @@ insert into storage.objects (bucket_id, name) values
 insert into public.tasks (title, due) values ('Staff task', now());
 
 -- --------------------------------------------------------------- helpers
--- Switch to an end user: role "authenticated" with the given user id and MFA level.
+-- Switch to an end user: role "authenticated" with the given user id.
 create or replace function pg_temp.act_as(uid text, aal text default 'aal1') returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims',
@@ -159,14 +159,9 @@ select pg_temp.check((select status = 'Pending' and notes = '' from public.asses
 select pg_temp.denied($$update public.assessments set status = 'Eligible' where id = 'as1'$$, 'partner cannot review an assessment');
 rollback;
 
-\echo '== MFA and roles'
-begin; select pg_temp.act_as(:staff, 'aal1');
-select pg_temp.check((select count(*) from public.students) = 0, 'staff without MFA (aal1) sees no student data');
-select pg_temp.check((select count(*) from public.profiles) = 1, 'staff without MFA can read only own profile');
-rollback;
-
-begin; select pg_temp.act_as(:staff, 'aal2');
-select pg_temp.check((select count(*) from public.students) = 2, 'staff with MFA sees all organisations');
+\echo '== roles'
+begin; select pg_temp.act_as(:staff);
+select pg_temp.check((select count(*) from public.students) = 2, 'admin staff sees all organisations (no second factor required)');
 update public.applications set status = 'Conditional Offer', status_note = 'Offer issued' where id = 'a1';
 select pg_temp.check((select status = 'Conditional Offer' and jsonb_array_length(timeline) = 2
   and timeline -> 1 ->> 'note' = 'Offer issued' and status_note is null from public.applications where id = 'a1'), 'staff status change appends server timeline entry');
@@ -175,7 +170,7 @@ select pg_temp.check((select count(*) from public.audit_log) = 0, 'admin staff c
 select pg_temp.check(pg_temp.affected($q$delete from public.partners where id = 'p2'$q$) = 0, 'admin staff cannot delete partners');
 rollback;
 
-begin; select pg_temp.act_as(:super, 'aal2');
+begin; select pg_temp.act_as(:super);
 update public.profiles set status = 'suspended' where id = '00000000-0000-0000-0000-0000000000c1';
 select pg_temp.check((select status from public.profiles where id = '00000000-0000-0000-0000-0000000000c1') = 'suspended', 'super admin can suspend accounts');
 select pg_temp.check((select count(*) from public.audit_log where entity = 'profiles' and changes ? 'status') >= 1, 'suspension is audit-logged');

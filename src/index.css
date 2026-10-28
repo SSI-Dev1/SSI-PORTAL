@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --canvas: 247 248 250;
+    --surface: 255 255 255;
+    --line: 237 238 242;
+    --ink: 15 23 42;
+    --ink-soft: 71 85 105;
+    --ink-mute: 148 163 184;
+    --heading: 6 36 47;
+    --rust: 185 74 18;
+    --rust-50: 251 240 234;
+    --rust-100: 246 220 205;
+    --brand-50: 255 248 236;
+    --brand-100: 254 239 211;
+    --brand-200: 253 219 160;
+    --brand-700: 154 60 16;
+    --navy-50: 238 243 245;
+    --navy-100: 215 226 230;
+    --navy-200: 175 196 204;
+    --emerald-50: 236 253 245; --emerald-100: 209 250 229; --emerald-200: 167 243 208; --emerald-700: 4 120 87;
+    --red-50: 254 242 242; --red-100: 254 226 226; --red-200: 254 202 202; --red-700: 185 28 28;
+    --amber-50: 255 251 235; --amber-100: 254 243 199; --amber-200: 253 230 138; --amber-700: 180 83 9;
+    --blue-50: 239 246 255; --blue-100: 219 234 254; --blue-200: 191 219 254; --blue-700: 29 78 216;
+    --violet-50: 245 243 255; --violet-100: 237 233 254; --violet-200: 221 214 254; --violet-700: 109 40 217;
+    --teal-50: 240 253 250; --teal-100: 204 251 241; --teal-200: 153 246 228; --teal-700: 15 118 110;
+    --slate-100: 241 245 249; --slate-200: 226 232 240; --slate-600: 71 85 105;
+    --rose-100: 255 228 230; --pink-50: 253 242 248; --sky-50: 240 249 255; --indigo-50: 238 242 255; --orange-50: 255 247 237;
+    --shadow-card: 0 1px 2px rgba(6, 36, 47, 0.04), 0 4px 16px -4px rgba(6, 36, 47, 0.06);
+    --shadow-lift: 0 2px 4px rgba(6, 36, 47, 0.04), 0 16px 40px -12px rgba(6, 36, 47, 0.18);
+  }
+
+  /* Dark: deep brand navy, elevated cards, softened orange. */
+  .dark {
+    color-scheme: dark;
+    --canvas: 6 23 30;
+    --surface: 12 36 46;
+    --line: 29 56 68;
+    --ink: 226 234 238;
+    --ink-soft: 166 184 192;
+    --ink-mute: 112 136 146;
+    --heading: 241 245 247;
+    --rust: 232 116 52;
+    --rust-50: 48 34 28;
+    --rust-100: 76 44 30;
+    --brand-50: 44 38 28;
+    --brand-100: 64 48 28;
+    --brand-200: 104 72 30;
+    --brand-700: 252 197 102;
+    --navy-50: 20 48 60;
+    --navy-100: 30 64 78;
+    --navy-200: 52 92 108;
+    --emerald-50: 13 58 59; --emerald-100: 14 74 68; --emerald-200: 14 89 76; --emerald-700: 110 231 183;
+    --red-50: 45 41 51; --red-100: 70 45 53; --red-200: 92 48 55; --red-700: 252 165 165;
+    --amber-50: 45 54 43; --amber-100: 71 67 39; --amber-200: 94 79 35; --amber-700: 252 211 77;
+    --blue-50: 19 50 76; --blue-100: 25 60 98; --blue-200: 29 70 117; --blue-700: 147 197 253;
+    --violet-50: 31 45 76; --violet-100: 45 51 98; --violet-200: 57 56 117; --violet-700: 196 181 253;
+    --teal-50: 14 58 65; --teal-100: 15 74 78; --teal-200: 15 88 89; --teal-700: 94 234 212;
+    --slate-100: 25 50 62; --slate-200: 36 64 77; --slate-600: 160 176 184;
+    --rose-100: 71 44 60; --pink-50: 44 42 63; --sky-50: 13 55 74; --indigo-50: 25 46 75; --orange-50: 46 48 44;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -10px rgba(0, 0, 0, 0.5);
+    --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.35), 0 22px 48px -14px rgba(0, 0, 0, 0.7);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas font-sans text-ink;
+  }
+  ::selection {
+    background: #fdd9a0;
+    color: #06242f;
+  }
+  .dark ::selection {
+    background: #b94a12;
+    color: #fff;
+  }
+  .dark * {
+    scrollbar-color: #1d3844 transparent;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d7dde3 transparent;
+  }
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}
+.recharts-surface:focus,
+.recharts-wrapper:focus,
+.recharts-sector:focus {
+  outline: none;
+}
+
+/* Applied for a moment while switching themes so colours cross-fade. */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    color 0.35s ease,
+    fill 0.35s ease,
+    stroke 0.35s ease,
+    box-shadow 0.35s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

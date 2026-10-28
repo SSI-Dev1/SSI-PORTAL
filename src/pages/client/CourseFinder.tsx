@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarDays, Clock, FilePlus2, GraduationCap, Heart, Languages, MapPin, RotateCcw, Search, Sparkles, Trophy } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Slider } from '../../components/ui';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { useToast } from '../../components/feedback';
 import { useScoped } from '../../store/store';
@@ -123,7 +123,7 @@ export default function CourseFinder() {
               </Select>
             </Field>
             <Field label={`Max tuition: ${f.maxTuition >= 60000 ? 'Any' : f.maxTuition.toLocaleString()}`}>
-              <input type="range" min={2000} max={60000} step={1000} value={f.maxTuition} onChange={(e) => set('maxTuition', Number(e.target.value))} className="w-full accent-[#B94A12]" aria-label="Maximum tuition" />
+              <Slider min={2000} max={60000} step={1000} value={f.maxTuition} onValueChange={(v) => set('maxTuition', v)} label="Maximum tuition" format={(v) => (v >= 60000 ? 'Any' : v.toLocaleString())} />
             </Field>
           </div>
         </Card>

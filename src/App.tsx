@@ -3,10 +3,14 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { ThemeProvider } from './theme/theme';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
+import { TooltipProvider } from './components/ds/controls';
 import { StoreProvider, useStore } from './store/store';
 import { FeedbackProvider } from './components/feedback';
 import AppShell from './layouts/AppShell';
 import Login from './pages/Login';
+import { lazy, Suspense } from 'react';
+// Component gallery for development only; the import is dropped from production builds.
+const DesignSystem = import.meta.env.DEV ? lazy(() => import('./pages/DesignSystem')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -68,6 +72,7 @@ const sharedRoutes = (
 export default function App() {
   return (
     <ThemeProvider>
+      <TooltipProvider delayDuration={300}>
       <FeedbackProvider>
         <AuthProvider>
           <StoreProvider>
@@ -75,6 +80,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {DesignSystem && (
+              <Route
+                path="/ui"
+                element={
+                  <Suspense fallback={null}>
+                    <DesignSystem />
+                  </Suspense>
+                }
+              />
+            )}
               <Route
                 path="/admin"
                 element={
@@ -116,6 +131,7 @@ export default function App() {
           </StoreProvider>
         </AuthProvider>
       </FeedbackProvider>
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

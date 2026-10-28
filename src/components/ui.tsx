@@ -5,14 +5,24 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type ChangeEvent,
   type InputHTMLAttributes,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Loader2, Search, X, type LucideIcon } from 'lucide-react';
+import { FocusScope } from '@radix-ui/react-focus-scope';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, Search, X, type LucideIcon } from 'lucide-react';
 import { avatarColor, cn, initials, type Tone } from '../lib/utils';
+import { Tooltip } from './ds/controls';
+import { DatePicker } from './ds/datetime';
+import { floatingPanel, PortalContainerContext, usePortalContainer } from './ds/layer';
+import { useConfirm } from './feedback';
+
+export { Select, FilterSelect, SelectMenu, type SelectOption } from './ds/select';
+export { DatePicker, DateRangePicker, TimePicker, Calendar } from './ds/datetime';
+export { Tooltip, Checkbox, Switch, Slider } from './ds/controls';
 
 /* ------------------------------------------------------------------ Button */
 
@@ -72,10 +82,10 @@ export function IconButton({
   ...rest
 }: { icon: LucideIcon; label: string; badge?: number } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
+    <Tooltip content={label}>
     <button
       type="button"
       aria-label={label}
-      title={label}
       className={cn(
         'relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-ink-soft transition hover:bg-canvas hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60',
         className,
@@ -89,6 +99,7 @@ export function IconButton({
         </span>
       )}
     </button>
+    </Tooltip>
   );
 }
 
@@ -177,13 +188,36 @@ export function Field({ label, error, hint, children, required, className }: { l
         </span>
       )}
       {children}
-      {error ? <span className="mt-1 block text-xs font-medium text-red-600">{error}</span> : hint ? <span className="mt-1 block text-xs text-ink-mute">{hint}</span> : null}
+      {error ? (
+        <span role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-red-600 animate-fade-in">
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="mt-1 block text-xs text-ink-mute">{hint}</span>
+      ) : null}
     </label>
   );
 }
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { icon?: LucideIcon; invalid?: boolean }>(
   function Input({ icon: Icon, invalid, className, ...rest }, ref) {
+    // Dates use the branded calendar instead of the browser's date popup.
+    if (rest.type === 'date') {
+      return (
+        <DatePicker
+          value={String(rest.value ?? '')}
+          onChange={(v) => rest.onChange?.({ target: { value: v } } as ChangeEvent<HTMLInputElement>)}
+          min={rest.min as string | undefined}
+          max={rest.max as string | undefined}
+          disabled={rest.disabled}
+          invalid={invalid}
+          aria-label={rest['aria-label']}
+          placeholder={rest.placeholder ?? 'Select date'}
+          className={className}
+        />
+      );
+    }
     return (
       <div className="relative">
         {Icon && <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute" />}
@@ -192,17 +226,6 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     );
   },
 );
-
-export function Select({ className, invalid, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }) {
-  return (
-    <div className="relative">
-      <select className={cn(fieldBase, 'h-11 appearance-none pr-9', invalid && 'border-red-400', className)} {...rest}>
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute" />
-    </div>
-  );
-}
 
 export function Textarea({ className, invalid, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
   return <textarea className={cn(fieldBase, 'min-h-[96px] py-2.5', invalid && 'border-red-400', className)} {...rest} />;
@@ -228,31 +251,20 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
   );
 }
 
-export function FilterSelect({ value, onChange, options, label }: { value: string; onChange: (v: string) => void; options: (string | { value: string; label: string })[]; label: string }) {
-  return (
-    <div className="relative">
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(fieldBase, 'h-10 appearance-none pr-9 font-medium', value && 'border-brand-300 bg-brand-50/50 text-rust')}
-      >
-        <option value="">{label}</option>
-        {options.map((o) => {
-          const opt = typeof o === 'string' ? { value: o, label: o } : o;
-          return (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          );
-        })}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute" />
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------- Modal */
+
+/** Asks before closing a dialog that has unsaved changes. */
+function useGuardedClose(onClose: () => void, dirty?: boolean) {
+  const confirm = useConfirm();
+  return async () => {
+    if (
+      dirty &&
+      !(await confirm({ title: 'Discard unsaved changes?', message: 'You have changes that haven’t been saved. If you close now they will be lost.', confirmLabel: 'Discard changes', danger: true }))
+    )
+      return;
+    onClose();
+  };
+}
 
 export function Modal({
   open,
@@ -262,6 +274,7 @@ export function Modal({
   children,
   footer,
   size = 'md',
+  dirty,
 }: {
   open: boolean;
   onClose: () => void;
@@ -270,65 +283,93 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** When true, closing (×, Esc, backdrop) asks for confirmation first. */
+  dirty?: boolean;
 }) {
   const titleId = useId();
-  useEscape(open, onClose);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const requestClose = useGuardedClose(onClose, dirty);
+  useEscape(open, requestClose, container);
   useLockScroll(open);
   if (!open) return null;
   const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }[size];
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <div className="absolute inset-0 animate-fade-in bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClick={onClose} />
-      <div className={cn('relative flex max-h-[92vh] w-full animate-scale-in flex-col overflow-hidden rounded-t-3xl bg-surface shadow-2xl sm:rounded-3xl', width)}>
-        <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
-          <div>
-            <h2 id={titleId} className="font-display text-lg font-semibold text-heading">
-              {title}
-            </h2>
-            {subtitle && <p className="mt-0.5 text-sm text-ink-soft">{subtitle}</p>}
+    <div ref={setContainer} className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-6">
+      <div className="absolute inset-0 animate-fade-in bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClick={requestClose} aria-hidden />
+      <PortalContainerContext.Provider value={container}>
+        <FocusScope trapped loop asChild>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className={cn('relative flex max-h-[92vh] w-full animate-scale-in flex-col overflow-hidden rounded-t-3xl bg-surface shadow-2xl outline-none sm:rounded-3xl', width)}
+            tabIndex={-1}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+              <div>
+                <h2 id={titleId} className="font-display text-lg font-semibold text-heading">
+                  {title}
+                </h2>
+                {subtitle && <p className="mt-0.5 text-sm text-ink-soft">{subtitle}</p>}
+              </div>
+              <IconButton icon={X} label="Close" onClick={requestClose} className="-mr-2 -mt-1" />
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+            {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line bg-canvas/60 px-6 py-4">{footer}</div>}
           </div>
-          <IconButton icon={X} label="Close" onClick={onClose} className="-mr-2 -mt-1" />
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line bg-canvas/60 px-6 py-4">{footer}</div>}
-      </div>
+        </FocusScope>
+      </PortalContainerContext.Provider>
     </div>,
     document.body,
   );
 }
 
 export function Drawer({ open, onClose, title, subtitle, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
-  useEscape(open, onClose);
+  const titleId = useId();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  useEscape(open, onClose, container);
   useLockScroll(open);
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-[55]" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 animate-fade-in bg-navy/30 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} />
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-xl animate-slide-in flex-col bg-surface shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
-          <div className="min-w-0">
-            <div className="font-display text-lg font-semibold text-heading">{title}</div>
-            {subtitle && <div className="mt-0.5 text-sm text-ink-soft">{subtitle}</div>}
-          </div>
-          <IconButton icon={X} label="Close" onClick={onClose} className="-mr-2" />
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line px-6 py-4">{footer}</div>}
-      </aside>
+    <div ref={setContainer} className="fixed inset-0 z-[55]">
+      <div className="absolute inset-0 animate-fade-in bg-navy/30 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} aria-hidden />
+      <PortalContainerContext.Provider value={container}>
+        <FocusScope trapped loop asChild>
+          <aside role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="absolute right-0 top-0 flex h-full w-full max-w-xl animate-slide-in flex-col bg-surface shadow-2xl outline-none">
+            <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+              <div className="min-w-0">
+                <div id={titleId} className="font-display text-lg font-semibold text-heading">{title}</div>
+                {subtitle && <div className="mt-0.5 text-sm text-ink-soft">{subtitle}</div>}
+              </div>
+              <IconButton icon={X} label="Close" onClick={onClose} className="-mr-2" />
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+            {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line px-6 py-4">{footer}</div>}
+          </aside>
+        </FocusScope>
+      </PortalContainerContext.Provider>
     </div>,
     document.body,
   );
 }
 
-function useEscape(active: boolean, fn: () => void) {
+function useEscape(active: boolean, fn: () => void, container?: HTMLElement | null) {
   const ref = useRef(fn);
   ref.current = fn;
   useEffect(() => {
     if (!active) return;
-    const h = (e: KeyboardEvent) => e.key === 'Escape' && ref.current();
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Only the top-most dialog closes, and not while a menu/picker inside it is open.
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      const top = dialogs[dialogs.length - 1];
+      if (container && top && !container.contains(top)) return;
+      if (container?.querySelector('[data-radix-popper-content-wrapper] [data-state="open"]')) return;
+      ref.current();
+    };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [active]);
+  }, [active, container]);
 }
 
 function useLockScroll(active: boolean) {
@@ -351,35 +392,49 @@ export interface MenuItem {
   danger?: boolean;
 }
 
-export function Menu({ trigger, items, align = 'right', width = 'w-48' }: { trigger: (open: boolean) => ReactNode; items: MenuItem[]; align?: 'left' | 'right'; width?: string }) {
+export function Menu({
+  trigger,
+  items,
+  align = 'right',
+  width = 'w-48',
+  side = 'bottom',
+}: {
+  trigger: (open: boolean) => ReactNode;
+  items: MenuItem[];
+  align?: 'left' | 'right';
+  width?: string;
+  side?: 'top' | 'bottom';
+}) {
   const [open, setOpen] = useState(false);
-  const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open);
+  const container = usePortalContainer();
   return (
-    <div className="relative" ref={ref}>
-      <div onClick={() => setOpen((o) => !o)}>{trigger(open)}</div>
-      {open && (
-        <div className={cn('absolute z-40 mt-2 animate-scale-in rounded-xl border border-line bg-surface p-1.5 shadow-lift', width, align === 'right' ? 'right-0' : 'left-0')} role="menu">
+    // Portalled and collision-aware, so it is never clipped by tables or the sidebar.
+    <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenu.Trigger asChild>{trigger(open)}</DropdownMenu.Trigger>
+      <DropdownMenu.Portal container={container}>
+        <DropdownMenu.Content
+          side={side}
+          align={align === 'right' ? 'end' : 'start'}
+          sideOffset={6}
+          collisionPadding={12}
+          className={cn(floatingPanel, width)}
+        >
           {items.map((it) => (
-            <button
+            <DropdownMenu.Item
               key={it.label}
-              role="menuitem"
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                it.onClick();
-              }}
+              onSelect={() => it.onClick()}
               className={cn(
-                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition',
-                it.danger ? 'text-red-600 hover:bg-red-50' : 'text-ink-soft hover:bg-canvas hover:text-ink',
+                'flex cursor-pointer select-none items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium outline-none transition-colors',
+                it.danger ? 'text-red-600 data-[highlighted]:bg-red-50' : 'text-ink-soft data-[highlighted]:bg-canvas data-[highlighted]:text-heading',
               )}
             >
               {it.icon && <it.icon className="h-4 w-4" />}
               {it.label}
-            </button>
+            </DropdownMenu.Item>
           ))}
-        </div>
-      )}
-    </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
@@ -402,7 +457,7 @@ export function useClickOutside<T extends HTMLElement>(fn: () => void, active = 
 
 export function Tabs<T extends string>({ tabs, value, onChange, className }: { tabs: { value: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className={cn('flex gap-1 overflow-x-auto border-b border-line', className)} role="tablist">
+    <div className={cn('flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line', className)} role="tablist">
       {tabs.map((t) => {
         const active = t.value === value;
         return (
@@ -512,7 +567,7 @@ export function Pagination({ page, pages, onPage, total, label }: { page: number
   return (
     <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3 text-xs text-ink-mute">
       <span>
-        {total} {label}
+        {total} {total === 1 ? label.replace(/s$/, '') : label}
       </span>
       {pages > 1 && (
         <div className="flex items-center gap-1">
@@ -537,4 +592,27 @@ export function usePaged<T>(rows: T[], perPage = 10, resetKey?: unknown) {
   const pages = Math.max(1, Math.ceil(rows.length / perPage));
   const safe = Math.min(page, pages);
   return { page: safe, pages, setPage, rows: rows.slice((safe - 1) * perPage, safe * perPage) };
+}
+
+/* ------------------------------------------------------------------- Alert */
+
+const alertStyles = {
+  error: { icon: AlertCircle, cls: 'border-red-200 bg-red-50 text-red-700' },
+  warning: { icon: AlertTriangle, cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+  success: { icon: CheckCircle2, cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  info: { icon: Info, cls: 'border-blue-200 bg-blue-50 text-blue-700' },
+} as const;
+
+/** Inline banner for form-level and page-level messages. */
+export function Alert({ tone = 'info', title, children, className }: { tone?: keyof typeof alertStyles; title?: ReactNode; children?: ReactNode; className?: string }) {
+  const { icon: Icon, cls } = alertStyles[tone];
+  return (
+    <div role={tone === 'error' || tone === 'warning' ? 'alert' : 'status'} className={cn('flex animate-fade-in items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm', cls, className)}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0">
+        {title && <div className="font-semibold">{title}</div>}
+        {children && <div className={cn(title && 'mt-0.5 opacity-90')}>{children}</div>}
+      </div>
+    </div>
+  );
 }

@@ -174,3 +174,18 @@
 .notch-top::after { top: 100%; left: 0; background: radial-gradient(circle at 100% 100%, transparent 23.5px, rgb(var(--surface)) 24px); }
 .notch-bottom::before { bottom: 0; left: 100%; background: radial-gradient(circle at 100% 0, transparent 23.5px, rgb(var(--surface)) 24px); }
 .notch-bottom::after { bottom: 100%; left: 0; background: radial-gradient(circle at 100% 0, transparent 23.5px, rgb(var(--surface)) 24px); }
+
+/* Number fields: no native spin buttons (values are typed; validation is inline). */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+/* Floating layers (menus, selects, pickers) animate from their anchor side. */
+[data-radix-popper-content-wrapper] {
+  z-index: 75 !important;
+}

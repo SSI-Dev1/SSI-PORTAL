@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 import { ArrowDownRight, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { Tooltip } from './ds/controls';
 
 export function useCountUp(target: number, duration = 900) {
   const [value, setValue] = useState(0);
@@ -65,10 +66,12 @@ export function StatCard({
           <Icon className="h-[18px] w-[18px]" />
         </span>
         {delta !== undefined && (
-          <span className={cn('inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold', delta >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500')} title="vs last month">
+          <Tooltip content="Compared with last month">
+          <span tabIndex={0} className={cn('inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-brand/60', delta >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500')}>
             {delta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
             {Math.abs(delta).toFixed(1)}%
           </span>
+          </Tooltip>
         )}
       </div>
       <div className="mt-3 text-[12.5px] font-medium leading-tight text-ink-soft">{label}</div>

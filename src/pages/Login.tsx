@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
 import { Logo } from '../components/brand';
-import { Button, Field, Input, Modal } from '../components/ui';
+import { Button, Checkbox, Field, Input, Modal } from '../components/ui';
 import { useToast } from '../components/feedback';
 import { ThemeMenu } from '../components/ThemeSwitcher';
 import { LoginShowcase } from '../components/LoginShowcase';
@@ -164,15 +164,7 @@ export default function Login() {
                       </div>
                     </Field>
                     <div className="flex items-center justify-between text-sm">
-                      <label className="flex cursor-pointer select-none items-center gap-2.5 text-ink-soft">
-                        <input
-                          type="checkbox"
-                          checked={remember}
-                          onChange={(e) => setRemember(e.target.checked)}
-                          className="h-4 w-4 rounded border-line accent-[#B94A12]"
-                        />
-                        Remember me
-                      </label>
+                      <Checkbox checked={remember} onCheckedChange={setRemember} label="Remember me" />
                       <button
                         type="button"
                         onClick={() => {

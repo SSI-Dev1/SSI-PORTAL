@@ -4,10 +4,9 @@ import { AccountSecurityCard, AuditLogCard, UsersAccessCard } from '../../compon
 import { supabase } from '../../auth/auth';
 import { useAuth } from '../../auth/AuthProvider';
 import { ThemeSegmented } from '../../components/ThemeSwitcher';
-import { Avatar, Button, Card, CardHeader, Field, Input, PageHeader } from '../../components/ui';
+import { Avatar, Button, Card, CardHeader, Field, Input, PageHeader, Switch } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
-import { cn } from '../../lib/utils';
 
 const BRAND = [
   ['Primary navy', '#06242F'],
@@ -123,16 +122,5 @@ export default function Settings() {
 }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn('relative h-6 w-11 shrink-0 rounded-full transition', checked ? 'bg-rust' : 'bg-slate-200')}
-    >
-      <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all', checked ? 'left-[22px]' : 'left-0.5')} />
-    </button>
-  );
+  return <Switch checked={checked} onCheckedChange={onChange} label={label} />;
 }

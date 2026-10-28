@@ -48,6 +48,18 @@ export default defineConfig(({ mode }) => {
     // Relative base keeps the build portable (own server or any sub-path).
     base: './',
     server: { host: 'localhost' }, // never expose the dev server on the network
+    optimizeDeps: {
+      include: [
+        '@radix-ui/react-dropdown-menu',
+        '@radix-ui/react-popover',
+        '@radix-ui/react-tooltip',
+        '@radix-ui/react-switch',
+        '@radix-ui/react-checkbox',
+        '@radix-ui/react-slider',
+        '@radix-ui/react-focus-scope',
+        'cmdk',
+      ],
+    },
     preview: { host: 'localhost' },
     build: {
       sourcemap: false,

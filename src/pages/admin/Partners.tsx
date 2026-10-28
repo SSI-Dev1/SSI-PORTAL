@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Eye, Globe, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table } from '../../components/ui';
@@ -102,7 +102,7 @@ export default function Partners() {
             return (
               <Card key={p.id} hover className="group relative animate-fade-up cursor-pointer overflow-hidden" >
                 <div style={{ animationDelay: `${i * 40}ms` }} onClick={() => navigate(`/admin/partners/${p.id}`)} className="p-5">
-                  <div className="absolute -right-10 -top-10 h-28 w-28 rotate-45 rounded-3xl bg-brand-50 transition group-hover:bg-brand-100" />
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rust to-brand opacity-0 transition group-hover:opacity-100" />
                   <div className="relative flex items-start gap-3.5">
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl font-display text-base font-semibold text-white shadow-card" style={{ background: avatarColor(p.name) }}>
                       {initials(p.name)}
@@ -193,6 +193,7 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
   const toast = useToast();
   const [d, setD] = useState<Draft>(empty);
   const [branches, setBranches] = useState('');
+  const initial = useRef('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -200,6 +201,7 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
     const base = partner ? { ...partner } : { ...empty };
     setD(base);
     setBranches(base.branches.join(', '));
+    initial.current = JSON.stringify([base, base.branches.join(', ')]);
     setErrors({});
   }, [open, partner]);
 
@@ -231,6 +233,7 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
 
   return (
     <Modal
+      dirty={JSON.stringify([d, branches]) !== initial.current}
       open={open}
       onClose={onClose}
       size="lg"

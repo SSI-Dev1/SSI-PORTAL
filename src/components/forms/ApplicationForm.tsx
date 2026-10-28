@@ -30,6 +30,7 @@ export function ApplicationForm({
   const [intake, setIntake] = useState('');
   const [status, setStatus] = useState<AppStatus>('Pending Assessment');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const initialUni = scoped.courses.find((x) => x.id === courseId)?.universityId ?? '';
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +78,7 @@ export function ApplicationForm({
 
   return (
     <Modal
+      dirty={(!!uni && uni !== initialUni) || (!!student && student !== (studentId ?? ''))}
       open={open}
       onClose={onClose}
       size="lg"

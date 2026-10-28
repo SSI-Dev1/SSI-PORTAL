@@ -19,6 +19,9 @@ interface AuthValue {
   refresh: () => Promise<void>;
   signOut: (reason?: 'logout' | 'idle_timeout') => Promise<void>;
   setPreview: (s: Session | null) => void;
+  /** Seconds left before automatic sign-out (only set during the final minute). */
+  idleSecondsLeft: number | null;
+  stayActive: () => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -29,6 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [preview, setPreview] = useState<Session | null>(null);
   const [factorId, setFactorId] = useState<string>();
   const [notice, setNotice] = useState('');
+  const [idleSecondsLeft, setIdleSecondsLeft] = useState<number | null>(null);
+  const resetIdle = useRef<() => void>(() => {});
   const recovering = useRef(new URLSearchParams(window.location.search).has('recovery'));
   const resolvedFor = useRef<string | null>(null);
 
@@ -88,15 +93,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status !== 'signed-in' && status !== 'mfa-enroll' && status !== 'mfa-challenge') return;
     let timer = 0;
+    let warn = 0;
+    let tick = 0;
+    const WARN_MS = 60_000;
     const reset = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void signOut('idle_timeout'), IDLE_TIMEOUT_MINUTES * 60_000);
+      window.clearTimeout(warn);
+      window.clearInterval(tick);
+      setIdleSecondsLeft(null);
+      const total = IDLE_TIMEOUT_MINUTES * 60_000;
+      timer = window.setTimeout(() => void signOut('idle_timeout'), total);
+      warn = window.setTimeout(() => {
+        const end = Date.now() + WARN_MS;
+        setIdleSecondsLeft(60);
+        tick = window.setInterval(() => setIdleSecondsLeft(Math.max(0, Math.round((end - Date.now()) / 1000))), 1000);
+      }, total - WARN_MS);
     };
+    resetIdle.current = reset;
     const events = ['pointerdown', 'keydown', 'scroll', 'visibilitychange'] as const;
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
     reset();
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(warn);
+      window.clearInterval(tick);
+      setIdleSecondsLeft(null);
       events.forEach((e) => window.removeEventListener(e, reset));
     };
   }, [status, signOut]);
@@ -119,8 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       signOut,
       setPreview,
+      idleSecondsLeft,
+      stayActive: () => resetIdle.current(),
     }),
-    [status, preview, realSession, factorId, notice, refresh, signOut],
+    [status, preview, realSession, factorId, notice, refresh, signOut, idleSecondsLeft],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

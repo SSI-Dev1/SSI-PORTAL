@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Circle, ListTodo, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Tabs } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Tabs, TimePicker } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { priorityTone } from '../../components/UpdateCard';
 import { useStore } from '../../store/store';
@@ -96,11 +96,21 @@ function TaskForm({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
   const [title, setTitle] = useState('');
   const [due, setDue] = useState(toDateInput(new Date(Date.now() + 86400000).toISOString()));
+  const [time, setTime] = useState('17:00');
+  const [errors, setErrors] = useState<{ title?: string; due?: string }>({});
   const [priority, setPriority] = useState<Priority>('Medium');
   const [assignee, setAssignee] = useState('Aisha Rahman');
   const save = () => {
-    if (title.trim().length < 3) return toast.error('Add a task title');
-    actions.addTask({ title: title.trim(), due: fromDateInput(due, 17), priority, assignee });
+    const e: { title?: string; due?: string } = {};
+    if (title.trim().length < 3) e.title = 'Enter a task of at least 3 characters.';
+    if (!due) e.due = 'Choose a due date.';
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    const at = fromDateInput(due, 0);
+    const [hh, mm] = (time || '17:00').split(':').map(Number);
+    const when = new Date(at);
+    when.setHours(hh, mm, 0, 0);
+    actions.addTask({ title: title.trim(), due: when.toISOString(), priority, assignee });
     toast.success('Reminder added', title);
     setTitle('');
     onClose();
@@ -108,8 +118,9 @@ function TaskForm({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Modal open={open} onClose={onClose} title="Add reminder" footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>Add reminder</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Task" required className="sm:col-span-2"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Follow up CAS for Monash" autoFocus /></Field>
-        <Field label="Due date"><Input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+        <Field label="Task" required error={errors.title} className="sm:col-span-2"><Input value={title} onChange={(e) => setTitle(e.target.value)} invalid={!!errors.title} placeholder="e.g. Follow up CAS for Monash" autoFocus /></Field>
+        <Field label="Due date" required error={errors.due}><Input type="date" value={due} onChange={(e) => setDue(e.target.value)} invalid={!!errors.due} /></Field>
+        <Field label="Due time" hint="Defaults to 5:00 PM"><TimePicker value={time} onChange={setTime} aria-label="Due time" /></Field>
         <Field label="Priority"><Select value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>{['High', 'Medium', 'Normal'].map((p) => <option key={p}>{p}</option>)}</Select></Field>
         <Field label="Assignee" className="sm:col-span-2"><Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>{['Aisha Rahman', 'Admissions Team', 'Visa Desk', 'Finance', 'Partner Success'].map((p) => <option key={p}>{p}</option>)}</Select></Field>
       </div>

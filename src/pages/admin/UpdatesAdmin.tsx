@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BellRing, Eye, EyeOff, Megaphone, MoreVertical, Pencil, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { Button, Card, EmptyState, Field, Input, Menu, Modal, PageHeader, SearchInput, Select, Tabs, Textarea } from '../../components/ui';
+import { Button, Card, DateRangePicker, EmptyState, Field, Input, Menu, Modal, PageHeader, SearchInput, Select, Tabs, Textarea } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { UpdateCard } from '../../components/UpdateCard';
 import { useStore } from '../../store/store';
@@ -155,10 +155,13 @@ export default function UpdatesAdmin() {
                   </Select>
                 </Field>
                 <Field label="Date range">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input type="date" aria-label="From" value={draftFilters.from} onChange={(e) => setDraftFilters({ ...draftFilters, from: e.target.value })} className="px-2.5 text-xs" />
-                    <Input type="date" aria-label="To" value={draftFilters.to} onChange={(e) => setDraftFilters({ ...draftFilters, to: e.target.value })} className="px-2.5 text-xs" />
-                  </div>
+                  <DateRangePicker
+                    from={draftFilters.from}
+                    to={draftFilters.to}
+                    onChange={(r) => setDraftFilters({ ...draftFilters, ...r })}
+                    placeholder="Any publish date"
+                    className="text-[13px]"
+                  />
                 </Field>
                 <Button className="w-full" onClick={() => { setFilters(draftFilters); toast.info('Filters applied'); }}>
                   Apply Filters
@@ -238,6 +241,7 @@ function UpdateForm({ open, onClose, update }: { open: boolean; onClose: () => v
 
   return (
     <Modal
+      dirty={title !== (update?.title ?? '') || body !== (update?.body ?? '')}
       open={open}
       onClose={onClose}
       size="lg"
@@ -281,7 +285,7 @@ function UpdateForm({ open, onClose, update }: { open: boolean; onClose: () => v
           <Input type="date" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} />
         </Field>
         <Field label="Expiry date" required error={errors.expiresAt}>
-          <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} invalid={!!errors.expiresAt} />
+          <Input type="date" value={expiresAt} min={publishAt || undefined} onChange={(e) => setExpiresAt(e.target.value)} invalid={!!errors.expiresAt} />
         </Field>
         <Field label="Audience" error={errors.audience} className="sm:col-span-2">
           <div className="flex flex-wrap gap-2">

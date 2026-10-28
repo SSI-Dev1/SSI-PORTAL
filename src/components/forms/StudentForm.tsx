@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Field, Input, Modal, Select } from '../ui';
 import { useToast } from '../feedback';
 import { useScoped, useStore } from '../../store/store';
@@ -39,10 +39,13 @@ export function StudentForm({ open, onClose, student, onSaved }: { open: boolean
   const [d, setD] = useState<Draft>(empty(scoped.partnerId ?? ''));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
+  const initial = useRef('');
 
   useEffect(() => {
     if (!open) return;
-    setD(student ? { ...student } : empty(scoped.partnerId ?? ''));
+    const init = student ? { ...student } : empty(scoped.partnerId ?? '');
+    initial.current = JSON.stringify(init);
+    setD(init);
     setErrors({});
     setStep(0);
   }, [open, student, scoped.partnerId]);
@@ -80,6 +83,7 @@ export function StudentForm({ open, onClose, student, onSaved }: { open: boolean
 
   return (
     <Modal
+      dirty={JSON.stringify(d) !== initial.current}
       open={open}
       onClose={onClose}
       size="lg"
@@ -137,7 +141,7 @@ export function StudentForm({ open, onClose, student, onSaved }: { open: boolean
             <Input value={d.phone} onChange={(e) => set('phone', e.target.value)} invalid={!!errors.phone} placeholder="+91 98xxx xxxxx" />
           </Field>
           <Field label="Date of birth" required error={errors.dob}>
-            <Input type="date" value={d.dob} onChange={(e) => set('dob', e.target.value)} invalid={!!errors.dob} />
+            <Input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => set('dob', e.target.value)} invalid={!!errors.dob} />
           </Field>
           <Field label="Gender">
             <Select value={d.gender} onChange={(e) => set('gender', e.target.value as Draft['gender'])}>

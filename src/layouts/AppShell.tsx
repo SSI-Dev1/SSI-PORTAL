@@ -27,7 +27,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Logo } from '../components/brand';
-import { Avatar, Badge, IconButton, Menu, useClickOutside } from '../components/ui';
+import { Alert, Avatar, Badge, Button, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
 import { ThemeMenu } from '../components/ThemeSwitcher';
@@ -137,6 +137,7 @@ export default function AppShell() {
       <div className="border-t border-line p-3">
         <Menu
           align="left"
+          side="top"
           width="w-56"
           trigger={(open) => (
             <button type="button" className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-canvas">
@@ -166,6 +167,27 @@ export default function AppShell() {
           <aside className="absolute inset-y-0 left-0 w-[280px] animate-fade-up bg-surface shadow-2xl">{sidebar}</aside>
         </div>
       )}
+      <Modal
+        open={auth.idleSecondsLeft !== null}
+        onClose={auth.stayActive}
+        size="sm"
+        title="Are you still there?"
+        subtitle="For your security, inactive sessions end automatically."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => void auth.signOut()}>
+              Sign out now
+            </Button>
+            <Button onClick={auth.stayActive} autoFocus>
+              Stay signed in
+            </Button>
+          </>
+        }
+      >
+        <Alert tone="warning" title={`Signing you out in ${auth.idleSecondsLeft ?? 0} seconds`}>
+          Any unsaved changes will be lost.
+        </Alert>
+      </Modal>
       <div className="lg:pl-[264px]">
         {session?.previewOf && (
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-gradient-to-r from-rust to-[#D9671A] px-4 py-2 text-center text-[13px] font-medium text-white">

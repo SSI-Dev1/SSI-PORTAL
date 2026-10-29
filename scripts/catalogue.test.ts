@@ -57,34 +57,51 @@ test('flat layout: one row per course with intakes', () => {
   assert.ok(p.invalid.some((x) => /without a tuition/.test(x.reason)));
 });
 
-test('course finder export: program name, open intakes + year, score columns', () => {
+test('course finder export: every column kept, originals preserved', () => {
+  const header = ['Serial No.', 'University', 'University Ranking', 'Program Name', 'Website URL', 'Campus', 'Country', 'Study Level', 'Duration', 'Open Intakes', 'Intake Year',
+    'Entry Requirements', 'IELTS Score', 'IELTS No Band Less Than', 'TOEFL Score', 'PTE Score', 'DET Score', 'Application Deadline', 'Application Fee', 'Yearly Tuition Fee',
+    'Scholarship Available', 'Average Scholarship', 'Scholarship Detail', 'Backlog Range', 'Remarks', 'Application Mode', 'English Proficiency Exam Waiver', 'Brand New Column'];
   const bytes = xlsx({
     Sheet1: [
-      ['Serial No.', 'University', 'University Ranking', 'Program Name', 'Website URL', 'Campus', 'Country', 'Study Level', 'Duration', 'Open Intakes', 'Intake Year',
-        'Entry Requirements', 'IELTS Score', 'IELTS No Band Less Than', 'PTE Score', 'Application Deadline', 'Application Fee', 'Yearly Tuition Fee',
-        'Scholarship Available', 'Average Scholarship', 'Remarks', 'English Proficiency Exam Waiver'],
-      [1, 'Sample University', 'QS Ranking - 381', 'MSc Data', 'https://example.ac.uk/msc', 'Norwich', 'United Kingdom', 'Postgraduate', '12 Months', 'Jan,Sep', 2027,
-        '2.2 or equivalent', 6, 5.5, 60, 'Sep: 1 Aug 2027, Jan: ASAP', 'No Application Fee', 'GBP 25700.00 (Approx INR 3260999)', 'Yes', 'GBP 5000.00 (Approx INR 634436)',
-        'Line one_x000D_\n line two', 'MOI accepted'],
+      header,
+      [1, 'Sample University', 'QS Ranking - 381\nUS News - 36', 'MSc Data', 'https://example.ac.uk/msc/2025-26/jan#', 'Norwich', 'United Kingdom', 'Postgraduate', '12 Months', 'Jan,Sep', 2027,
+        '2.2 or equivalent', 6, 5.5, 79, 60, '', 'Sep: 1 Aug 2027, Jan: ASAP', 'No Application Fee', 'GBP 25700.00 (Approx INR 3260999)', 'Yes', 'GBP 5000.00 (Approx INR 634436)',
+        'https://example.ac.uk/scholarships', '0 - 30', 'Line one_x000D_\n line two', 'Online', 'MOI accepted', 'extra value'],
+      [2, 'Sample University', '', 'MSc Data with Placement', 'https://example.ac.uk/msc/2025-26/jan#', 'Norwich', 'United Kingdom', 'Postgraduate', '24 Months', 'Sep', 2027,
+        '', 6, 5.5, 79, 60, 105, 'ASAP', '', 'GBP 25700.00', 'No', '', 'not a link', '', '', '', '', ''],
       [],
       ['*Note: The Tuition Fee is subject to change.'],
     ],
   });
   const r = parseCatalogue(readWorkbook(bytes), 'course finder test');
   assert.equal(r.layout, 'flat');
-  assert.deepEqual(r.invalid, [], 'footnote rows are ignored');
-  const [c] = r.payload.courses;
+  assert.deepEqual(r.unmapped, ['Brand New Column'], 'unknown columns are reported');
+  assert.equal(r.payload.rows_read, 2);
+  assert.deepEqual(r.payload.notes, ['Note: The Tuition Fee is subject to change.']);
+  assert.equal(r.payload.courses.length, 2, 'courses sharing a website URL stay separate');
+  const [c, p] = r.payload.courses;
   assert.equal(c.tuition, 25700, 'INR approximation is not part of the fee');
   assert.equal(c.currency, 'GBP');
   assert.equal(c.ielts_min, 6);
+  assert.deepEqual(c.details, {
+    campus: 'Norwich', website_url: 'https://example.ac.uk/msc/2025-26/jan#', scholarship_url: 'https://example.ac.uk/scholarships', open_intakes: 'Jan,Sep',
+    intake_year_text: '2027', application_deadline_text: 'Sep: 1 Aug 2027, Jan: ASAP', application_mode: 'Online', application_fee: 'No Application Fee',
+    tuition_text: 'GBP 25700.00 (Approx INR 3260999)', scholarship_available: 'Yes', average_scholarship: 'GBP 5000.00 (Approx INR 634436)',
+    backlog_range: '0 - 30', remarks: 'Line one\n line two', english_waiver: 'MOI accepted', ielts_band: 5.5, toefl_score: 79, pte_score: 60, source_serial: '1',
+  });
+  assert.equal(c.details?.det_score, undefined, 'blank DET stays blank');
+  assert.equal(c.source_data?.['Brand New Column'], 'extra value');
+  assert.equal(c.source_data?.['DET Score'], null);
+  assert.equal(Object.keys(c.source_data ?? {}).length, header.length, 'source record has every column');
+  assert.deepEqual(c.source_notes, ['Note: The Tuition Fee is subject to change.']);
   assert.deepEqual(c.intakes.map((i) => `${i.month}/${i.year}`), ['1/2027', '9/2027']);
   assert.equal(c.intakes[0].notes, 'Application deadline: ASAP');
+  assert.equal(c.intakes[0].application_deadline, null, 'ASAP is never turned into a date');
   assert.equal(c.intakes[1].application_deadline, '2027-08-01');
-  assert.match(c.english_requirement ?? '', /IELTS 6 \(no band less than 5\.5\) · PTE 60\nWaiver: MOI accepted/);
-  assert.match(c.scholarship ?? '', /average GBP 5,000 \(Approx INR 634436\)/);
-  assert.match(c.course_requirement ?? '', /Tuition: GBP 25,700 per year \(Approx INR 3260999\)/);
-  assert.match(c.course_requirement ?? '', /^Line one\nline two\n.*Course page: https:\/\/example\.ac\.uk\/msc$/s);
-  assert.equal(r.payload.universities[0].notes, 'QS Ranking - 381\n\nNote: The Tuition Fee is subject to change.');
+  assert.equal(r.payload.universities[0].ranking_details, 'QS Ranking - 381\nUS News - 36');
+  assert.equal(p.scholarship, 'No');
+  assert.equal(p.details?.scholarship_url, undefined);
+  assert.ok(r.invalid.some((i) => /Scholarship detail "not a link"/.test(i.reason)));
 });
 
 test('toolkit layout: fees by level, dates per course, MOI list', () => {

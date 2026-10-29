@@ -15,11 +15,12 @@ import {
   Plus,
   Save,
   ShieldCheck,
+  SquareArrowOutUpRight as ExternalLinkIcon,
   Trash2,
   Upload,
   Wallet,
 } from 'lucide-react';
-import { Alert, Badge, Button, Drawer, Field, Input, Modal, Select, Switch, Tabs } from './ui';
+import { Alert, Badge, Button, Field, Input, Modal, Select, Switch, Tabs } from './ui';
 import { useConfirm, useToast } from './feedback';
 import { useStore, type ImportSummary } from '../store/store';
 import type { Course, CourseIntake, IntakeStatus, University } from '../data/types';
@@ -40,32 +41,80 @@ export function useCourseIntakes(courseId?: string, includeInactive = false) {
   );
 }
 
-function Detail({ label, children }: { label: string; children?: React.ReactNode }) {
+function Detail({ label, children, wide }: { label: string; children?: React.ReactNode; wide?: boolean }) {
   if (children == null || children === '' || children === false) return null;
   return (
-    <div>
+    <div className={cn(wide && 'sm:col-span-2')}>
       <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">{label}</dt>
-      <dd className="mt-1 whitespace-pre-line text-sm text-heading">{children}</dd>
+      <dd className="mt-1 whitespace-pre-line break-words text-sm text-heading">{children}</dd>
     </div>
   );
 }
 
-/** Read-only course details; `actions` adds Edit / Apply buttons. */
+/** Like Detail, but always shown: a blank source value reads "Not provided" instead of disappearing. */
+function Fact({ label, value, wide }: { label: string; value?: React.ReactNode; wide?: boolean }) {
+  const blank = value == null || value === '';
+  return (
+    <div className={cn(wide && 'sm:col-span-2')}>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">{label}</dt>
+      <dd className={cn('mt-1 whitespace-pre-line break-words text-sm', blank ? 'italic text-ink-mute' : 'text-heading')}>{blank ? 'Not provided' : value}</dd>
+    </div>
+  );
+}
+
+function Section({ title, icon: Icon, children }: { title: string; icon: typeof Wallet; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-line p-4 sm:p-5">
+      <h4 className="mb-4 flex items-center gap-2 font-display text-sm font-semibold text-heading"><Icon className="h-4 w-4 text-rust" />{title}</h4>
+      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{children}</dl>
+    </section>
+  );
+}
+
+/** Opens an external page in a new tab without giving it access to this window. */
+export function ExternalLink({ href, children, variant = 'button' }: { href?: string | null; children: React.ReactNode; variant?: 'button' | 'text' }) {
+  if (!href || !/^https?:\/\//i.test(href)) return null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={variant === 'button'
+        ? 'inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-semibold text-heading shadow-sm transition hover:border-brand-300 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 dark:hover:text-brand-300'
+        : 'inline-flex items-center gap-1 break-all font-medium text-brand-600 underline-offset-2 hover:underline dark:text-brand-300'}
+    >
+      {children}
+      <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+    </a>
+  );
+}
+
+const score = (v?: number | null) => (v == null ? null : String(v));
+type DetailTab = 'overview' | 'intakes' | 'requirements' | 'fees' | 'source';
+
+/** Read-only course details (every imported field); `actions` adds Edit / Apply buttons. */
 export function CourseDetails({ course, onClose, actions, showInactive }: { course?: Course; onClose: () => void; actions?: React.ReactNode; showInactive?: boolean }) {
   const { db } = useStore();
   const uni = db.universities.find((u) => u.id === course?.universityId);
   const intakes = useCourseIntakes(course?.id, showInactive);
+  const [tab, setTab] = useState<DetailTab>('overview');
+  useEffect(() => setTab('overview'), [course?.id]);
+  const sourceEntries = Object.entries(course?.sourceData ?? {});
   return (
-    <Drawer open={!!course} onClose={onClose} title={course?.name ?? ''} subtitle={uni ? `${uni.name}${uni.city ? ` · ${uni.city}` : ''}` : undefined} footer={actions}>
+    <Modal open={!!course} onClose={onClose} size="wide" title={course?.name ?? ''} subtitle={uni ? `${uni.name}${course?.campus || uni.city ? ` · ${course?.campus || uni.city}` : ''}${uni.country ? ` · ${uni.country}` : ''}` : undefined} footer={actions}>
       {course && (
-        <div className="space-y-6 text-sm">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-5 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge tone={course.level === 'Postgraduate' ? 'navy' : 'orange'}>{course.level}</Badge>
             {course.field && <Badge tone="slate">{course.field}</Badge>}
             {course.active === false && <Badge tone="red">Inactive</Badge>}
+            <span className="ml-auto flex flex-wrap gap-2">
+              <ExternalLink href={course.websiteUrl}>View Official Course Website</ExternalLink>
+              <ExternalLink href={course.scholarshipUrl}>View Scholarship Details</ExternalLink>
+            </span>
           </div>
 
-          <section className="grid grid-cols-2 gap-3 rounded-2xl bg-canvas p-4 ring-1 ring-line">
+          <section className="grid grid-cols-2 gap-3 rounded-2xl bg-canvas p-4 ring-1 ring-line sm:grid-cols-4">
             <div>
               <div className="flex items-center gap-1.5 text-xs text-ink-mute"><Wallet className="h-3.5 w-3.5" /> Tuition / year</div>
               <div className="font-display text-lg font-semibold text-heading">{money(course.tuition, course.currency)}</div>
@@ -74,71 +123,166 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
             <div>
               <div className="flex items-center gap-1.5 text-xs text-ink-mute"><Clock className="h-3.5 w-3.5" /> Duration</div>
               <div className="font-semibold text-heading">{course.duration || '—'}</div>
-              {course.ieltsMin ? <div className="mt-1 flex items-center gap-1 text-xs text-ink-soft"><Languages className="h-3.5 w-3.5" /> IELTS {course.ieltsMin}+</div> : null}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-ink-mute"><Languages className="h-3.5 w-3.5" /> IELTS</div>
+              <div className="font-semibold text-heading">{course.ieltsMin ? `${course.ieltsMin}${course.ieltsBand != null ? ` (min ${course.ieltsBand})` : ''}` : '—'}</div>
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-ink-mute"><CalendarDays className="h-3.5 w-3.5" /> Intakes</div>
+              <div className="font-semibold text-heading">{intakes.length ? intakes.map(intakeLabel).join(', ') : '—'}</div>
             </div>
           </section>
 
-          <section>
-            <h4 className="mb-2 font-display text-sm font-semibold text-heading">Intakes</h4>
-            {intakes.length === 0 ? (
-              <p className="text-ink-mute">No intakes published.</p>
-            ) : (
-              <ul className="space-y-2">
-                {intakes.map((i) => (
-                  <li key={i.id} className={cn('rounded-xl border border-line p-3', !i.active && 'opacity-60')}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-2 font-semibold text-heading"><CalendarDays className="h-4 w-4 text-rust" />{intakeLabel(i)}</span>
-                      <span className="flex gap-1">
-                        {!i.active && <Badge tone="slate">Disabled</Badge>}
-                        <Badge tone={intakeTone[i.status]} dot>{i.status}</Badge>
-                      </span>
-                    </div>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-soft">
-                      {i.inductionDate && <div>Induction: <b className="text-heading">{formatDate(i.inductionDate)}</b></div>}
-                      {i.startDate && <div>Starts: <b className="text-heading">{formatDate(i.startDate)}</b></div>}
-                      {i.endDate && <div>Ends: <b className="text-heading">{formatDate(i.endDate)}</b></div>}
-                      {i.applicationDeadline && <div>CAS / application deadline: <b className="text-heading">{formatDate(i.applicationDeadline)}</b></div>}
-                      {i.enrolmentDeadline && <div>Last enrolment: <b className="text-heading">{formatDate(i.enrolmentDeadline)}</b></div>}
-                    </dl>
-                    {i.notes && <p className="mt-1.5 text-xs text-ink-mute">{i.notes}</p>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <Tabs<DetailTab>
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'overview', label: 'Overview' },
+              { value: 'intakes', label: 'Intakes & deadlines', count: intakes.length },
+              { value: 'requirements', label: 'Requirements' },
+              { value: 'fees', label: 'Fees & scholarships' },
+              { value: 'source', label: 'Source' },
+            ]}
+          />
 
-          <dl className="grid gap-4">
-            <Detail label="Scholarship">{course.scholarship}</Detail>
-            <Detail label="Early bird">{course.earlyBird}</Detail>
-            <Detail label="Accommodation">{course.accommodation}</Detail>
-            <Detail label="Academic requirement">{course.academicRequirement}</Detail>
-            <Detail label="English requirement">{course.englishRequirement}</Detail>
-            <Detail label="Course-specific requirement">{course.courseRequirement}</Detail>
-            <Detail label="Documents required">{course.documentsRequired}</Detail>
-            <Detail label="Compliance">{course.complianceRequirement}</Detail>
-            <Detail label="Faculty">{course.faculty}</Detail>
-          </dl>
-
-          {uni && (uni.casDeposit || uni.paymentPlan || uni.notes || (uni.moiAccepted?.length ?? 0) > 0) && (
-            <section className="rounded-2xl border border-line p-4">
-              <h4 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-heading"><GraduationCap className="h-4 w-4 text-rust" />{uni.name}</h4>
-              <dl className="grid gap-3">
-                <Detail label="Location">{[uni.city, uni.country].filter(Boolean).join(', ')}</Detail>
-                <Detail label="CAS deposit">{uni.casDeposit}</Detail>
-                <Detail label="Payment plan">{uni.paymentPlan}</Detail>
-                <Detail label="Rankings & notes">{uni.notes}</Detail>
-                {(uni.moiAccepted?.length ?? 0) > 0 && (
-                  <Detail label={`MOI accepted from (${uni.moiAccepted!.length})`}>
-                    <span className="text-xs text-ink-soft">{uni.moiAccepted!.join(' · ')}</span>
-                  </Detail>
-                )}
-              </dl>
-            </section>
+          {tab === 'overview' && (
+            <div className="space-y-4">
+              <Section title="Overview" icon={GraduationCap}>
+                <Fact label="Program name" value={course.name} />
+                <Fact label="University" value={uni?.name} />
+                <Fact label="Campus" value={course.campus ?? uni?.city} />
+                <Fact label="Country" value={uni?.country} />
+                <Fact label="Study level" value={course.level} />
+                <Fact label="Duration" value={course.duration} />
+                <Fact label="University ranking" value={uni?.rankingDetails} wide />
+                <Fact label="Course website" value={course.websiteUrl && <ExternalLink href={course.websiteUrl} variant="text">{course.websiteUrl}</ExternalLink>} wide />
+                <Detail label="Category">{course.field}</Detail>
+                <Detail label="Faculty">{course.faculty}</Detail>
+              </Section>
+              {uni && (uni.casDeposit || uni.paymentPlan || uni.notes || (uni.moiAccepted?.length ?? 0) > 0) && (
+                <Section title={uni.name} icon={MapPin}>
+                  <Detail label="CAS deposit">{uni.casDeposit}</Detail>
+                  <Detail label="Payment plan">{uni.paymentPlan}</Detail>
+                  <Detail label="Notes" wide>{uni.notes}</Detail>
+                  {(uni.moiAccepted?.length ?? 0) > 0 && (
+                    <Detail label={`MOI accepted from (${uni.moiAccepted!.length})`} wide>
+                      <span className="text-xs text-ink-soft">{uni.moiAccepted!.join(' · ')}</span>
+                    </Detail>
+                  )}
+                </Section>
+              )}
+            </div>
           )}
-          {course.source && <p className="text-[11px] text-ink-mute">Source: {course.source}{course.updatedAt ? ` · updated ${formatDate(course.updatedAt)}` : ''}</p>}
+
+          {tab === 'intakes' && (
+            <div className="space-y-4">
+              <Section title="Intakes and deadlines" icon={CalendarDays}>
+                <Fact label="Open intakes (as supplied)" value={course.openIntakes} />
+                <Fact label="Intake year (as supplied)" value={course.intakeYearText} />
+                <Fact label="Application deadline" value={course.applicationDeadlineText} />
+                <Fact label="Application mode" value={course.applicationMode} />
+              </Section>
+              {intakes.length === 0 ? (
+                <p className="text-ink-mute">No intakes published.</p>
+              ) : (
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {intakes.map((i) => (
+                    <li key={i.id} className={cn('rounded-xl border border-line p-3', !i.active && 'opacity-60')}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 font-semibold text-heading"><CalendarDays className="h-4 w-4 text-rust" />{intakeLabel(i)}</span>
+                        <span className="flex gap-1">
+                          {!i.active && <Badge tone="slate">Disabled</Badge>}
+                          <Badge tone={intakeTone[i.status]} dot>{i.status}</Badge>
+                        </span>
+                      </div>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-soft">
+                        {i.inductionDate && <div>Induction: <b className="text-heading">{formatDate(i.inductionDate)}</b></div>}
+                        {i.startDate && <div>Starts: <b className="text-heading">{formatDate(i.startDate)}</b></div>}
+                        {i.endDate && <div>Ends: <b className="text-heading">{formatDate(i.endDate)}</b></div>}
+                        {i.applicationDeadline && <div>CAS / application deadline: <b className="text-heading">{formatDate(i.applicationDeadline)}</b></div>}
+                        {i.enrolmentDeadline && <div>Last enrolment: <b className="text-heading">{formatDate(i.enrolmentDeadline)}</b></div>}
+                      </dl>
+                      {i.notes && <p className="mt-1.5 text-xs text-ink-mute">{i.notes}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {tab === 'requirements' && (
+            <div className="space-y-4">
+              <Section title="Academic requirements" icon={GraduationCap}>
+                <Fact label="Entry requirements" value={course.academicRequirement} wide />
+                <Fact label="Backlog range" value={course.backlogRange} />
+                <Detail label="Course-specific requirement">{course.courseRequirement}</Detail>
+                <Detail label="Compliance">{course.complianceRequirement}</Detail>
+                <Detail label="Documents required" wide>{course.documentsRequired}</Detail>
+                <Fact label="Remarks" value={course.remarks} wide />
+              </Section>
+              <Section title="English language requirements" icon={Languages}>
+                <Fact label="IELTS overall score" value={score(course.ieltsMin || null)} />
+                <Fact label="IELTS minimum band" value={score(course.ieltsBand)} />
+                <Fact label="TOEFL overall score" value={score(course.toeflScore)} />
+                <Fact label="TOEFL minimum band" value={score(course.toeflBand)} />
+                <Fact label="PTE overall score" value={score(course.pteScore)} />
+                <Fact label="PTE minimum band" value={score(course.pteBand)} />
+                <Fact label="DET score" value={score(course.detScore)} />
+                <Fact label="English proficiency exam waiver" value={course.englishWaiver} />
+                <Detail label="English requirement" wide>{course.englishRequirement}</Detail>
+              </Section>
+            </div>
+          )}
+
+          {tab === 'fees' && (
+            <Section title="Fees and scholarships" icon={Wallet}>
+              <Fact label="Application fee" value={course.applicationFee} />
+              <Fact label="Yearly tuition fee" value={course.tuitionText ?? money(course.tuition, course.currency)} />
+              <Fact label="Scholarship available" value={course.scholarshipAvailable} />
+              <Fact label="Average scholarship" value={course.averageScholarship} />
+              <Detail label="Scholarship">{course.scholarship !== course.averageScholarship ? course.scholarship : null}</Detail>
+              <Detail label="Tuition after scholarship">{course.tuitionAfterScholarship != null ? money(course.tuitionAfterScholarship, course.currency) : null}</Detail>
+              <Detail label="Early bird">{course.earlyBird}</Detail>
+              <Detail label="Accommodation">{course.accommodation}</Detail>
+              <Fact label="Scholarship details" value={course.scholarshipUrl && <ExternalLink href={course.scholarshipUrl} variant="text">{course.scholarshipUrl}</ExternalLink>} wide />
+            </Section>
+          )}
+
+          {tab === 'source' && (
+            <div className="space-y-4">
+              <Section title="Source information" icon={FileSpreadsheet}>
+                <Fact label="Original serial number" value={course.sourceSerial} />
+                <Fact label="Imported from" value={[course.source, course.sourceRow ? `row ${course.sourceRow}` : null].filter(Boolean).join(' · ')} />
+                <Fact label="Official course website" value={course.websiteUrl && <ExternalLink href={course.websiteUrl} variant="text">{course.websiteUrl}</ExternalLink>} wide />
+                <Fact label="Scholarship details" value={course.scholarshipUrl && <ExternalLink href={course.scholarshipUrl} variant="text">{course.scholarshipUrl}</ExternalLink>} wide />
+                <Detail label="Last updated">{course.updatedAt ? formatDate(course.updatedAt) : null}</Detail>
+              </Section>
+              {sourceEntries.length > 0 && (
+                <details className="group rounded-2xl border border-line">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 font-semibold text-heading">
+                    Original spreadsheet row ({sourceEntries.length} columns)
+                    <span className="text-xs font-normal text-ink-mute group-open:hidden">Show</span>
+                  </summary>
+                  <dl className="grid gap-x-6 gap-y-3 border-t border-line p-4 sm:grid-cols-2">
+                    {sourceEntries.map(([k, v]) => <Fact key={k} label={k} value={v} />)}
+                  </dl>
+                </details>
+              )}
+            </div>
+          )}
+
+          {(course.sourceNotes?.length ?? 0) > 0 && (
+            <details className="group rounded-2xl bg-amber-50 p-4 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30" open>
+              <summary className="flex cursor-pointer list-none items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" /> Important notes</summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed">
+                {course.sourceNotes!.map((n) => <li key={n}>{n}</li>)}
+              </ul>
+            </details>
+          )}
         </div>
       )}
-    </Drawer>
+    </Modal>
   );
 }
 
@@ -306,7 +450,7 @@ export function CatalogueImportDialog({ open, onClose }: { open: boolean; onClos
         ? previewImport(
             parsed,
             {
-              universities: db.universities.map((u) => ({ id: u.id, name: u.name, country: u.country, city: u.city, casDeposit: u.casDeposit, paymentPlan: u.paymentPlan, moiAccepted: u.moiAccepted, notes: u.notes })),
+              universities: db.universities.map((u) => ({ id: u.id, name: u.name, country: u.country, city: u.city, casDeposit: u.casDeposit, paymentPlan: u.paymentPlan, moiAccepted: u.moiAccepted, notes: u.notes, rankingDetails: u.rankingDetails })),
               courses: db.courses as unknown as (Record<string, unknown> & { id: string; universityId: string; name: string })[],
               intakes: db.courseIntakes,
               blacklist: db.blacklist,
@@ -338,7 +482,7 @@ export function CatalogueImportDialog({ open, onClose }: { open: boolean; onClos
     if (!parsed) return;
     setBusy(true);
     try {
-      const summary = await actions.importCatalogue(parsed.payload, overwrite === 'update');
+      const summary = await actions.importCatalogue({ ...parsed.payload, file_name: file?.name }, overwrite === 'update');
       setResult(summary);
       toast.success('Catalogue updated', `${summary.courses.new} new and ${summary.courses.updated} updated courses.`);
     } catch (e) {
@@ -426,9 +570,19 @@ export function CatalogueImportDialog({ open, onClose }: { open: boolean; onClos
                     <span><span className="block text-sm font-semibold text-heading">Update from the file</span><span className="text-xs text-ink-mute">Values in the file replace current values (fees, requirements, dates).</span></span>
                   </label>
                 </div>
-                {parsed.notes.length > 0 && (
+                {parsed.unmapped.length > 0 && (
+                  <Alert tone="warning" title={`${parsed.unmapped.length} column(s) not recognised`}>
+                    {parsed.unmapped.join(', ')} — values are kept in each course's source record (shown under Source in the course details). Ask a developer to map them to their own field.
+                  </Alert>
+                )}
+                {parsed.notes.filter((n) => !n.startsWith('Columns not recognised')).length > 0 && (
                   <Alert tone="info" title="How this file was read">
-                    <ul className="list-disc pl-4">{parsed.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+                    <ul className="list-disc pl-4">{parsed.notes.filter((n) => !n.startsWith('Columns not recognised')).map((n) => <li key={n}>{n}</li>)}</ul>
+                  </Alert>
+                )}
+                {(parsed.payload.notes?.length ?? 0) > 0 && (
+                  <Alert tone="info" title={`${parsed.payload.notes!.length} note(s) found under the table`}>
+                    Saved with each course and shown as "Important notes" in the Course Finder.
                   </Alert>
                 )}
                 <Tabs
@@ -475,13 +629,13 @@ export function CatalogueImportDialog({ open, onClose }: { open: boolean; onClos
 export function UniversityForm({ open, university, onClose }: { open: boolean; university?: University; onClose: () => void }) {
   const { actions } = useStore();
   const toast = useToast();
-  const empty = { name: '', country: 'United Kingdom', city: '', website: '', type: 'Public' as University['type'], ranking: 0, partnerSince: String(new Date().getFullYear()), casDeposit: '', paymentPlan: '', moi: '', notes: '', active: true };
+  const empty = { name: '', country: 'United Kingdom', city: '', website: '', type: 'Public' as University['type'], ranking: 0, partnerSince: String(new Date().getFullYear()), casDeposit: '', paymentPlan: '', moi: '', notes: '', rankingDetails: '', active: true };
   const [d, setD] = useState(empty);
   useEffect(() => {
     if (!open) return;
     setD(
       university
-        ? { ...empty, ...university, city: university.city ?? '', website: university.website ?? '', casDeposit: university.casDeposit ?? '', paymentPlan: university.paymentPlan ?? '', moi: (university.moiAccepted ?? []).join('\n'), notes: university.notes ?? '', active: university.active !== false }
+        ? { ...empty, ...university, city: university.city ?? '', website: university.website ?? '', casDeposit: university.casDeposit ?? '', paymentPlan: university.paymentPlan ?? '', moi: (university.moiAccepted ?? []).join('\n'), notes: university.notes ?? '', rankingDetails: university.rankingDetails ?? '', active: university.active !== false }
         : empty,
     );
   }, [open, university]);
@@ -490,7 +644,7 @@ export function UniversityForm({ open, university, onClose }: { open: boolean; u
     const patch = {
       name: d.name.trim(), country: d.country.trim(), city: d.city.trim(), website: d.website.trim(), type: d.type, ranking: Number(d.ranking) || 0,
       partnerSince: d.partnerSince, casDeposit: d.casDeposit.trim() || null, paymentPlan: d.paymentPlan.trim() || null,
-      moiAccepted: d.moi.split('\n').map((x) => x.trim()).filter(Boolean), notes: d.notes.trim() || null, active: d.active,
+      moiAccepted: d.moi.split('\n').map((x) => x.trim()).filter(Boolean), notes: d.notes.trim() || null, rankingDetails: d.rankingDetails.trim() || null, active: d.active,
     };
     if (university) actions.updateUniversity(university.id, patch);
     else actions.addUniversity(patch);
@@ -515,6 +669,9 @@ export function UniversityForm({ open, university, onClose }: { open: boolean; u
         <Field label="Payment plan" className="sm:col-span-2"><Input value={d.paymentPlan} onChange={s('paymentPlan')} /></Field>
         <Field label="MOI accepted universities" hint="One per line" className="sm:col-span-2">
           <textarea value={d.moi} onChange={s('moi')} rows={5} className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
+        </Field>
+        <Field label="Ranking" hint="As published, one ranking per line" className="sm:col-span-2">
+          <textarea value={d.rankingDetails} onChange={s('rankingDetails')} rows={4} placeholder="e.g. QS Ranking - 381" className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
         </Field>
         <Field label="Notes" className="sm:col-span-2"><Input value={d.notes} onChange={s('notes')} /></Field>
         <div className="flex items-center gap-3 sm:col-span-2"><Switch checked={d.active} onCheckedChange={(v) => setD({ ...d, active: v })} label="Active" /><span className="text-sm text-ink-soft">{d.active ? 'Active — shown in the Course Finder' : 'Inactive — hidden from the Course Finder'}</span></div>

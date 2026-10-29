@@ -49,7 +49,7 @@ select pg_temp.check((select count(*) from public.universities where source like
 select pg_temp.check((select count(*) from public.courses where source like 'Oxford Direct%') = 15, '15 courses imported');
 select pg_temp.check((select count(*) from public.course_intakes where source like 'Oxford Direct%') = 15, '15 intakes imported');
 select pg_temp.check((select count(*) from public.blacklisted_institutions) = 78, '78 blacklisted institutions imported');
-select pg_temp.check((select tuition = 17450 and currency = 'GBP' and scholarship = '£5,000' from public.courses where name = 'MSc Cyber Security'), 'UoW postgraduate fee and scholarship');
+select pg_temp.check((select tuition = 17450 and currency = 'GBP' and scholarship = '£5,000' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'UoW postgraduate fee and scholarship');
 select pg_temp.check((select tuition = 15500 and tuition_after_scholarship = 13000 from public.courses where name = 'MBA Management with Health Economics and Finance'), 'HSU MBA fee after scholarship');
 select pg_temp.check((select tuition = 16000 from public.courses where name = 'Master of Business Administration – MBA'), 'LBU MBA uses the MBA fee row');
 select pg_temp.check((select tuition = 16925 from public.courses where name = 'MSc International Business'), 'LBU MSc uses the MSc fee row');
@@ -59,7 +59,7 @@ select pg_temp.check((select i.application_deadline = '2026-11-28' and i.start_d
   from public.course_intakes i join public.courses c on c.id = i.course_id where c.name = 'MSc Project Management'), 'UoW intake dates');
 select pg_temp.check((select i.end_date = '2028-04-28' from public.course_intakes i join public.courses c on c.id = i.course_id
   where c.name = 'MBA Management with Health Data Analytics and AI'), 'HSU MBA end date picked from the (MBA) entry');
-select pg_temp.check((select intakes = '{Jan 2027}' from public.courses where name = 'MSc Cyber Security'), 'courses.intakes kept in sync with intake rows');
+select pg_temp.check((select intakes = '{Jan 2027}' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'courses.intakes kept in sync with intake rows');
 
 \echo '== idempotent re-run'
 begin;
@@ -74,15 +74,15 @@ rollback;
 \echo '== intake management'
 begin; select pg_temp.act_as(:staff);
 update public.course_intakes set intake_month = 9, intake_year = 2027 from public.courses c
-  where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security';
-select pg_temp.check((select intakes = '{Sep 2027}' from public.courses where name = 'MSc Cyber Security'), 'changing the intake month/year updates the course immediately');
-insert into public.course_intakes (course_id, intake_month, intake_year, status) select id, 1, 2028, 'Upcoming' from public.courses where name = 'MSc Cyber Security';
-select pg_temp.check((select intakes = '{Sep 2027,Jan 2028}' from public.courses where name = 'MSc Cyber Security'), 'adding a future intake lists it in order');
-update public.course_intakes set status = 'Closed' from public.courses c where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security' and intake_year = 2027;
-select pg_temp.check((select intakes = '{Jan 2028}' from public.courses where name = 'MSc Cyber Security'), 'closed intakes drop out of the course list');
-update public.course_intakes set active = false from public.courses c where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security' and intake_year = 2028;
-select pg_temp.check((select intakes = '{}' from public.courses where name = 'MSc Cyber Security'), 'disabled intakes drop out too');
-select pg_temp.denied($$insert into public.course_intakes (course_id, intake_month, intake_year) select id, 13, 2028 from public.courses where name = 'MSc Cyber Security'$$, 'invalid month rejected');
+  where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security' and c.source like 'Oxford Direct%';
+select pg_temp.check((select intakes = '{Sep 2027}' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'changing the intake month/year updates the course immediately');
+insert into public.course_intakes (course_id, intake_month, intake_year, status) select id, 1, 2028, 'Upcoming' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%';
+select pg_temp.check((select intakes = '{Sep 2027,Jan 2028}' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'adding a future intake lists it in order');
+update public.course_intakes set status = 'Closed' from public.courses c where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security' and c.source like 'Oxford Direct%' and intake_year = 2027;
+select pg_temp.check((select intakes = '{Jan 2028}' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'closed intakes drop out of the course list');
+update public.course_intakes set active = false from public.courses c where c.id = course_intakes.course_id and c.name = 'MSc Cyber Security' and c.source like 'Oxford Direct%' and intake_year = 2028;
+select pg_temp.check((select intakes = '{}' from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'), 'disabled intakes drop out too');
+select pg_temp.denied($$insert into public.course_intakes (course_id, intake_month, intake_year) select id, 13, 2028 from public.courses where name = 'MSc Cyber Security' and source like 'Oxford Direct%'$$, 'invalid month rejected');
 select pg_temp.denied($$insert into public.course_intakes (course_id, intake_month, intake_year) select id, 1, 2027 from public.courses where name = 'MSc Project Management'$$, 'duplicate intake for the same course rejected');
 rollback;
 

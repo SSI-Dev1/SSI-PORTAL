@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Moda
 import { useConfirm, useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
 import { CatalogueImportDialog, CourseDetails, IntakeManager, intakeLabel, intakeTone } from '../../components/catalogue';
+import { COURSE_DETAIL_FIELDS } from '../../lib/catalogueImport';
 import type { Course, StudyLevel } from '../../data/types';
 import { countryFlag, matches, money } from '../../lib/utils';
 
@@ -152,12 +153,17 @@ type CourseDraft = {
   universityId: string; name: string; level: StudyLevel; field: string; faculty: string; duration: string; tuition: number; currency: string; ieltsMin: number;
   scholarship: string; tuitionAfterScholarship: string; earlyBird: string; accommodation: string; academicRequirement: string; englishRequirement: string;
   complianceRequirement: string; courseRequirement: string; documentsRequired: string; active: boolean;
+  /** Spreadsheet fields (COURSE_DETAIL_FIELDS) as text; numbers are converted on save. */
+  extra: Record<DetailProp, string>;
+  sourceNotes: string;
 };
+type DetailProp = (typeof COURSE_DETAIL_FIELDS)[number]['prop'];
+const DETAIL = Object.fromEntries(COURSE_DETAIL_FIELDS.map((f) => [f.prop, f])) as Record<DetailProp, (typeof COURSE_DETAIL_FIELDS)[number]>;
 
 function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => void; course: Course | null }) {
   const { db, actions } = useStore();
   const toast = useToast();
-  const [tab, setTab] = useState<'details' | 'requirements' | 'intakes'>('details');
+  const [tab, setTab] = useState<'details' | 'fees' | 'requirements' | 'source' | 'intakes'>('details');
   const live = course ? db.courses.find((c) => c.id === course.id) ?? course : null;
   const init = (): CourseDraft => ({
     universityId: live?.universityId ?? db.universities[0]?.id ?? '', name: live?.name ?? '', level: (live?.level as StudyLevel) ?? 'Postgraduate',
@@ -165,14 +171,21 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
     ieltsMin: live?.ieltsMin ?? 0, scholarship: live?.scholarship ?? '', tuitionAfterScholarship: live?.tuitionAfterScholarship != null ? String(live.tuitionAfterScholarship) : '',
     earlyBird: live?.earlyBird ?? '', accommodation: live?.accommodation ?? '', academicRequirement: live?.academicRequirement ?? '', englishRequirement: live?.englishRequirement ?? '',
     complianceRequirement: live?.complianceRequirement ?? '', courseRequirement: live?.courseRequirement ?? '', documentsRequired: live?.documentsRequired ?? '', active: live?.active !== false,
+    extra: Object.fromEntries(COURSE_DETAIL_FIELDS.map((f) => [f.prop, live?.[f.prop] != null ? String(live[f.prop]) : ''])) as Record<DetailProp, string>,
+    sourceNotes: (live?.sourceNotes ?? []).join('\n'),
   });
   const [d, setD] = useState<CourseDraft>(init);
+  // Snapshot taken when the form opens; closing with changes asks for confirmation.
+  const [start, setStart] = useState(() => JSON.stringify(d));
   useEffect(() => {
     if (open) {
-      setD(init());
+      const fresh = init();
+      setD(fresh);
+      setStart(JSON.stringify(fresh));
       setTab('details');
     }
   }, [open, course?.id]);
+  const dirty = open && JSON.stringify(d) !== start;
   const set = <K extends keyof CourseDraft>(k: K, v: CourseDraft[K]) => setD((x) => ({ ...x, [k]: v }));
   const txt = (k: keyof CourseDraft) => (e: { target: { value: string } }) => set(k, e.target.value as never);
 
@@ -180,12 +193,20 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
     if (d.name.trim().length < 3 || !d.universityId) return toast.error('Course name and provider are required');
     if (!(d.tuition > 0)) return toast.error('Enter the tuition fee');
     const opt = (v: string) => v.trim() || null;
+    const extra: Partial<Course> = {};
+    for (const f of COURSE_DETAIL_FIELDS) {
+      const v = d.extra[f.prop].trim();
+      if (f.kind === 'url' && v && !/^https?:\/\/\S+$/i.test(v)) return toast.error(`${f.label} must start with http:// or https://`);
+      if (f.kind === 'number' && v && Number.isNaN(Number(v))) return toast.error(`${f.label} must be a number`);
+      (extra as Record<string, unknown>)[f.prop] = !v ? null : f.kind === 'number' ? Number(v) : v;
+    }
     const patch: Partial<Course> = {
       universityId: d.universityId, name: d.name.trim(), level: d.level, field: d.field.trim(), faculty: opt(d.faculty), duration: d.duration.trim(),
       tuition: Number(d.tuition), currency: d.currency.trim().toUpperCase() || 'GBP', ieltsMin: Number(d.ieltsMin) || 0, scholarship: opt(d.scholarship),
       tuitionAfterScholarship: d.tuitionAfterScholarship ? Number(d.tuitionAfterScholarship) : null, earlyBird: opt(d.earlyBird), accommodation: opt(d.accommodation),
       academicRequirement: opt(d.academicRequirement), englishRequirement: opt(d.englishRequirement), complianceRequirement: opt(d.complianceRequirement),
       courseRequirement: opt(d.courseRequirement), documentsRequired: opt(d.documentsRequired), active: d.active,
+      ...extra, sourceNotes: d.sourceNotes.split('\n').map((x) => x.trim()).filter(Boolean),
     };
     if (live) {
       actions.updateCourse(live.id, patch);
@@ -196,6 +217,25 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
       toast.success('Course added', 'Open it again to add intakes.');
       onClose();
     }
+  };
+  const setExtra = (k: DetailProp, v: string) => setD((x) => ({ ...x, extra: { ...x.extra, [k]: v } }));
+  const ex = (k: DetailProp, opts: { wide?: boolean; rows?: number; placeholder?: string } = {}) => {
+    const f = DETAIL[k];
+    return (
+      <Field key={k} label={f.label} className={opts.wide || opts.rows ? 'sm:col-span-2' : undefined}>
+        {opts.rows ? (
+          <textarea value={d.extra[k]} onChange={(e) => setExtra(k, e.target.value)} rows={opts.rows} className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
+        ) : (
+          <Input
+            value={d.extra[k]}
+            onChange={(e) => setExtra(k, e.target.value)}
+            inputMode={f.kind === 'number' ? 'decimal' : f.kind === 'url' ? 'url' : undefined}
+            type={f.kind === 'url' ? 'url' : 'text'}
+            placeholder={opts.placeholder ?? (f.kind === 'url' ? 'https://' : undefined)}
+          />
+        )}
+      </Field>
+    );
   };
   const area = (k: keyof CourseDraft, label: string, rows = 3) => (
     <Field label={label} className="sm:col-span-2">
@@ -208,6 +248,7 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
       open={open}
       onClose={onClose}
       size="xl"
+      dirty={dirty}
       title={live ? live.name : 'Add course'}
       subtitle={live ? 'Changes are saved to the database and synced to all portals.' : 'Create the course, then add its intakes.'}
       footer={tab === 'intakes' ? <Button onClick={onClose}>Done</Button> : <><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>{live ? 'Save course' : 'Add course'}</Button></>}
@@ -217,8 +258,10 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
         value={tab}
         onChange={setTab}
         tabs={[
-          { value: 'details', label: 'Details & fees' },
+          { value: 'details', label: 'Details' },
+          { value: 'fees', label: 'Fees & application' },
           { value: 'requirements', label: 'Requirements' },
+          { value: 'source', label: 'Source & notes' },
           ...(live ? [{ value: 'intakes' as const, label: 'Intakes', count: db.courseIntakes.filter((i) => i.courseId === live.id).length }] : []),
         ]}
       />
@@ -232,20 +275,55 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
           <Field label="Category"><Input value={d.field} onChange={txt('field')} placeholder="e.g. Business & Management" /></Field>
           <Field label="Faculty"><Input value={d.faculty} onChange={txt('faculty')} /></Field>
           <Field label="Duration"><Input value={d.duration} onChange={txt('duration')} placeholder="e.g. 12 months" /></Field>
-          <Field label="Min. IELTS"><Input type="number" step="0.5" value={d.ieltsMin} onChange={(e) => set('ieltsMin', Number(e.target.value))} /></Field>
-          <Field label="Tuition fee / year" required><Input type="number" value={d.tuition} onChange={(e) => set('tuition', Number(e.target.value))} /></Field>
+          {ex('campus')}
+          {ex('websiteUrl', { wide: true })}
+          {ex('scholarshipUrl', { wide: true })}
+          <div className="flex items-center gap-3 sm:col-span-2"><Switch checked={d.active} onCheckedChange={(v) => set('active', v)} label="Course active" /><span className="text-sm text-ink-soft">{d.active ? 'Active — shown in the Course Finder' : 'Inactive — hidden from the Course Finder'}</span></div>
+        </div>
+      )}
+      {tab === 'fees' && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Tuition fee / year (number, used for filters)" required><Input type="number" value={d.tuition} onChange={(e) => set('tuition', Number(e.target.value))} /></Field>
           <Field label="Currency"><Input value={d.currency} onChange={txt('currency')} placeholder="GBP" /></Field>
-          <Field label="Scholarship"><Input value={d.scholarship} onChange={txt('scholarship')} /></Field>
+          {ex('tuitionText', { wide: true, placeholder: 'e.g. GBP 25700.00 (Approx INR 3260999)' })}
+          {ex('applicationFee')}
+          {ex('applicationMode')}
+          {ex('applicationDeadlineText', { placeholder: 'e.g. ASAP or Sep: ASAP, Jan: ASAP' })}
+          {ex('openIntakes', { placeholder: 'e.g. Jan,Sep' })}
+          {ex('intakeYearText')}
+          {ex('scholarshipAvailable', { placeholder: 'Yes / No' })}
+          {ex('averageScholarship')}
+          <Field label="Scholarship summary (shown in course lists)"><Input value={d.scholarship} onChange={txt('scholarship')} /></Field>
           <Field label="Tuition after scholarship"><Input type="number" value={d.tuitionAfterScholarship} onChange={txt('tuitionAfterScholarship')} /></Field>
           <Field label="Early bird discount"><Input value={d.earlyBird} onChange={txt('earlyBird')} /></Field>
           <Field label="Accommodation"><Input value={d.accommodation} onChange={txt('accommodation')} /></Field>
-          <div className="flex items-center gap-3 sm:col-span-2"><Switch checked={d.active} onCheckedChange={(v) => set('active', v)} label="Course active" /><span className="text-sm text-ink-soft">{d.active ? 'Active — shown in the Course Finder' : 'Inactive — hidden from the Course Finder'}</span></div>
+          <p className="text-xs text-ink-mute sm:col-span-2">Intake months and deadlines per intake are edited in the Intakes tab.</p>
+        </div>
+      )}
+      {tab === 'source' && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {ex('sourceSerial')}
+          <Field label="Imported from"><Input value={[live?.source, live?.sourceRow ? `row ${live.sourceRow}` : ''].filter(Boolean).join(' · ') || '—'} readOnly disabled /></Field>
+          <Field label="Important notes (one per line, shown in the Course Finder)" className="sm:col-span-2">
+            <textarea value={d.sourceNotes} onChange={txt('sourceNotes')} rows={5} className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
+          </Field>
+          {live?.sourceData && <p className="text-xs text-ink-mute sm:col-span-2">The original spreadsheet row ({Object.keys(live.sourceData).length} columns) is kept unchanged as the source record and shown in the course details.</p>}
         </div>
       )}
       {tab === 'requirements' && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {area('academicRequirement', 'Academic requirement', 2)}
-          {area('englishRequirement', 'English language requirement', 5)}
+          {area('academicRequirement', 'Entry / academic requirement', 3)}
+          {ex('backlogRange')}
+          <Field label="IELTS overall score"><Input type="number" step="0.5" value={d.ieltsMin} onChange={(e) => set('ieltsMin', Number(e.target.value))} /></Field>
+          {ex('ieltsBand')}
+          {ex('toeflScore')}
+          {ex('toeflBand')}
+          {ex('pteScore')}
+          {ex('pteBand')}
+          {ex('detScore')}
+          {ex('englishWaiver', { rows: 2 })}
+          {ex('remarks', { rows: 5 })}
+          {area('englishRequirement', 'English language requirement (free text)', 3)}
           {area('courseRequirement', 'Course-specific requirement')}
           {area('documentsRequired', 'Documents required', 2)}
           {area('complianceRequirement', 'Compliance requirement', 4)}

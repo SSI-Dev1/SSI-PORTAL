@@ -15,6 +15,7 @@ const ShellDemo = import.meta.env.DEV ? lazy(() => import('./pages/ShellDemo')) 
 const UsersDemo = import.meta.env.DEV ? lazy(() => import('./pages/admin/UserManagement')) : null;
 const RealtimeDemo = import.meta.env.DEV ? lazy(() => import('./pages/RealtimeDemo')) : null;
 const ApplicationFormDemo = import.meta.env.DEV ? lazy(() => import('./pages/ApplicationFormDemo')) : null;
+const CatalogueDemo = import.meta.env.DEV ? lazy(() => import('./pages/CatalogueDemo')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -86,6 +87,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {CatalogueDemo && (
+              <Route
+                path="/ui/courses"
+                element={
+                  <Suspense fallback={null}>
+                    <CatalogueDemo />
+                  </Suspense>
+                }
+              />
+            )}
             {ApplicationFormDemo && (
               <Route
                 path="/ui/apply"

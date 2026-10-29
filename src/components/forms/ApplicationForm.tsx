@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, CalendarDays, Clock, Eye, FileStack, GraduationCap, MapPin } from 'lucide-react';
 import { Badge, Button, Field, Modal, Select } from '../ui';
 import { useToast } from '../feedback';
+import { ExternalLink } from '../catalogue';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { checklistTemplate } from '../../data/seed';
 import type { Application, AppStatus } from '../../data/types';
@@ -266,11 +267,14 @@ export function ApplicationForm({
                 <div className="font-display font-semibold text-heading">{selectedCourse.name}</div>
                 <div className="text-sm text-ink-soft">{selectedUni.name}</div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
-                  {selectedUni.city && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedUni.city}</span>}
+                  {(selectedCourse.campus || selectedUni.city) && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedCourse.campus || selectedUni.city}</span>}
                   <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" />{selectedCourse.level}</span>
                   {selectedCourse.duration && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{selectedCourse.duration}</span>}
                   <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{intake || selectedCourse.intakes.join(', ')}</span>
+                  {selectedCourse.applicationDeadlineText && <span>Deadline: {selectedCourse.applicationDeadlineText}</span>}
+                  {selectedCourse.ieltsMin ? <span>IELTS {selectedCourse.ieltsMin}{selectedCourse.ieltsBand != null ? ` (no band < ${selectedCourse.ieltsBand})` : ''}</span> : null}
                 </div>
+                {selectedCourse.websiteUrl && <div className="mt-2 text-xs"><ExternalLink href={selectedCourse.websiteUrl} variant="text">View Official Course Website</ExternalLink></div>}
               </div>
               <div className="text-right">
                 <div className="text-[11px] font-medium text-ink-mute">Tuition / yr</div>

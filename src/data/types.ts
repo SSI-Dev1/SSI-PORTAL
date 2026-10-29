@@ -72,6 +72,8 @@ export interface University {
   paymentPlan?: string | null;
   moiAccepted?: string[];
   notes?: string | null;
+  /** Ranking text as supplied (may list several ranking systems, one per line). */
+  rankingDetails?: string | null;
   source?: string | null;
   updatedAt?: string;
 }
@@ -99,6 +101,33 @@ export interface Course {
   complianceRequirement?: string | null;
   courseRequirement?: string | null;
   documentsRequired?: string | null;
+  // Spreadsheet fields kept as supplied (see COURSE_DETAIL_FIELDS in lib/catalogueImport.ts).
+  campus?: string | null;
+  websiteUrl?: string | null;
+  scholarshipUrl?: string | null;
+  openIntakes?: string | null;
+  intakeYearText?: string | null;
+  applicationDeadlineText?: string | null;
+  applicationMode?: string | null;
+  applicationFee?: string | null;
+  tuitionText?: string | null;
+  scholarshipAvailable?: string | null;
+  averageScholarship?: string | null;
+  backlogRange?: string | null;
+  remarks?: string | null;
+  englishWaiver?: string | null;
+  ieltsBand?: number | null;
+  toeflScore?: number | null;
+  toeflBand?: number | null;
+  pteScore?: number | null;
+  pteBand?: number | null;
+  detScore?: number | null;
+  sourceSerial?: string | null;
+  sourceRow?: number | null;
+  /** The original spreadsheet row (column header → cell text). */
+  sourceData?: Record<string, string | null> | null;
+  /** Footnotes from the spreadsheet the course came from. */
+  sourceNotes?: string[];
   source?: string | null;
   updatedAt?: string;
 }

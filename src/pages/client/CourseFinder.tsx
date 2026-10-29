@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarDays, Clock, Eye, FilePlus2, GraduationCap, Heart, Languages, MapPin, RotateCcw, Search, Sparkles, Trophy } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Clock, Eye, FilePlus2, GraduationCap, Heart, Languages, MapPin, RotateCcw, Search, Sparkles, Trophy } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select, Slider } from '../../components/ui';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { useToast } from '../../components/feedback';
 import { useScoped, useStore } from '../../store/store';
-import { CourseDetails, intakeLabel, intakeTone } from '../../components/catalogue';
+import { CourseDetails, ExternalLink, intakeLabel, intakeTone } from '../../components/catalogue';
 import { cn, countryFlag, matches, money } from '../../lib/utils';
 
 const LEVELS = ['Foundation', 'Diploma', 'Undergraduate', 'Postgraduate', 'PhD'];
@@ -47,7 +47,7 @@ export default function CourseFinder() {
     const list = courses
       .map((c) => ({ c, u: universities.find((u) => u.id === c.universityId)! }))
       .filter(({ u }) => !!u)
-      .filter(({ c, u }) => matches(f.q, c.name, c.field, c.faculty ?? '', u.name, u.city))
+      .filter(({ c, u }) => matches(f.q, c.name, c.field, c.faculty ?? '', u.name, u.city, c.campus ?? '', c.academicRequirement ?? ''))
       .filter(({ u }) => !f.country || u.country === f.country)
       .filter(({ u }) => !f.university || u.id === f.university)
       .filter(({ c }) => !f.level || c.level === f.level)
@@ -69,6 +69,9 @@ export default function CourseFinder() {
     }
     if (!shortlist.includes(id)) toast.success('Added to shortlist');
   };
+
+  // Footnotes from the source spreadsheets of the courses on screen (e.g. fee changes, pathways).
+  const notes = useMemo(() => [...new Set(results.flatMap(({ c }) => c.sourceNotes ?? []))], [results]);
 
   const activeCount = [f.q, f.country, f.university, f.level, f.field, f.intake].filter(Boolean).length + (f.maxTuition < feeCap ? 1 : 0);
 
@@ -151,6 +154,15 @@ export default function CourseFinder() {
               </Select>
             </div>
           </div>
+          {notes.length > 0 && (
+            <details className="group mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold">
+                <AlertTriangle className="h-4 w-4" /> Important notes ({notes.length})
+                <span className="ml-auto text-xs font-normal opacity-70 group-open:hidden">Show</span>
+              </summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+            </details>
+          )}
           {results.length === 0 ? (
             <Card>
               <EmptyState icon={GraduationCap} title="No courses match" description="Try widening your filters." action={<Button variant="secondary" onClick={() => setF({ ...empty, country: '', university: '' })}>Reset filters</Button>} />
@@ -177,7 +189,7 @@ export default function CourseFinder() {
                       {u.ranking > 0 && u.ranking < 200 && <Badge tone="amber"><Trophy className="h-3 w-3" /> QS #{u.ranking}</Badge>}
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-ink-soft">
-                      <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-mute" />{[u.city, u.country].filter(Boolean).join(', ')}</span>
+                      <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-mute" />{[c.campus || u.city, u.country].filter(Boolean).join(', ')}</span>
                       {c.duration && <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-ink-mute" />{c.duration}</span>}
                       {c.ieltsMin ? <span className="flex items-center gap-1.5"><Languages className="h-3.5 w-3.5 text-ink-mute" />IELTS {c.ieltsMin}+</span> : null}
                     </div>
@@ -195,7 +207,8 @@ export default function CourseFinder() {
                       <div>
                         <div className="text-[11px] text-ink-mute">Tuition / year</div>
                         <div className="font-display text-lg font-semibold text-heading">{money(c.tuition, c.currency)}</div>
-                        {c.scholarship && <div className="max-w-[200px] truncate text-[11px] text-emerald-600 dark:text-emerald-400">{c.scholarship}</div>}
+                        {c.scholarship && <div className="max-w-[200px] truncate text-[11px] text-emerald-600 dark:text-emerald-400">Scholarship: {c.scholarship}</div>}
+                        {c.websiteUrl && <div className="mt-1 text-[11px]"><ExternalLink href={c.websiteUrl} variant="text">Course website</ExternalLink></div>}
                       </div>
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewing(c.id)}>Details</Button>

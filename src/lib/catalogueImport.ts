@@ -49,8 +49,41 @@ export interface CourseInput {
   compliance_requirement?: string | null;
   course_requirement?: string | null;
   documents_required?: string | null;
+  /** Extra course fields (see COURSE_DETAIL_FIELDS), applied by import_catalogue(). */
+  details?: Partial<Record<CourseDetailKey, string | number | null>>;
+  /** The original spreadsheet row: every column header → cell text (null when blank). */
+  source_data?: Record<string, string | null>;
+  source_row?: number;
+  /** Footnotes of the sheet the course came from ("*Note: …"). */
+  source_notes?: string[];
   intakes: IntakeInput[];
 }
+
+/** Course fields beyond the basics, kept so no spreadsheet column is lost. */
+export const COURSE_DETAIL_FIELDS = [
+  { key: 'campus', prop: 'campus', label: 'Campus', kind: 'text' },
+  { key: 'website_url', prop: 'websiteUrl', label: 'Course website URL', kind: 'url' },
+  { key: 'scholarship_url', prop: 'scholarshipUrl', label: 'Scholarship details URL', kind: 'url' },
+  { key: 'open_intakes', prop: 'openIntakes', label: 'Open intakes (as supplied)', kind: 'text' },
+  { key: 'intake_year_text', prop: 'intakeYearText', label: 'Intake year (as supplied)', kind: 'text' },
+  { key: 'application_deadline_text', prop: 'applicationDeadlineText', label: 'Application deadline', kind: 'text' },
+  { key: 'application_mode', prop: 'applicationMode', label: 'Application mode', kind: 'text' },
+  { key: 'application_fee', prop: 'applicationFee', label: 'Application fee', kind: 'text' },
+  { key: 'tuition_text', prop: 'tuitionText', label: 'Yearly tuition fee (as supplied)', kind: 'text' },
+  { key: 'scholarship_available', prop: 'scholarshipAvailable', label: 'Scholarship available', kind: 'text' },
+  { key: 'average_scholarship', prop: 'averageScholarship', label: 'Average scholarship', kind: 'text' },
+  { key: 'backlog_range', prop: 'backlogRange', label: 'Backlog range', kind: 'text' },
+  { key: 'remarks', prop: 'remarks', label: 'Remarks', kind: 'multiline' },
+  { key: 'english_waiver', prop: 'englishWaiver', label: 'English proficiency exam waiver', kind: 'multiline' },
+  { key: 'ielts_band', prop: 'ieltsBand', label: 'IELTS no band less than', kind: 'number' },
+  { key: 'toefl_score', prop: 'toeflScore', label: 'TOEFL score', kind: 'number' },
+  { key: 'toefl_band', prop: 'toeflBand', label: 'TOEFL no band less than', kind: 'number' },
+  { key: 'pte_score', prop: 'pteScore', label: 'PTE score', kind: 'number' },
+  { key: 'pte_band', prop: 'pteBand', label: 'PTE no band less than', kind: 'number' },
+  { key: 'det_score', prop: 'detScore', label: 'DET score', kind: 'number' },
+  { key: 'source_serial', prop: 'sourceSerial', label: 'Source serial no.', kind: 'text' },
+] as const;
+export type CourseDetailKey = (typeof COURSE_DETAIL_FIELDS)[number]['key'];
 
 export interface UniversityInput {
   name: string;
@@ -60,6 +93,7 @@ export interface UniversityInput {
   payment_plan?: string | null;
   moi_accepted?: string[];
   notes?: string | null;
+  ranking_details?: string | null;
 }
 
 export interface CataloguePayload {
@@ -67,6 +101,12 @@ export interface CataloguePayload {
   universities: UniversityInput[];
   courses: CourseInput[];
   blacklist: string[];
+  file_name?: string;
+  rows_read?: number;
+  /** Sheet footnotes, stored with the import history. */
+  notes?: string[];
+  /** Column headers the importer did not recognise (still kept in each course's source_data). */
+  unmapped_columns?: string[];
 }
 
 export interface ParseResult {
@@ -76,6 +116,8 @@ export interface ParseResult {
   invalid: { where: string; reason: string }[];
   /** Values that were derived rather than read directly (shown to the admin). */
   notes: string[];
+  /** Column headers that were not recognised; their values are kept in source_data only. */
+  unmapped: string[];
 }
 
 // ------------------------------------------------------------------ xlsx reading
@@ -527,6 +569,7 @@ function parseToolkit(sheets: Sheet[], source: string): ParseResult {
     },
     invalid,
     notes: [...new Set(notes)],
+    unmapped: [],
   };
 }
 
@@ -540,25 +583,35 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
     });
     if (hi < 0) continue;
     const h = s.rows[hi].cells;
-    const c = (re: RegExp) => Object.entries(h).find(([, v]) => re.test(v.toLowerCase()))?.[0];
+    const used = new Set<string>();
+    const c = (re: RegExp) => {
+      const col = Object.entries(h).find(([k, v]) => !used.has(k) && re.test(v.toLowerCase()))?.[0];
+      if (col) used.add(col);
+      return col;
+    };
+    // Specific headers first, so generic patterns ("fee", "intake") cannot claim them.
     const map = {
+      serial: c(/^(serial|s\.?\s?no|sl\.?\s?no|#$)/), ranking: c(/ranking/), website: c(/website|course (url|link)|^url$/),
+      appFee: c(/^application fee/), appMode: c(/application mode/), deadline: c(/deadline/),
+      scholarship: c(/^scholarship( available)?$/), avgScholarship: c(/average scholarship|scholarship amount/),
+      scholarshipInfo: c(/scholarship (detail|link|info|url)/), intakeYear: c(/intake year|^year$/),
+      ielts: c(/^ielts( overall)?( score)?$/), ieltsBand: c(/^ielts .*(band|less)/), toefl: c(/^toefl( overall)?( score)?$/), toeflBand: c(/^toefl .*(band|less)/),
+      pte: c(/^pte( overall)?( score)?$/), pteBand: c(/^pte .*(band|less)/), det: c(/^(det|duolingo)( score)?$/), waiver: c(/waiver/),
+      backlog: c(/backlog/), remarks: c(/^remarks?$|^notes?$/),
       uni: c(/^(university|provider)( name)?$/) ?? c(/^university|^provider/), country: c(/^country/), city: c(/city|location|campus/),
       course: c(/^(course|program|programme)( name| title)?$/), level: c(/level/), category: c(/category|field|subject|faculty/), duration: c(/duration/),
-      tuition: c(/tuition/) ?? c(/fee/), currency: c(/currency/), intake: c(/^(open )?intakes?$/) ?? c(/^intake(?! year)/), year: c(/intake year|^year$/),
-      start: c(/start/), deadline: c(/deadline/), academic: c(/academic|entry req/), english: c(/^english( requirement)?$/) ?? c(/^ielts$/), status: c(/status/),
-      // "Course finder" exports: one column per test score, plus scholarship / application details.
-      ielts: c(/^ielts score$/), ieltsBand: c(/^ielts .*(band|less)/), toefl: c(/^toefl score$/), toeflBand: c(/^toefl .*(band|less)/),
-      pte: c(/^pte score$/), pteBand: c(/^pte .*(band|less)/), det: c(/^(det|duolingo)( score)?$/), waiver: c(/waiver/),
-      ranking: c(/ranking/), website: c(/website|url/), backlog: c(/backlog/), remarks: c(/^remarks?$|^notes?$/),
-      appFee: c(/^application fee/), appMode: c(/application mode/), scholarship: c(/^scholarship( available)?$/),
-      avgScholarship: c(/average scholarship|scholarship amount/), scholarshipInfo: c(/scholarship (detail|link|info)/),
+      tuition: c(/tuition/) ?? c(/fee/), currency: c(/currency/), intake: c(/^(open )?intakes?$/) ?? c(/^intake/),
+      start: c(/start/), academic: c(/academic|entry req/), english: c(/^english( requirement)?$/), status: c(/status/),
     };
+    const headers = Object.entries(h);
+    const unmapped = headers.filter(([k]) => !used.has(k)).map(([, v]) => v);
     const invalid: ParseResult['invalid'] = [];
     const unis = new Map<string, UniversityInput>();
     const courses = new Map<string, CourseInput>();
-    // Footnote rows ("*Note: …") under the table apply to every university on the sheet.
+    // Footnote rows ("*Note: …") under the table belong to the whole sheet.
     const isNote = (v: string | undefined) => /^\*?\s*note\b/i.test(v ?? '');
     const footnotes = s.rows.slice(hi + 1).map(({ cells }) => Object.values(cells)[0]).filter(isNote).map((v) => v.replace(/^\*\s*/, ''));
+    let rowsRead = 0;
     for (const { r, cells } of s.rows.slice(hi + 1)) {
       const get = (k: keyof typeof map) => (map[k] ? cells[map[k]!] : undefined);
       const uniName = clean(get('uni'));
@@ -568,47 +621,66 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
         if (!isNote(Object.values(cells)[0])) invalid.push({ where: `${s.name} row ${r}`, reason: 'University and course name are required' });
         continue;
       }
+      rowsRead++;
       const level = levelOf(get('level')) ?? levelFromCourseName(name);
       if (!level) {
         invalid.push({ where: `${s.name} row ${r}`, reason: `Unknown study level "${get('level') ?? ''}"` });
         continue;
       }
-      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [], notes: clean(get('ranking')) };
+      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [], ranking_details: clean(get('ranking')) };
       if (!u.country && clean(get('country'))) u.country = clean(get('country'))!;
       unis.set(norm(uniName), u);
-      const money = parseMoney(get('tuition'));
       const key = `${norm(uniName)}|${norm(name)}`;
-      const score = (label: string, k: keyof typeof map, band?: keyof typeof map) => {
-        const v = clean(get(k));
-        if (!v) return null;
-        const b = band ? clean(get(band)) : null;
-        return `${label} ${v}${b ? ` (no band less than ${b})` : ''}`;
+      if (courses.has(key)) {
+        invalid.push({ where: `${s.name} row ${r}`, reason: `Duplicate of an earlier row for "${name}" (kept the first)` });
+        continue;
+      }
+      // Original text of a cell; blank stays null. "NA"/"TBC" are kept as written.
+      const raw = (k: keyof typeof map) => get(k)?.trim() || null;
+      const num = (k: keyof typeof map, label: string) => {
+        const v = raw(k);
+        if (v == null) return null;
+        const n = Number(v.replace(/[^\d.]/g, ''));
+        if (!/\d/.test(v) || Number.isNaN(n)) {
+          invalid.push({ where: `${s.name} row ${r}`, reason: `${label} "${v}" is not a number (kept in the source record)` });
+          return null;
+        }
+        return n;
       };
-      const scores = [score('IELTS', 'ielts', 'ieltsBand'), score('TOEFL', 'toefl', 'toeflBand'), score('PTE', 'pte', 'pteBand'), score('DET', 'det')].filter(Boolean);
-      const waiver = clean(get('waiver'));
-      const english = [clean(get('english')), scores.join(' · ') || null, waiver && `Waiver: ${waiver}`].filter(Boolean).join('\n') || null;
-      const backlog = clean(get('backlog'));
-      const academic = [clean(get('academic')), backlog && `Backlogs accepted: ${backlog}`].filter(Boolean).join('\n') || null;
-      const sch = clean(get('scholarship'));
-      const avg = parseMoney(get('avgScholarship'));
-      // Bracketed asides such as "(Approx INR 3260999)" are kept as text.
-      const aside = (k: keyof typeof map) => clean(get(k))?.match(/\(([^)]+)\)/)?.[1]?.trim();
-      const schInfo = clean(get('scholarshipInfo'));
-      const scholarship = sch && /^no$/i.test(sch) ? 'No'
-        : [sch && /^yes$/i.test(sch) ? 'Available' : sch, avg.amount != null && `average ${avg.currency ?? ''} ${avg.amount.toLocaleString('en-GB')}${aside('avgScholarship') ? ` (${aside('avgScholarship')})` : ''}`.replace('  ', ' '), schInfo].filter(Boolean).join(' · ') || null;
-      const appFee = clean(get('appFee'));
-      const appMode = clean(get('appMode'));
-      const site = clean(get('website'));
-      const extra = [clean(get('remarks'))?.split('\n').map((l) => l.trim()).join('\n'), aside('tuition') && money.amount != null && `Tuition: ${money.currency ?? ''} ${money.amount.toLocaleString('en-GB')} per year (${aside('tuition')})`.replace('  ', ' '),
-        appMode && `Application mode: ${appMode}`, appFee && `Application fee: ${appFee.replace(/^no application fee$/i, 'None')}`, site && `Course page: ${site}`]
-        .filter(Boolean).join('\n') || null;
-      const course = courses.get(key) ?? {
+      const url = (k: keyof typeof map, label: string) => {
+        const v = raw(k);
+        if (v && !/^https?:\/\/\S+$/i.test(v)) {
+          invalid.push({ where: `${s.name} row ${r}`, reason: `${label} "${v}" is not a web address (kept in the source record)` });
+          return null;
+        }
+        return v;
+      };
+      const money = parseMoney(get('tuition'));
+      const scores = !!(map.ielts || map.toefl || map.pte || map.det);
+      const details: CourseInput['details'] = {
+        campus: raw('city'), website_url: url('website', 'Course website'), scholarship_url: url('scholarshipInfo', 'Scholarship detail'),
+        open_intakes: raw('intake'), intake_year_text: raw('intakeYear'), application_deadline_text: raw('deadline'), application_mode: raw('appMode'),
+        application_fee: raw('appFee'), tuition_text: raw('tuition'), scholarship_available: raw('scholarship'), average_scholarship: raw('avgScholarship'),
+        backlog_range: raw('backlog'), remarks: raw('remarks'), english_waiver: raw('waiver'), ielts_band: num('ieltsBand', 'IELTS band'),
+        toefl_score: num('toefl', 'TOEFL score'), toefl_band: num('toeflBand', 'TOEFL band'), pte_score: num('pte', 'PTE score'),
+        pte_band: num('pteBand', 'PTE band'), det_score: num('det', 'DET score'), source_serial: raw('serial'),
+      };
+      for (const k of Object.keys(details) as CourseDetailKey[]) if (details[k] == null) delete details[k];
+      const sch = raw('scholarship');
+      const course: CourseInput = {
         university: u.name, name, level, category: clean(get('category')), duration: clean(get('duration')),
-        tuition: money.amount, currency: clean(get('currency')) ?? money.currency, academic_requirement: academic,
-        english_requirement: english, ielts_min: map.ielts ? (Number(clean(get('ielts'))) || null) : ieltsOf(clean(get('english'))),
-        scholarship, course_requirement: extra, intakes: [],
+        tuition: money.amount, currency: clean(get('currency')) ?? money.currency, academic_requirement: raw('academic'),
+        english_requirement: scores ? null : clean(get('english')),
+        ielts_min: map.ielts ? num('ielts', 'IELTS score') : ieltsOf(clean(get('english'))),
+        // Short summary for course lists; the original values are in details.
+        scholarship: sch && /^no$/i.test(sch) ? 'No' : raw('avgScholarship') ?? sch,
+        details,
+        source_data: Object.fromEntries(headers.map(([k, hd]) => [hd, cells[k]?.trim() || null])),
+        source_row: r,
+        source_notes: footnotes,
+        intakes: [],
       };
-      const year = Number(clean(get('year'))?.match(/\d{4}/)?.[0]) || 0;
+      const year = Number(raw('intakeYear')?.match(/\d{4}/)?.[0]) || 0;
       const deadlineCell = get('deadline') ?? '';
       const intakeCell = get('intake') ?? get('start');
       for (const piece of (intakeCell ?? '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean)) {
@@ -634,11 +706,14 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
       }
       courses.set(key, course);
     }
-    for (const u of unis.values()) {
-      if (!u.country) invalid.push({ where: u.name, reason: 'Country is required' });
-      if (footnotes.length) u.notes = [u.notes, ...footnotes].filter(Boolean).join('\n\n');
-    }
-    return { layout: 'flat', payload: { source, universities: [...unis.values()], courses: [...courses.values()], blacklist: [] }, invalid, notes: [] };
+    for (const u of unis.values()) if (!u.country) invalid.push({ where: u.name, reason: 'Country is required' });
+    return {
+      layout: 'flat',
+      payload: { source, universities: [...unis.values()], courses: [...courses.values()], blacklist: [], rows_read: rowsRead, notes: footnotes, unmapped_columns: unmapped },
+      invalid,
+      notes: unmapped.length ? [`Columns not recognised (kept in each course's source record): ${unmapped.join(', ')}`] : [],
+      unmapped,
+    };
   }
   return null;
 }
@@ -654,7 +729,7 @@ export function parseCatalogue(sheets: Sheet[], source: string): ParseResult {
 // ------------------------------------------------------------------ preview
 
 export interface CurrentCatalogue {
-  universities: { id: string; name: string; country: string; city?: string | null; casDeposit?: string | null; paymentPlan?: string | null; moiAccepted?: string[] | null; notes?: string | null }[];
+  universities: { id: string; name: string; country: string; city?: string | null; casDeposit?: string | null; paymentPlan?: string | null; moiAccepted?: string[] | null; notes?: string | null; rankingDetails?: string | null }[];
   courses: (Record<string, unknown> & { id: string; universityId: string; name: string })[];
   intakes: { id: string; courseId: string; intakeMonth: number; intakeYear: number; startDate?: string | null; applicationDeadline?: string | null; endDate?: string | null; inductionDate?: string | null; enrolmentDeadline?: string | null; notes?: string | null }[];
   blacklist: { name: string }[];
@@ -711,6 +786,7 @@ export function previewImport(parsed: ParseResult, current: CurrentCatalogue, ov
     cmp('CAS deposit', cur.casDeposit, u.cas_deposit);
     cmp('Payment plan', cur.paymentPlan, u.payment_plan);
     cmp('MOI accepted list', cur.moiAccepted, u.moi_accepted);
+    cmp('Ranking', cur.rankingDetails, u.ranking_details);
     if (changes.length) p.updatedUniversities.push({ key: u.name, label: u.name, changes });
   }
 
@@ -741,6 +817,12 @@ export function previewImport(parsed: ParseResult, current: CurrentCatalogue, ov
       if (!overwrite && from != null && from !== '' && k !== 'level') continue;
       if (!overwrite && (k === 'level' || k === 'tuition' || k === 'currency')) continue;
       if (!same(from, to)) changes.push({ field: label, from, to });
+    }
+    for (const f of COURSE_DETAIL_FIELDS) {
+      const to = c.details?.[f.key];
+      const from = cur[f.prop];
+      if (to == null || (!overwrite && from != null && from !== '')) continue;
+      if (!same(from, to)) changes.push({ field: f.label, from, to });
     }
     if (changes.length) p.updatedCourses.push({ key, label: c.name, sub: c.university, changes });
     else p.unchangedCourses++;

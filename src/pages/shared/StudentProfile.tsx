@@ -93,7 +93,7 @@ export default function StudentProfile() {
             <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-soft">
               <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{s.email}</span>
               <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{s.phone}</span>
-              {scoped.isAdmin && (
+              {scoped.isAdmin && scoped.base === '/admin' && (
                 <Link to={`/admin/partners/${s.partnerId}`} className="flex items-center gap-1.5 hover:text-rust">
                   <Building2 className="h-3.5 w-3.5" />
                   {partner?.name}

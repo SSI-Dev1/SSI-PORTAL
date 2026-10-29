@@ -56,7 +56,7 @@ export function PipelineStepper({ status }: { status: AppStatus }) {
 }
 
 export function ApplicationDrawer({ app, onClose }: { app?: Application; onClose: () => void }) {
-  const { actions } = useStore();
+  const { actions, db, session } = useStore();
   const scoped = useScoped();
   const lk = useLookup();
   const toast = useToast();
@@ -146,6 +146,19 @@ export function ApplicationDrawer({ app, onClose }: { app?: Application; onClose
             </div>
             <Field className="mt-3">
               <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note visible to the partner…" />
+            </Field>
+            <Field label="Assigned to" hint="The employee is notified instantly" className="mt-3">
+              <Select
+                value={app.assignedTo ?? ''}
+                onChange={(e) => actions.updateApplication(app.id, { assignedTo: e.target.value || null })}
+                aria-label="Assigned employee"
+                disabled={session?.role !== 'admin'}
+              >
+                <option value="">Unassigned</option>
+                {db.staff.map((m) => (
+                  <option key={m.id} value={m.id}>{m.fullName}{m.department ? ` · ${m.department}` : ''}</option>
+                ))}
+              </Select>
             </Field>
           </section>
         )}

@@ -82,7 +82,7 @@ const STATUS_TONE = { active: 'green', suspended: 'red', deactivated: 'slate' } 
 const errMsg = (e: unknown) => (e instanceof AdminApiError ? e.message : 'Something went wrong. Please try again.');
 
 export default function UserManagement() {
-  const { db, actions } = useStore();
+  const { db, actions, profilesRev } = useStore();
   const { realSession } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
@@ -93,7 +93,6 @@ export default function UserManagement() {
   const [tab, setTab] = useState<TabKey>('directory');
   const [dialog, setDialog] = useState<
     | { kind: 'employee' }
-    | { kind: 'partner' }
     | { kind: 'partner-user'; partnerId?: string }
     | { kind: 'edit'; user: DirectoryUser }
     | { kind: 'reset'; user: DirectoryUser }
@@ -114,7 +113,8 @@ export default function UserManagement() {
     }
     setLoading(false);
   }, []);
-  useEffect(() => void reload(), [reload]);
+  // Re-query when any account changes (Realtime), e.g. another admin creates or suspends a user.
+  useEffect(() => void reload(), [reload, profilesRev]);
   const reloadAll = async () => {
     await Promise.all([reload(), actions.reload()]);
   };
@@ -179,7 +179,7 @@ export default function UserManagement() {
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={() => void reloadAll()}>Refresh</Button>
             <Button variant="secondary" icon={Briefcase} onClick={() => setDialog({ kind: 'employee' })}>Add employee</Button>
-            <Button icon={Plus} onClick={() => setDialog({ kind: 'partner' })}>Add partner</Button>
+            <Button icon={Plus} onClick={() => navigate('/admin/partners?new=1')}>Add partner</Button>
           </>
         }
       />
@@ -210,7 +210,7 @@ export default function UserManagement() {
         <PartnersPanel
           partners={partners}
           users={users}
-          onAdd={() => setDialog({ kind: 'partner' })}
+          onAdd={() => navigate('/admin/partners?new=1')}
           onAddUser={(id) => setDialog({ kind: 'partner-user', partnerId: id })}
           onAccess={(p) => setDialog({ kind: 'access', partner: p })}
           onDelete={(p) => setDialog({ kind: 'delete-partner', partner: p })}
@@ -256,15 +256,6 @@ export default function UserManagement() {
           setDialog(null);
           setCreated({ title: 'Employee account created', email, password });
           await reload();
-        }}
-      />
-      <PartnerDialog
-        open={dialog?.kind === 'partner'}
-        onClose={() => setDialog(null)}
-        onCreated={async (email, password) => {
-          setDialog(null);
-          setCreated({ title: 'Partner and login account created', email, password });
-          await reloadAll();
         }}
       />
       <PartnerUserDialog
@@ -381,7 +372,10 @@ function DirectoryPanel({
                 </td>
                 <td className="px-5 py-3"><Badge tone={isStaffRole(u.role) ? 'navy' : 'orange'}>{isStaffRole(u.role) ? 'Employee' : 'Partner'}</Badge></td>
                 <td className="px-5 py-3 text-ink-soft">{u.partnerName ?? 'SSI GLOBAL'}</td>
-                <td className="whitespace-nowrap px-5 py-3 text-ink-soft">{ROLE_LABEL[u.role]}</td>
+                <td className="whitespace-nowrap px-5 py-3 text-ink-soft">
+                  {ROLE_LABEL[u.role]}
+                  {u.department && <span className="block text-xs text-ink-mute">{u.department}{u.designation ? ` · ${u.designation}` : ''}</span>}
+                </td>
                 <td className="px-5 py-3"><Badge tone={STATUS_TONE[u.status]} dot>{STATUS_LABEL[u.status]}</Badge></td>
                 <td className="whitespace-nowrap px-5 py-3 text-xs text-ink-soft">{formatDate(u.createdAt)}</td>
                 <td className="whitespace-nowrap px-5 py-3 text-xs text-ink-soft">{u.lastSignInAt ? timeAgo(u.lastSignInAt) : 'Never'}</td>
@@ -427,6 +421,8 @@ function UserDetails({ user, onClose, actionsFor }: { user: DirectoryUser | null
           <dl className="grid grid-cols-2 gap-3 rounded-xl bg-canvas p-4 ring-1 ring-line">
             <div><dt className="text-xs text-ink-mute">Organisation</dt><dd className="font-semibold text-heading">{u.partnerName ?? 'SSI GLOBAL'}</dd></div>
             <div><dt className="text-xs text-ink-mute">Role</dt><dd className="font-semibold text-heading">{ROLE_LABEL[u.role]}</dd></div>
+            <div><dt className="text-xs text-ink-mute">Phone</dt><dd className="text-heading">{u.phone || '—'}</dd></div>
+            {staff && <div><dt className="text-xs text-ink-mute">Department</dt><dd className="text-heading">{[u.department, u.designation].filter(Boolean).join(' · ') || '—'}</dd></div>}
             <div><dt className="text-xs text-ink-mute">Created</dt><dd className="text-heading">{formatDateTime(u.createdAt)}</dd></div>
             <div><dt className="text-xs text-ink-mute">Last login</dt><dd className="text-heading">{u.lastSignInAt ? formatDateTime(u.lastSignInAt) : 'Never'}</dd></div>
           </dl>
@@ -677,42 +673,77 @@ function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner
 
 /* ================================================================== forms */
 
-function PasswordInput({ value, onChange, email, error }: { value: string; onChange: (v: string) => void; email: string; error?: string }) {
+function PasswordInput({
+  value,
+  onChange,
+  email,
+  error,
+  confirm,
+  onConfirm,
+  confirmError,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  email: string;
+  error?: string;
+  /** When given, a "Confirm password" field is shown (Generate fills both). */
+  confirm?: string;
+  onConfirm?: (v: string) => void;
+  confirmError?: string;
+}) {
   const [show, setShow] = useState(false);
   const toast = useToast();
   const problems = value ? passwordProblems(value, email) : [];
   return (
-    <Field label="Initial password" required error={error} hint={!error ? (value && !problems.length ? 'Strong password ✓' : '12+ characters with upper, lower, number and symbol') : undefined}>
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+    <div className={cn('grid gap-4', onConfirm && 'sm:grid-cols-2')}>
+      <Field label="Initial password" required error={error} hint={!error ? (value && !problems.length ? 'Strong password ✓' : '12+ characters with upper, lower, number and symbol') : undefined}>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Input
+              icon={KeyRound}
+              type={show ? 'text' : 'password'}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              autoComplete="new-password"
+              invalid={!!error}
+              className="pr-10 font-mono"
+              aria-label="Initial password"
+            />
+            <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-mute hover:text-heading">
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            icon={Wand2}
+            onClick={() => {
+              const pw = generatePassword();
+              onChange(pw);
+              onConfirm?.(pw);
+              setShow(true);
+              toast.info('Secure password generated', 'Share it with the user privately — it will not be shown again after this window.');
+            }}
+          >
+            Generate
+          </Button>
+        </div>
+      </Field>
+      {onConfirm && (
+        <Field label="Confirm password" required error={confirmError}>
           <Input
             icon={KeyRound}
             type={show ? 'text' : 'password'}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
+            value={confirm ?? ''}
+            onChange={(e) => onConfirm(e.target.value)}
             autoComplete="new-password"
-            invalid={!!error}
-            className="pr-10 font-mono"
-            aria-label="Initial password"
+            invalid={!!confirmError}
+            className="font-mono"
+            aria-label="Confirm password"
           />
-          <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-mute hover:text-heading">
-            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          icon={Wand2}
-          onClick={() => {
-            onChange(generatePassword());
-            setShow(true);
-            toast.info('Secure password generated', 'Share it with the user privately — it will not be shown again after this window.');
-          }}
-        >
-          Generate
-        </Button>
-      </div>
-    </Field>
+        </Field>
+      )}
+    </div>
   );
 }
 
@@ -721,6 +752,7 @@ const pwError = (pw: string, email: string) => {
   const p = passwordProblems(pw, email);
   return p.length ? `Password must have ${p.join(', ')}.` : undefined;
 };
+const confirmError = (pw: string, confirm: string) => (confirm === pw ? undefined : 'The passwords do not match.');
 
 function PermissionPicker({ role, value, onChange }: { role: StaffRole; value: string[] | null; onChange: (v: string[] | null) => void }) {
   if (role === 'super_admin') return <Alert tone="info">Super Admins always have every permission and can manage accounts.</Alert>;
@@ -764,28 +796,34 @@ function useSubmit() {
 }
 
 function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (email: string, password: string) => Promise<void> }) {
-  const [f, setF] = useState({ fullName: '', email: '', role: 'admin_staff' as StaffRole, password: '', mustChange: false });
+  const blank = { fullName: '', email: '', phone: '', department: '', designation: '', role: 'support_staff' as StaffRole, status: 'active', password: '', confirm: '', mustChange: false };
+  const [f, setF] = useState(blank);
   const [perms, setPerms] = useState<string[] | null>(null);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
-    setF({ fullName: '', email: '', role: 'admin_staff', password: '', mustChange: false });
+    setF(blank);
     setPerms(null);
     setErrors({});
     s.setError('');
   }, [open]);
+  const set = (k: keyof typeof blank) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const save = () => {
     const e = {
-      fullName: f.fullName.trim().length < 2 ? 'Enter the full name.' : undefined,
+      fullName: f.fullName.trim().length < 2 ? 'Enter the employee name.' : undefined,
       email: /^\S+@\S+\.\S+$/.test(f.email.trim()) ? undefined : 'Enter a valid email address.',
       password: pwError(f.password, f.email),
+      confirm: confirmError(f.password, f.confirm),
     };
     setErrors(e);
     if (Object.values(e).some(Boolean)) return;
     void s.run(async () => {
       const email = f.email.trim().toLowerCase();
-      await adminApi.createEmployee({ email, fullName: f.fullName.trim(), role: f.role, permissions: f.role === 'super_admin' ? null : perms, password: f.password, mustChangePassword: f.mustChange });
+      await adminApi.createEmployee({
+        email, fullName: f.fullName.trim(), role: f.role, permissions: f.role === 'super_admin' ? null : perms, password: f.password,
+        mustChangePassword: f.mustChange, phone: f.phone, department: f.department, designation: f.designation, status: f.status as DirectoryUser['status'],
+      });
       await onCreated(email, f.password);
     });
   };
@@ -793,71 +831,96 @@ function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
     <Modal
       open={open}
       onClose={onClose}
-      size="lg"
+      size="xl"
       dirty={!!(f.fullName || f.email || f.password)}
       title="Add employee"
-      subtitle="Creates an SSI GLOBAL staff account that can sign in immediately."
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Save & create account</Button></>}
+      subtitle="Creates an SSI GLOBAL staff account. Admin Staff and Super Admins use the Admin Portal; other roles use the Staff Portal."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Create employee account</Button></>}
     >
-      <div className="space-y-5">
+      <div className="space-y-6">
         {s.error && <Alert tone="error">{s.error}</Alert>}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Full name" required error={errors.fullName}><Input value={f.fullName} invalid={!!errors.fullName} onChange={(e) => setF({ ...f, fullName: e.target.value })} autoFocus /></Field>
-          <Field label="Login email" required error={errors.email}><Input icon={Mail} type="email" value={f.email} invalid={!!errors.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="off" /></Field>
-          <Field label="Employee role" required>
-            <Select value={f.role} onChange={(e) => { setF({ ...f, role: e.target.value as StaffRole }); setPerms(null); }} aria-label="Employee role">
-              {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </Select>
-          </Field>
-          <div className="sm:col-span-2"><PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} email={f.email} error={errors.password} /></div>
-        </div>
-        <PermissionPicker role={f.role} value={perms} onChange={setPerms} />
-        <Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" description="Off by default. The user can still change it later from Settings." />
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">1 · Employee details</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Employee name" required error={errors.fullName}><Input value={f.fullName} invalid={!!errors.fullName} onChange={set('fullName')} autoFocus /></Field>
+            <Field label="Employee email (login)" required error={errors.email}><Input icon={Mail} type="email" value={f.email} invalid={!!errors.email} onChange={set('email')} autoComplete="off" /></Field>
+            <Field label="Phone number"><Input value={f.phone} onChange={set('phone')} placeholder="+91 …" /></Field>
+            <Field label="Department"><Input value={f.department} onChange={set('department')} placeholder="e.g. Admissions" /></Field>
+            <Field label="Designation"><Input value={f.designation} onChange={set('designation')} placeholder="e.g. Senior Counsellor" /></Field>
+            <Field label="Assigned role" required>
+              <Select value={f.role} onChange={(e) => { setF({ ...f, role: e.target.value as StaffRole }); setPerms(null); }} aria-label="Assigned role">
+                {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </Select>
+            </Field>
+            <Field label="Account status">
+              <Select value={f.status} onChange={set('status')} aria-label="Account status">
+                <option value="active">Active — can sign in now</option>
+                <option value="deactivated">Deactivated — create now, activate later</option>
+              </Select>
+            </Field>
+          </div>
+        </section>
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">2 · Login credentials</h3>
+          <PasswordInput value={f.password} onChange={(v) => setF((x) => ({ ...x, password: v }))} confirm={f.confirm} onConfirm={(v) => setF((x) => ({ ...x, confirm: v }))} email={f.email} error={errors.password} confirmError={errors.confirm} />
+          <div className="mt-3"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" description="Off by default." /></div>
+        </section>
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">3 · Access permissions</h3>
+          <PermissionPicker role={f.role} value={perms} onChange={setPerms} />
+        </section>
       </div>
     </Modal>
   );
 }
 
-const emptyOrg = { name: '', code: '', contactName: '', email: '', phone: '', city: '', country: 'India', website: '', tier: 'Silver', branches: '', commissionRate: 10 };
+const emptyOrg = { name: '', code: '', branch: '', contactName: '', email: '', phone: '', country: 'India', address: '', status: 'Active' };
 
+/** Clients & Branches → Add Partner: the organisation and its first login, in one step. */
 export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (email: string, password: string) => Promise<void> }) {
   const { db } = useStore();
   const [org, setOrg] = useState(emptyOrg);
-  const [acct, setAcct] = useState({ fullName: '', email: '', password: '', mustChange: false });
-  const [portal, setPortal] = useState(true);
+  const [acct, setAcct] = useState({ email: '', password: '', confirm: '', mustChange: false });
   const [modules, setModules] = useState<string[]>(PARTNER_MODULES.map((m) => m.id));
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
     setOrg(emptyOrg);
-    setAcct({ fullName: '', email: '', password: '', mustChange: false });
-    setPortal(true);
+    setAcct({ email: '', password: '', confirm: '', mustChange: false });
     setModules(PARTNER_MODULES.map((m) => m.id));
     setErrors({});
     s.setError('');
   }, [open]);
   const loginEmail = acct.email || org.email;
-  const loginName = acct.fullName || org.contactName;
+  // Suggest a code from the name (editable).
+  const suggestedCode = org.name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+  const code = org.code || (suggestedCode.length >= 2 ? suggestedCode : '');
   const save = () => {
     const e = {
-      name: org.name.trim().length < 3 ? 'Partner name is required.' : undefined,
-      code: !/^[A-Z]{2,5}$/.test(org.code) ? '2–5 uppercase letters.' : db.partners.some((p) => p.code === org.code) ? 'Code already in use.' : undefined,
+      name: org.name.trim().length < 3 ? 'Organisation name is required.' : undefined,
+      code: !/^[A-Z]{2,5}$/.test(code) ? '2–5 uppercase letters.' : db.partners.some((p) => p.code === code) ? 'Code already in use — choose another.' : undefined,
+      branch: org.branch.trim() ? undefined : 'Branch name is required.',
       contactName: org.contactName.trim().length < 2 ? 'Contact person is required.' : undefined,
       email: /^\S+@\S+\.\S+$/.test(org.email) ? undefined : 'Valid email required.',
       phone: org.phone.replace(/\D/g, '').length < 8 ? 'Valid phone required.' : undefined,
-      city: org.city.trim() ? undefined : 'City is required.',
       loginEmail: /^\S+@\S+\.\S+$/.test(loginEmail) ? undefined : 'Valid login email required.',
       password: pwError(acct.password, loginEmail),
+      confirm: confirmError(acct.password, acct.confirm),
+      modules: modules.length ? undefined : 'Enable at least one module.',
     };
     setErrors(e);
     if (Object.values(e).some(Boolean)) return;
     void s.run(async () => {
       const email = loginEmail.trim().toLowerCase();
+      const active = org.status === 'Active';
       await adminApi.createPartner({
-        partner: { ...org, branches: org.branches.split(',').map((b) => b.trim()).filter(Boolean) },
-        account: { email, fullName: loginName.trim(), password: acct.password, mustChangePassword: acct.mustChange },
-        portalEnabled: portal,
+        partner: {
+          name: org.name, code, contactName: org.contactName, email: org.email, phone: org.phone, country: org.country,
+          city: org.branch, branches: [org.branch.trim()], address: org.address, tier: 'Silver',
+        },
+        account: { email, fullName: org.contactName.trim(), password: acct.password, mustChangePassword: acct.mustChange },
+        portalEnabled: active,
         modules,
       });
       await onCreated(email, acct.password);
@@ -870,52 +933,50 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
       onClose={onClose}
       size="xl"
       dirty={!!(org.name || org.email || acct.password)}
-      title="Add new partner"
-      subtitle="Creates the partner organisation, its private workspace and a Partner Admin login."
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Save & create account</Button></>}
+      title="Add partner"
+      subtitle="Creates the partner organisation, its private workspace and its Partner Admin login. No invitation is sent."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Create Partner &amp; Account</Button></>}
     >
       <div className="space-y-6">
         {s.error && <Alert tone="error">{s.error}</Alert>}
         <section>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">1 · Partner details</h3>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">1 · Partner information</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Partner name" required error={errors.name} className="sm:col-span-2"><Input icon={Building2} value={org.name} invalid={!!errors.name} onChange={o('name')} placeholder="e.g. Sunrise Overseas Education" autoFocus /></Field>
-            <Field label="Partner code" required error={errors.code} hint="Short unique code"><Input value={org.code} invalid={!!errors.code} onChange={(e) => setOrg({ ...org, code: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5) })} placeholder="SOE" /></Field>
+            <Field label="Partner organisation name" required error={errors.name} className="sm:col-span-2"><Input icon={Building2} value={org.name} invalid={!!errors.name} onChange={o('name')} placeholder="e.g. Sunrise Overseas Education" autoFocus /></Field>
+            <Field label="Branch name" required error={errors.branch}><Input value={org.branch} invalid={!!errors.branch} onChange={o('branch')} placeholder="e.g. Kochi" /></Field>
+            <Field label="Partner code" required error={errors.code} hint={org.code ? 'Short unique code' : code ? `Suggested: ${code}` : 'Short unique code'}>
+              <Input value={org.code} placeholder={code || 'SOE'} invalid={!!errors.code} onChange={(e) => setOrg({ ...org, code: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5) })} />
+            </Field>
             <Field label="Contact person" required error={errors.contactName}><Input value={org.contactName} invalid={!!errors.contactName} onChange={o('contactName')} /></Field>
-            <Field label="Organisation email" required error={errors.email}><Input icon={Mail} type="email" value={org.email} invalid={!!errors.email} onChange={o('email')} /></Field>
-            <Field label="Phone" required error={errors.phone}><Input value={org.phone} invalid={!!errors.phone} onChange={o('phone')} placeholder="+91 …" /></Field>
-            <Field label="City" required error={errors.city}><Input value={org.city} invalid={!!errors.city} onChange={o('city')} /></Field>
+            <Field label="Email address" required error={errors.email}><Input icon={Mail} type="email" value={org.email} invalid={!!errors.email} onChange={o('email')} /></Field>
+            <Field label="Phone number" required error={errors.phone}><Input value={org.phone} invalid={!!errors.phone} onChange={o('phone')} placeholder="+91 …" /></Field>
             <Field label="Country">
               <Select value={org.country} onChange={o('country')} aria-label="Country">
                 {['India', 'UAE', 'Sri Lanka', 'Nepal', 'Bangladesh', 'Nigeria', 'Vietnam'].map((c) => <option key={c}>{c}</option>)}
               </Select>
             </Field>
-            <Field label="Tier">
-              <Select value={org.tier} onChange={o('tier')} aria-label="Tier">
-                {['Platinum', 'Gold', 'Silver'].map((t) => <option key={t}>{t}</option>)}
+            <Field label="Address" className="sm:col-span-2"><Input value={org.address} onChange={o('address')} placeholder="Street, city, PIN" /></Field>
+            <Field label="Account status">
+              <Select value={org.status} onChange={o('status')} aria-label="Account status">
+                <option value="Active">Active — can sign in now</option>
+                <option value="Inactive">Inactive — create now, enable later</option>
               </Select>
             </Field>
-            <Field label="Branches" hint="Comma separated"><Input value={org.branches} onChange={o('branches')} /></Field>
           </div>
         </section>
         <section>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">2 · Login account (Partner Admin)</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Account holder name" hint="Defaults to the contact person"><Input value={acct.fullName} placeholder={org.contactName} onChange={(e) => setAcct({ ...acct, fullName: e.target.value })} /></Field>
-            <Field label="Login email" required error={errors.loginEmail} hint="Defaults to the organisation email"><Input icon={Mail} type="email" value={acct.email} placeholder={org.email} invalid={!!errors.loginEmail} onChange={(e) => setAcct({ ...acct, email: e.target.value })} autoComplete="off" /></Field>
-            <div className="sm:col-span-2"><PasswordInput value={acct.password} onChange={(v) => setAcct({ ...acct, password: v })} email={loginEmail} error={errors.password} /></div>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">2 · Login credentials</h3>
+          <div className="space-y-4">
+            <Field label="Registered login email" required error={errors.loginEmail} hint="Defaults to the email address above">
+              <Input icon={Mail} type="email" value={acct.email} placeholder={org.email} invalid={!!errors.loginEmail} onChange={(e) => setAcct({ ...acct, email: e.target.value })} autoComplete="off" />
+            </Field>
+            <PasswordInput value={acct.password} onChange={(v) => setAcct((x) => ({ ...x, password: v }))} confirm={acct.confirm} onConfirm={(v) => setAcct((x) => ({ ...x, confirm: v }))} email={loginEmail} error={errors.password} confirmError={errors.confirm} />
+            <Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" />
           </div>
-          <div className="mt-3"><Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" /></div>
         </section>
         <section>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">3 · Access</h3>
-          <div className="mb-4 flex items-center justify-between gap-4 rounded-xl bg-canvas p-4 ring-1 ring-line">
-            <div>
-              <div className="font-semibold text-heading">Activate Client Portal now</div>
-              <div className="text-xs text-ink-mute">Off: the account exists but cannot open the portal until you enable it.</div>
-            </div>
-            <Switch checked={portal} onCheckedChange={setPortal} label="Activate Client Portal" />
-          </div>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">3 · Access permissions</h3>
+          {errors.modules && <Alert tone="error" className="mb-3">{errors.modules}</Alert>}
           <ModulePicker value={modules} onChange={setModules} />
         </section>
       </div>
@@ -985,6 +1046,7 @@ function EditUserDialog({ user, onClose, onSaved }: { user: DirectoryUser | null
   const [role, setRole] = useState<UserRole>('admin_staff');
   const [perms, setPerms] = useState<string[] | null>(null);
   const [mustChange, setMustChange] = useState(false);
+  const [contact, setContact] = useState({ phone: '', department: '', designation: '' });
   const s = useSubmit();
   const staff = user ? isStaffRole(user.role) : false;
   useEffect(() => {
@@ -996,6 +1058,7 @@ function EditUserDialog({ user, onClose, onSaved }: { user: DirectoryUser | null
     const same = !!user.permissions && user.permissions.length === defaults.length && user.permissions.every((p) => defaults.includes(p as never));
     setPerms(same ? null : user.permissions);
     setMustChange(user.mustChangePassword);
+    setContact({ phone: user.phone ?? '', department: user.department ?? '', designation: user.designation ?? '' });
     s.setError('');
   }, [user]);
   const save = () =>
@@ -1006,7 +1069,8 @@ function EditUserDialog({ user, onClose, onSaved }: { user: DirectoryUser | null
         userId: user.id,
         fullName: fullName.trim(),
         role,
-        ...(staff ? { permissions: role === 'super_admin' ? null : perms } : {}),
+        ...(staff ? { permissions: role === 'super_admin' ? null : perms, department: contact.department, designation: contact.designation } : {}),
+        phone: contact.phone,
         mustChangePassword: mustChange,
       });
       toast.success('Account updated', user.email);
@@ -1028,6 +1092,9 @@ function EditUserDialog({ user, onClose, onSaved }: { user: DirectoryUser | null
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Full name" required><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
             <Field label="Login email" hint="Email cannot be changed here — create a new account instead."><Input value={user.email} disabled /></Field>
+            <Field label="Phone number"><Input value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} /></Field>
+            {staff && <Field label="Department"><Input value={contact.department} onChange={(e) => setContact({ ...contact, department: e.target.value })} /></Field>}
+            {staff && <Field label="Designation"><Input value={contact.designation} onChange={(e) => setContact({ ...contact, designation: e.target.value })} /></Field>}
             <Field label="Role" className="sm:col-span-2">
               <Select value={role} onChange={(e) => { setRole(e.target.value as UserRole); setPerms(null); }} aria-label="Role">
                 {(staff ? STAFF_ROLES : PARTNER_ROLES).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}

@@ -92,14 +92,15 @@ export default function Tasks() {
 }
 
 function TaskForm({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { actions } = useStore();
+  const { actions, db, session } = useStore();
   const toast = useToast();
   const [title, setTitle] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
   const [due, setDue] = useState(toDateInput(new Date(Date.now() + 86400000).toISOString()));
   const [time, setTime] = useState('17:00');
   const [errors, setErrors] = useState<{ title?: string; due?: string }>({});
   const [priority, setPriority] = useState<Priority>('Medium');
-  const [assignee, setAssignee] = useState('Aisha Rahman');
+  const [assignee, setAssignee] = useState('Admissions Team');
   const save = () => {
     const e: { title?: string; due?: string } = {};
     if (title.trim().length < 3) e.title = 'Enter a task of at least 3 characters.';
@@ -110,7 +111,8 @@ function TaskForm({ open, onClose }: { open: boolean; onClose: () => void }) {
     const [hh, mm] = (time || '17:00').split(':').map(Number);
     const when = new Date(at);
     when.setHours(hh, mm, 0, 0);
-    actions.addTask({ title: title.trim(), due: when.toISOString(), priority, assignee });
+    const person = db.staff.find((m) => m.id === assignedTo);
+    actions.addTask({ title: title.trim(), due: when.toISOString(), priority, assignee: person?.fullName ?? assignee, assignedTo: person ? person.id : null });
     toast.success('Reminder added', title);
     setTitle('');
     onClose();
@@ -122,7 +124,15 @@ function TaskForm({ open, onClose }: { open: boolean; onClose: () => void }) {
         <Field label="Due date" required error={errors.due}><Input type="date" value={due} onChange={(e) => setDue(e.target.value)} invalid={!!errors.due} /></Field>
         <Field label="Due time" hint="Defaults to 5:00 PM"><TimePicker value={time} onChange={setTime} aria-label="Due time" /></Field>
         <Field label="Priority"><Select value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>{['High', 'Medium', 'Normal'].map((p) => <option key={p}>{p}</option>)}</Select></Field>
-        <Field label="Assignee" className="sm:col-span-2"><Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>{['Aisha Rahman', 'Admissions Team', 'Visa Desk', 'Finance', 'Partner Success'].map((p) => <option key={p}>{p}</option>)}</Select></Field>
+        <Field label="Assign to employee" hint="They are notified instantly" className="sm:col-span-2">
+          <Select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} aria-label="Assign to employee">
+            <option value="">Unassigned team task</option>
+            {db.staff.map((m) => <option key={m.id} value={m.id}>{m.fullName}{m.id === session?.userId ? ' (me)' : ''}{m.department ? ` · ${m.department}` : ''}</option>)}
+          </Select>
+        </Field>
+        {!assignedTo && (
+          <Field label="Team" className="sm:col-span-2"><Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>{['Admissions Team', 'Visa Desk', 'Finance', 'Partner Success', 'Documents Desk'].map((p) => <option key={p}>{p}</option>)}</Select></Field>
+        )}
       </div>
     </Modal>
   );

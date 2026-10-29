@@ -15,6 +15,7 @@ import {
   cleanEmail,
   cleanModules,
   cleanName,
+  cleanOptional,
   cleanPartner,
   cleanPermissions,
   isPartnerRole,
@@ -99,6 +100,16 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const audit = (action: string, entity: string, entityId: string, partnerId: string | null, changes: unknown = null) =>
     admin.from('audit_log').insert({ actor_id: me, actor_role: 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
+  // Live Activity entry (Super Admins only); actor details are stamped by the database.
+  const activity = (title: string, detail: string | null, refId: string) =>
+    admin.from('activities').insert({ kind: 'account', title, detail, ref_id: refId, actor_id: me });
+  const contact = (b: Record<string, unknown>) => {
+    const phone = cleanOptional(b.phone, 40);
+    const department = cleanOptional(b.department);
+    const designation = cleanOptional(b.designation);
+    if (phone === undefined || department === undefined || designation === undefined) throw bad('Phone, department or designation is too long.');
+    return { phone, department, designation };
+  };
 
   const loadTarget = async (userId: unknown) => {
     const id = String(userId ?? '');
@@ -121,19 +132,23 @@ Deno.serve(async (req) => {
         const fullName = cleanName(body.fullName);
         const role = body.role;
         const permissions = cleanPermissions(body.permissions ?? null);
-        if (!email || !fullName || !isStaffRole(role) || permissions === undefined) throw bad();
+        const status = body.status === undefined ? 'active' : String(body.status);
+        if (!email || !fullName || !isStaffRole(role) || permissions === undefined || !(STATUSES as readonly string[]).includes(status)) throw bad();
+        const extra = contact(body);
         const password = checkPassword(body.password, email);
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
         const id = await createAuthUser(admin, email, password, fullName);
         const { error } = await admin.from('profiles').insert({
-          id, role, partner_id: null, full_name: fullName, email, status: 'active',
+          id, role, partner_id: null, full_name: fullName, email, status, ...extra,
           permissions: role === 'super_admin' ? null : permissions, must_change_password: body.mustChangePassword === true, created_by: me,
         });
+        if (!error && status !== 'active') await admin.auth.admin.updateUserById(id, { ban_duration: BAN_FOREVER });
         if (error) {
           await admin.auth.admin.deleteUser(id);
           throw new Fail(500, 'Could not create the account.');
         }
         await audit('account_created', 'profiles', id, null, { role: [null, role] });
+        await activity('Employee account created', fullName, id);
         return json(200, { ok: true, userId: id }, origin);
       }
 
@@ -151,6 +166,8 @@ Deno.serve(async (req) => {
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
 
         const portalEnabled = body.portalEnabled !== false;
+        const accountPhone = cleanOptional(account.phone, 40);
+        if (accountPhone === undefined) throw bad();
         const { data: org, error: orgErr } = await admin
           .from('partners')
           .insert({ ...partner, status: portalEnabled ? 'Active' : 'Onboarding', portal_enabled: portalEnabled, modules })
@@ -162,7 +179,7 @@ Deno.serve(async (req) => {
           userId = await createAuthUser(admin, email, password, fullName);
           const { error } = await admin.from('profiles').insert({
             id: userId, role: 'partner_admin', partner_id: org.id, full_name: fullName, email, status: 'active',
-            must_change_password: account.mustChangePassword === true, created_by: me,
+            phone: accountPhone ?? partner.phone, must_change_password: account.mustChangePassword === true, created_by: me,
           });
           if (error) throw new Fail(500, 'Could not create the partner account.');
         } catch (e) {
@@ -172,6 +189,7 @@ Deno.serve(async (req) => {
         }
         await audit('partner_created', 'partners', org.id, org.id);
         await audit('account_created', 'profiles', userId, org.id, { role: [null, 'partner_admin'] });
+        await activity('Partner and login account created', partner.name, org.id);
         return json(200, { ok: true, partnerId: org.id, userId }, origin);
       }
 
@@ -195,6 +213,7 @@ Deno.serve(async (req) => {
           throw new Fail(500, 'Could not create the account.');
         }
         await audit('account_created', 'profiles', id, partnerId, { role: [null, role] });
+        await activity('Partner user created', fullName, id);
         return json(200, { ok: true, userId: id }, origin);
       }
 
@@ -211,6 +230,7 @@ Deno.serve(async (req) => {
         const { error } = await admin.from('partners').delete().eq('id', partnerId);
         if (error) throw new Fail(500, 'Could not delete the partner.');
         await audit('partner_deleted', 'partners', partnerId, null);
+        await activity('Partner deleted', org.name, partnerId);
         return json(200, { ok: true }, origin);
       }
 
@@ -238,6 +258,12 @@ Deno.serve(async (req) => {
           patch.permissions = (patch.role ?? t.role) === 'super_admin' ? null : p;
         }
         if (body.mustChangePassword !== undefined) patch.must_change_password = body.mustChangePassword === true;
+        for (const k of ['phone', 'department', 'designation'] as const) {
+          if (body[k] === undefined) continue;
+          const v = cleanOptional(body[k], k === 'phone' ? 40 : 80);
+          if (v === undefined) throw bad(`The ${k} is too long.`);
+          patch[k] = v;
+        }
         if (!Object.keys(patch).length) return json(200, { ok: true }, origin);
         const { error } = await admin.from('profiles').update(patch).eq('id', t.id);
         if (error) throw new Fail(500, 'Could not update the account.');
@@ -246,6 +272,7 @@ Deno.serve(async (req) => {
           fields: Object.keys(patch),
           ...(patch.role ? { role: [t.role, patch.role] } : {}),
         });
+        if (patch.role || patch.permissions !== undefined) await activity(patch.role ? 'Role changed' : 'Permissions changed', null, t.id);
         return json(200, { ok: true }, origin);
       }
 
@@ -263,6 +290,7 @@ Deno.serve(async (req) => {
         const { error } = await admin.from('profiles').update({ status }).eq('id', t.id);
         if (error) throw new Fail(500, 'Could not update the account.');
         await audit('status_changed', 'profiles', t.id, t.partner_id, { status: [t.status, status] });
+        await activity(status === 'active' ? 'Account activated' : status === 'suspended' ? 'Account suspended' : 'Account deactivated', null, t.id);
         return json(200, { ok: true }, origin);
       }
 
@@ -276,6 +304,7 @@ Deno.serve(async (req) => {
         if (body.mustChangePassword !== undefined)
           await admin.from('profiles').update({ must_change_password: body.mustChangePassword === true }).eq('id', t.id);
         await audit('password_reset', 'profiles', t.id, t.partner_id); // never the password itself
+        await activity('Password reset by admin', null, t.id);
         return json(200, { ok: true }, origin);
       }
 

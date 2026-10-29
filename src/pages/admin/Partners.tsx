@@ -21,12 +21,10 @@ export default function Partners() {
   const [params, setParams] = useSearchParams();
   const [accountOpen, setAccountOpen] = useState(false);
   const [created, setCreated] = useState<{ title: string; email: string; password: string } | null>(null);
-  // Super Admins create the organisation together with its login account; other staff can
-  // only record the organisation (its portal stays closed until a Super Admin opens it).
+  // Partners are created only here, by a Super Admin, together with their login account.
   const openAdd = () => {
     setEditing(undefined);
     if (superAdmin) setAccountOpen(true);
-    else setFormOpen(true);
   };
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
@@ -73,9 +71,11 @@ export default function Partners() {
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
-            <Button icon={Plus} onClick={openAdd}>
-              Add Partner
-            </Button>
+            {superAdmin && (
+              <Button icon={Plus} onClick={openAdd}>
+                Add Partner
+              </Button>
+            )}
           </>
         }
       />
@@ -91,7 +91,7 @@ export default function Partners() {
 
       {rows.length === 0 ? (
         <Card>
-          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={<Button icon={Plus} onClick={openAdd}>Add Partner</Button>} />
+          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={superAdmin ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
         </Card>
       ) : view === 'grid' ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">

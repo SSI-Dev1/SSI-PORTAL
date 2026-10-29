@@ -22,6 +22,7 @@ import { Badge, Button, Card, CardHeader, FilterSelect, Segmented } from '../../
 import { StatCard } from '../../components/StatCard';
 import { StatusDonut, TopCountries, TrendChart, monthlyTrend } from '../../components/charts';
 import { ActivityFeed } from '../../components/ActivityFeed';
+import { LiveActivity } from '../../components/LiveActivity';
 import { useLookup, useStore } from '../../store/store';
 import { cn, daysUntil, formatDate, greeting, money } from '../../lib/utils';
 
@@ -39,15 +40,35 @@ export default function AdminDashboard() {
   const trend = monthlyTrend(apps, 6);
   const spark = trend.map((t) => t.Applications);
 
+  // Real growth: records created in the last 30 days vs the 30 days before (no fixed demo numbers).
+  const growth = (dates: string[]) => {
+    const now = Date.now();
+    const recent = dates.filter((d) => now - new Date(d).getTime() <= 30 * 86400_000).length;
+    const prior = dates.filter((d) => {
+      const age = now - new Date(d).getTime();
+      return age > 30 * 86400_000 && age <= 60 * 86400_000;
+    }).length;
+    return prior ? Math.round(((recent - prior) / prior) * 1000) / 10 : undefined;
+  };
+  const studentSpark = (() => {
+    const out: number[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      out.push(students.filter((s) => new Date(s.createdAt).getMonth() === d.getMonth() && new Date(s.createdAt).getFullYear() === d.getFullYear()).length);
+    }
+    return out;
+  })();
+
   const stats = [
-    { label: 'Total Clients', value: partner ? 1 : db.partners.length, icon: Building2, to: '/admin/partners', tone: 'navy' as const, delta: 4.2 },
-    { label: 'Total Students', value: students.length, icon: Users, to: '/admin/students', delta: 12.5, spark: [4, 6, 5, 8, 7, 9] },
-    { label: 'Total Applications', value: apps.length, icon: FileStack, to: '/admin/applications', delta: 8.3, spark },
-    { label: 'Pending Assessments', value: assessments.filter((a) => a.status === 'Pending' || a.status === 'In Review').length + count('Pending Assessment'), icon: ClipboardCheck, to: '/admin/assessments', delta: 5.6 },
-    { label: 'Offers Received', value: count('Conditional Offer', 'Unconditional Offer'), icon: Award, to: '/admin/applications?status=Conditional%20Offer', delta: 7.6, spark: trend.map((t) => t.Offers) },
-    { label: 'Visa Lodged', value: count('Visa Lodged'), icon: PlaneTakeoff, to: '/admin/applications?status=Visa%20Lodged', tone: 'navy' as const, delta: 6.7 },
-    { label: 'Visa Granted', value: count('Visa Granted'), icon: BadgeCheck, to: '/admin/applications?status=Visa%20Granted', tone: 'green' as const, delta: 8.9, spark: trend.map((t) => t.Visas) },
-    { label: 'Visa Refused', value: count('Visa Refused'), icon: ShieldX, to: '/admin/applications?status=Visa%20Refused', tone: 'red' as const, delta: -1.1 },
+    { label: 'Total Clients', value: partner ? 1 : db.partners.filter((p) => !p.archivedAt).length, icon: Building2, to: '/admin/partners', tone: 'navy' as const, delta: growth(db.partners.map((p) => p.joinedAt)) },
+    { label: 'Total Students', value: students.length, icon: Users, to: '/admin/students', delta: growth(students.map((s) => s.createdAt)), spark: studentSpark },
+    { label: 'Total Applications', value: apps.length, icon: FileStack, to: '/admin/applications', delta: growth(apps.map((a) => a.appliedAt)), spark },
+    { label: 'Pending Assessments', value: assessments.filter((a) => a.status === 'Pending' || a.status === 'In Review').length + count('Pending Assessment'), icon: ClipboardCheck, to: '/admin/assessments' },
+    { label: 'Offers Received', value: count('Conditional Offer', 'Unconditional Offer'), icon: Award, to: '/admin/applications?status=Conditional%20Offer', spark: trend.map((t) => t.Offers) },
+    { label: 'Visa Lodged', value: count('Visa Lodged'), icon: PlaneTakeoff, to: '/admin/applications?status=Visa%20Lodged', tone: 'navy' as const },
+    { label: 'Visa Granted', value: count('Visa Granted'), icon: BadgeCheck, to: '/admin/applications?status=Visa%20Granted', tone: 'green' as const, spark: trend.map((t) => t.Visas) },
+    { label: 'Visa Refused', value: count('Visa Refused'), icon: ShieldX, to: '/admin/applications?status=Visa%20Refused', tone: 'red' as const },
   ];
 
   const deadlines = [
@@ -176,6 +197,8 @@ export default function AdminDashboard() {
               </ul>
             </Card>
           </div>
+
+          <LiveActivity items={db.activities} />
 
           <Card>
             <CardHeader title="Partner Performance" subtitle="Applications and conversion per consultancy partner" action={<button onClick={() => navigate('/admin/partners')} className="text-xs font-semibold text-rust hover:underline">Manage partners</button>} />

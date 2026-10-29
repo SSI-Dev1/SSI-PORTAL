@@ -2,7 +2,7 @@
 // the real sidebar without a signed-in account, for checking breakpoints, themes and
 // keyboard behaviour.
 import { useCallback, useState } from 'react';
-import { LogOut, Menu as MenuIcon, Settings } from 'lucide-react';
+import { Menu as MenuIcon } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from '../layouts/Sidebar';
 import { Button, Card, CardHeader, IconButton } from '../components/ui';
 import { ThemeMenu } from '../components/ThemeSwitcher';
@@ -20,14 +20,9 @@ export default function ShellDemo() {
       partnerModules: ['students', 'applications', 'course_finder', 'assessments', 'documents', 'updates'],
     }),
     base: '/ui/shell',
-    isAdmin: !client,
+    portal: (client ? 'client' : 'admin') as 'client' | 'admin',
     orgName: 'Demo Partner Pvt Ltd',
     badges: client ? { updates: 3 } : ({} as Record<string, number>),
-    user: { name: 'Demo User', title: client ? 'Partner Staff' : 'Super Admin' },
-    menuItems: [
-      { label: 'Settings', icon: Settings, onClick: () => {} },
-      { label: 'Sign out', icon: LogOut, onClick: () => {}, danger: true },
-    ],
   };
   return (
     <div className="min-h-screen bg-canvas">

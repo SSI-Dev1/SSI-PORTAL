@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, UserCircle2 } from 'lucide-react';
+import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2 } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from './Sidebar';
 import { canOpen } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
@@ -21,7 +21,6 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const closeDrawer = useCallback(() => setMobileOpen(false), []);
   const sidebarPrefs = useSidebarPrefs();
-  const isAdmin = session?.role === 'admin';
   const base = scoped.base;
 
   useEffect(() => {
@@ -44,14 +43,9 @@ export default function AppShell() {
   const sharedNav = {
     sections: navFor(session),
     base,
-    isAdmin,
-    orgName: scoped.partner?.name,
-    badges: (!isAdmin && liveUpdates > 0 ? { updates: liveUpdates } : {}) as Record<string, number>,
-    user: { name: session?.name ?? 'User', title: session?.title ?? '' },
-    menuItems: [
-      { label: isAdmin ? 'Settings' : 'My Profile', icon: isAdmin ? Settings : UserCircle2, onClick: () => navigate(`${base}/${isAdmin ? 'settings' : 'profile'}`) },
-      { label: 'Sign out', icon: LogOut, onClick: signOut, danger: true },
-    ],
+    portal: session?.role ?? 'client',
+    orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,
+    badges: (session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}) as Record<string, number>,
   };
 
   return (
@@ -136,13 +130,17 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
         <IconButton icon={MenuIcon} label="Open menu" className="md:hidden" onClick={onMenu} />
         <div className="hidden items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-semibold text-heading md:flex">
           <Building2 className="h-4 w-4 text-ink-mute" />
-          {isAdmin ? 'Head Office' : scoped.partner?.city ?? 'Workspace'}
-          <Badge tone={isAdmin ? 'navy' : 'orange'} className="ml-1">
-            {isAdmin ? 'Admin' : 'Partner'}
+          {session?.role === 'client' ? scoped.partner?.city ?? 'Workspace' : 'Head Office'}
+          <Badge tone={session?.role === 'client' ? 'orange' : session?.role === 'staff' ? 'teal' : 'navy'} className="ml-1">
+            {session?.role === 'client' ? 'Partner' : session?.role === 'staff' ? 'Staff' : 'Admin'}
           </Badge>
+        </div>
+        <div className="hidden lg:block">
+          <LiveIndicator />
         </div>
         <GlobalSearch />
         <div className="ml-auto flex items-center gap-1">
+          <span className="lg:hidden"><LiveIndicator /></span>
           <ThemeMenu />
           <Notifications />
           <div className="mx-2 hidden h-8 w-px bg-line sm:block" />
@@ -168,6 +166,7 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
 
 function GlobalSearch() {
   const scoped = useScoped();
+  const { session } = useStore();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -197,7 +196,7 @@ function GlobalSearch() {
       .filter((a) => matches(q, a.ref))
       .slice(0, 3)
       .forEach((a) => out.push({ label: a.ref, sub: a.status, to: `${scoped.base}/applications?open=${a.id}`, kind: 'Application' }));
-    if (scoped.isAdmin)
+    if (session?.role === 'admin')
       scoped.partners
         .filter((p) => matches(q, p.name, p.code, p.city))
         .slice(0, 3)
@@ -206,7 +205,7 @@ function GlobalSearch() {
       .filter((u) => matches(q, u.name))
       .slice(0, 3)
       .forEach((u) =>
-        out.push({ label: u.name, sub: `${countryFlag[u.country] ?? ''} ${u.country}`, to: scoped.isAdmin ? `/admin/providers?q=${encodeURIComponent(u.name)}` : `/client/course-finder?university=${u.id}`, kind: 'University' }),
+        out.push({ label: u.name, sub: `${countryFlag[u.country] ?? ''} ${u.country}`, to: scoped.isAdmin ? `${scoped.base}/providers?q=${encodeURIComponent(u.name)}` : `/client/course-finder?university=${u.id}`, kind: 'University' }),
       );
     return out;
   }, [q, scoped]);
@@ -259,14 +258,27 @@ function GlobalSearch() {
 }
 
 function Notifications() {
-  const { db, session, actions } = useStore();
+  const { db, actions } = useStore();
   const scoped = useScoped();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open);
-  const readAt = db.readAt;
-  const items = scoped.activities.slice(0, 12);
-  const unread = items.filter((a) => a.at > readAt).length;
+  // Server-side inbox: rows are written by database triggers for this user only.
+  const items = db.notifications;
+  const unread = items.filter((n) => !n.readAt).length;
+  const seen = useRef<Set<string> | null>(null);
+  const toast = useToast();
+
+  // A subtle toast for notifications that arrive while the app is open (not on first load).
+  useEffect(() => {
+    const ids = new Set(items.map((n) => n.id));
+    if (seen.current) {
+      const fresh = items.filter((n) => !seen.current!.has(n.id) && !n.readAt);
+      if (fresh.length === 1) toast.info(fresh[0].title, fresh[0].body ?? undefined);
+      else if (fresh.length > 1) toast.info(`${fresh.length} new notifications`);
+    }
+    seen.current = ids;
+  }, [items, toast]);
 
   return (
     <div className="relative" ref={ref}>
@@ -278,42 +290,55 @@ function Notifications() {
               <div className="font-display text-sm font-semibold text-heading">Notifications</div>
               <div className="text-xs text-ink-mute">{unread} unread</div>
             </div>
-            <button type="button" onClick={() => actions.markNotificationsRead()} className="flex items-center gap-1 text-xs font-semibold text-rust hover:underline">
-              <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-            </button>
+            {items.length > 0 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => actions.markNotificationsRead()}
+                  disabled={unread === 0}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-rust transition hover:bg-canvas disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                </button>
+                <button
+                  type="button"
+                  onClick={() => actions.clearNotifications()}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink-soft transition hover:bg-canvas hover:text-heading"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Clear all
+                </button>
+              </div>
+            )}
           </div>
           <div className="max-h-[380px] overflow-y-auto p-1.5">
-            {items.length === 0 && <div className="px-4 py-8 text-center text-sm text-ink-mute">You’re all caught up.</div>}
-            {items.map((a) => (
+            {items.length === 0 && (
+              <div className="flex flex-col items-center px-4 py-8 text-center">
+                <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-ink-mute ring-1 ring-line">
+                  <BellOff className="h-4 w-4" />
+                </span>
+                <span className="text-sm font-semibold text-heading">You’re all caught up</span>
+                <span className="text-xs text-ink-mute">New activity for you will appear here instantly.</span>
+              </div>
+            )}
+            {items.map((n) => (
               <button
-                key={a.id}
+                key={n.id}
                 type="button"
                 onClick={() => {
                   setOpen(false);
-                  navigate(`${scoped.base}/${a.kind === 'update' ? 'updates' : a.kind === 'student' ? 'students' : a.kind === 'document' ? 'documents' : a.kind === 'partner' ? 'partners' : a.kind === 'assessment' ? 'assessments' : a.kind === 'payment' ? 'finance' : 'applications'}`);
+                  actions.markNotificationRead(n.id);
+                  if (n.link) navigate(`${scoped.base}/${n.link}`);
                 }}
-                className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-canvas"
+                className="flex w-full animate-fade-in items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-canvas"
               >
-                <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', a.at > readAt ? 'bg-rust' : 'bg-transparent')} />
+                <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', !n.readAt ? 'bg-rust' : 'bg-transparent')} aria-label={!n.readAt ? 'Unread' : undefined} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold text-heading">{a.title}</span>
-                  <span className="block truncate text-xs text-ink-soft">{a.detail}</span>
+                  <span className={cn('block text-[13px] text-heading', !n.readAt ? 'font-semibold' : 'font-medium')}>{n.title}</span>
+                  {n.body && <span className="block truncate text-xs text-ink-soft">{n.body}</span>}
                 </span>
-                <span className="shrink-0 text-[11px] text-ink-mute">{timeAgo(a.at)}</span>
+                <span className="shrink-0 text-[11px] text-ink-mute">{timeAgo(n.createdAt)}</span>
               </button>
             ))}
-          </div>
-          <div className="border-t border-line p-2">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                navigate(`${scoped.base}/${session?.role === 'admin' ? 'dashboard' : 'updates'}`);
-              }}
-              className="w-full rounded-lg py-2 text-center text-xs font-semibold text-heading hover:bg-canvas"
-            >
-              {session?.role === 'admin' ? 'Back to dashboard' : 'View important updates'}
-            </button>
           </div>
         </div>
       )}
@@ -321,3 +346,21 @@ function Notifications() {
   );
 }
 
+/** Small status pill: green when the realtime connection is up. */
+function LiveIndicator() {
+  const { live } = useStore();
+  const label = live === 'live' ? 'Live' : live === 'offline' ? 'Reconnecting…' : 'Connecting…';
+  return (
+    <span
+      className={cn(
+        'hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 sm:inline-flex',
+        live === 'live' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30' : 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30',
+      )}
+      role="status"
+      title={live === 'live' ? 'Changes from other users appear automatically' : 'Live updates paused; data will re-sync when the connection returns'}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', live === 'live' ? 'animate-pulse bg-emerald-500' : 'bg-amber-500')} />
+      {label}
+    </span>
+  );
+}

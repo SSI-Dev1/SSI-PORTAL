@@ -210,4 +210,4 @@ select pg_temp.check(not (select must_change_password from public.my_access()), 
 select pg_temp.denied($$update public.profiles set must_change_password = true, status = 'suspended' where id = auth.uid()$$, 'user cannot change own status');
 rollback;
 
-\echo 'ALL SECURITY TESTS PASSED'
+\echo 'ACCOUNT TESTS PASSED'

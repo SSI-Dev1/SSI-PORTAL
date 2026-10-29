@@ -3,13 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BookOpen, ExternalLink, Landmark, MapPin, Plus, Trash2, Trophy } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, SearchInput, Select } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
-import { useStore } from '../../store/store';
+import { useScoped, useStore } from '../../store/store';
 import { COUNTRIES } from '../../data/seed';
 import type { University } from '../../data/types';
 import { countryFlag, matches } from '../../lib/utils';
 
 export default function Providers() {
   const { db, actions } = useStore();
+  const { base } = useScoped();
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -66,7 +67,7 @@ export default function Providers() {
                   <div className="rounded-xl bg-canvas py-2"><div className="font-display text-lg font-semibold text-heading">{apps.length}</div><div className="text-[11px] text-ink-mute">Applications</div></div>
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Button size="sm" variant="secondary" icon={BookOpen} className="flex-1" onClick={() => navigate(`/admin/courses?university=${u.id}`)}>View courses</Button>
+                  <Button size="sm" variant="secondary" icon={BookOpen} className="flex-1" onClick={() => navigate(`${base}/courses?university=${u.id}`)}>View courses</Button>
                   <a href={`https://${u.website}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-lg px-3 text-[13px] font-semibold text-ink-soft hover:bg-canvas hover:text-heading">
                     Website <ExternalLink className="h-3 w-3" />
                   </a>

@@ -366,7 +366,8 @@ export function createSeed(): DB {
       tasks,
       announcements,
       activities,
-      readAt: '',
+      notifications: [],
+      staff: [],
     } satisfies DB),
   );
 }

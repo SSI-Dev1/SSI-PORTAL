@@ -102,6 +102,37 @@ student for child records); a browser-supplied value is ignored. Records cannot 
 re-parented to another organisation. Application refs, timelines and dates are
 server-managed. No user can change their own role, organisation or status.
 
+## 3b. Portals and real-time sync
+
+**Three portals, one database.** Super Admins and Admin Staff use the Admin Portal (`/admin`),
+the other employee roles use the Staff Portal (`/staff`: dashboard, assigned work, students,
+applications, assessments, document verification, tasks, updates — filtered by permission),
+and partner users use the Client Portal (`/client`). The portal is chosen from the role
+returned by `my_access()`; the database enforces the same rules whichever URL is opened.
+
+**Realtime** (`0005_realtime_notifications.sql`). The CRM tables, `activities`,
+`notifications` and `profiles` are in the `supabase_realtime` publication. Supabase Realtime
+evaluates each subscriber's RLS SELECT policy before delivering a change, so a partner never
+receives another organisation's events (delete events carry only the primary key). The app
+does not trust event payloads: an event only marks a table as changed, and the app re-fetches
+that table through RLS (batched over 250 ms). On reconnect, tab focus or `online`, everything
+is re-fetched, so missed events are reconciled. When a user's own profile or organisation
+changes (permissions, suspension, portal switch) their access is re-resolved immediately.
+
+**Notifications** are rows in `notifications`, written only by triggers after the change
+commits, to recipients the database selects: partner users of the affected organisation (only
+if the module is enabled and the portal open), employees whose permissions cover the module,
+and assignees. Users can read, mark read and delete only their own rows; the actor is never
+notified of their own action.
+
+**Live Activity** entries are written by triggers (and by `admin-users` for account events)
+and stamped server-side with the actor's name, role and organisation/department. Account
+events are visible to Super Admins only.
+
+**Concurrent edits.** Editable tables carry `updated_at`; the app sends the version it loaded
+with each update. If someone else saved first, nothing is overwritten — the user sees "Updated
+by someone else" and the latest version.
+
 ## 4. Data & documents
 
 * **Database:** Supabase Postgres (AES-256 encryption at rest, TLS in transit). Anonymous
@@ -129,7 +160,7 @@ server-managed. No user can change their own role, organisation or status.
 1. SQL Editor: run `supabase/migrations/0002_security_hardening.sql` (0001 is already applied), then `supabase/seed.sql`. Never run `demo_data.sql` on production.
 2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are created only by a Super Admin). Enable "Secure email change".
 3. Authentication → Policies (Passwords): minimum length 12; require lower, upper, digits, symbols. Enable leaked-password protection (Pro plan).
-4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql`, then `0004_account_management.sql` — **together with this frontend and the new `admin-users` function** (the new app expects `my_access()`; the old function cannot create accounts).
+4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql`, then `0004_account_management.sql`, then `0005_realtime_notifications.sql` — **together with this frontend and the new `admin-users` function** (the new app expects `my_access()`; the old function cannot create accounts).
 5. Authentication → Sessions: JWT expiry 15–60 min; refresh-token rotation on (reuse interval ≤10 s); inactivity timeout/time-box (Pro plan).
 6. Authentication → Rate Limits: review sign-in/OTP limits. Attack Protection → enable CAPTCHA (Cloudflare Turnstile/hCaptcha) — requires a small app change to pass the token.
 7. Authentication → URL Configuration: Site URL and Redirect URLs = your exact production URL only.
@@ -153,7 +184,7 @@ protection). Use it for demos only; host production on your server.
 
 | Test | Result |
 | --- | --- |
-| `npm run test:security` — 117 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket; **accounts (`20_account_tests.sql`)**: per-role module access for Finance Staff / Application Manager, permission grant/revoke takes effect immediately, employees cannot change their own or others' permissions, partner module switches, portal off / Inactive / archived removes access, partners cannot change their own access, new partners from non-super staff start closed, cross-partner read/write denied, suspension and deactivation lock-out, tokens issued before a reset or suspension rejected, `admin_revoke_sessions` service-role only, duplicate email rejected, user directory Super Admin only | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
+| `npm run test:security` — 163 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket; **accounts (`20_account_tests.sql`)**: per-role module access for Finance Staff / Application Manager, permission grant/revoke takes effect immediately, employees cannot change their own or others' permissions, partner module switches, portal off / Inactive / archived removes access, partners cannot change their own access, new partners from non-super staff start closed, cross-partner read/write denied, suspension and deactivation lock-out, tokens issued before a reset or suspension rejected, `admin_revoke_sessions` service-role only, duplicate email rejected, user directory Super Admin only; **realtime (`30_realtime_tests.sql`)**: tables in the `supabase_realtime` publication (audit log excluded), notification targeting (right staff by permission, right partner users, not the actor, not suspended users, not other partners, not partners without the module), inbox isolation (no reading/forging/rewriting others' notifications), server-stamped activity actor/role/organisation, account events Super-Admin only, stale edits rejected via `updated_at`, assignment only to employees and only by staff, tasks visible to their assignee | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
 | Secret scan (source + built bundle) for service keys, private keys, JWTs, demo passwords | Clean. Anon key is only in git-ignored `.env` / CI secret |
 | Removed client-side auth: demo account hashes deleted; role no longer stored in browser | Verified in `dist/` |
 | Browser test of production build under CSP: no violations, 0 third-party requests, wrong-password sign-in returns generic error, only `ssi-remember` flag in storage, protected routes redirect to sign-in | Pass |
@@ -163,6 +194,7 @@ protection). Use it for demos only; host production on your server.
 | SQL injection: no raw SQL from the client; PostgREST parameterises; DB functions take typed args | Pass |
 | `npm audit --omit=dev` | No high/critical in production deps (see risks) |
 | Edge function type-check (`deno check`) and input/password-policy unit tests (`deno test supabase/functions/admin-users/lib.test.ts`) | Pass |
+| Real-time delivery across separate signed-in browser sessions (Admin / Partner / Staff) | **Not run** — needs migration 0005 on your project and three real accounts; the database side (publication, RLS on every streamed table, notification targeting) is covered by the tests above |
 | End-to-end account flows (create employee/partner → sign in, reset → old sessions out, suspend, permission change) against your live project | **Not run** — needs migration 0004 and the new `admin-users` function deployed; the database rules behind each flow are covered by the tests above |
 
 **Not tested (requires your live project):** end-to-end sign-in with real users, Google OAuth, the edge function deployed, and the

@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ClipboardCheck,
   FileStack,
+  FileCheck2,
   FileText,
   Landmark,
   LayoutDashboard,
@@ -30,7 +31,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Logo, LogoMark } from '../components/brand';
-import { Avatar, Menu, Tooltip } from '../components/ui';
+import { Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { Session } from '../data/types';
 import { canOpen } from '../auth/roles';
@@ -76,6 +77,28 @@ const adminNav: NavSection[] = [
   ] },
 ];
 
+// Staff Portal: employees other than Super Admin / Admin Staff. Items still filter by permission.
+const staffNav: NavSection[] = [
+  { id: 'overview', title: 'Overview', items: [
+    { to: 'dashboard', label: 'Staff Dashboard', icon: LayoutDashboard },
+    { to: 'reports', label: 'Reports', icon: BarChart3 },
+  ] },
+  { id: 'work', title: 'My Work', items: [
+    { to: 'students', label: 'Students', icon: Users },
+    { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
+    { to: 'documents', label: 'Document Verification', icon: FileCheck2 },
+    { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
+  ] },
+  { id: 'operations', title: 'Operations', items: [
+    { to: 'finance', label: 'Finance', icon: Wallet },
+    { to: 'providers', label: 'Education Providers', icon: Landmark },
+    { to: 'courses', label: 'Courses', icon: BookOpen },
+    { to: 'updates', label: 'Important Updates', icon: Megaphone },
+  ] },
+  { id: 'account', title: 'Account', items: [{ to: 'profile', label: 'My Profile', icon: UserCircle2 }] },
+];
+
 const clientNav: NavSection[] = [
   { id: 'overview', title: 'Overview', items: [{ to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
   { id: 'students', title: 'Students', items: [
@@ -95,7 +118,7 @@ const clientNav: NavSection[] = [
 /** Menu for this session: only modules its role / organisation may use (the database enforces the same). */
 export function navFor(session: Session | null): NavSection[] {
   if (!session) return [];
-  return (session.role === 'admin' ? adminNav : clientNav)
+  return (session.role === 'admin' ? adminNav : session.role === 'staff' ? staffNav : clientNav)
     .map((s) => ({ ...s, items: s.items.filter((n) => canOpen(session, n.to)) }))
     .filter((s) => s.items.length);
 }
@@ -150,12 +173,10 @@ interface ContentProps {
   sections: NavSection[];
   base: string;
   collapsed: boolean;
-  isAdmin: boolean;
+  portal: 'admin' | 'staff' | 'client';
   orgName?: string;
   badges: Record<string, number>;
-  user: { name: string; title: string };
   onClose?: () => void;
-  menuItems: { label: string; icon: LucideIcon; onClick: () => void; danger?: boolean }[];
   closedSections: string[];
   onToggleSection: (id: string) => void;
 }
@@ -164,12 +185,10 @@ function SidebarContent({
   sections,
   base,
   collapsed,
-  isAdmin,
+  portal,
   orgName,
   badges,
-  user,
   onClose,
-  menuItems,
   closedSections,
   onToggleSection,
 }: ContentProps) {
@@ -193,8 +212,8 @@ function SidebarContent({
 
       {/* Portal card */}
       <div className={cn('mx-4 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-navy to-navy-600 text-white transition-all duration-300', collapsed ? 'mb-0 max-h-0 px-3.5 py-0 opacity-0' : 'mb-4 max-h-24 px-3.5 py-3 opacity-100')} aria-hidden={collapsed}>
-        <div className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{isAdmin ? 'Super Admin Portal' : 'Partner Portal'}</div>
-        <div className="mt-0.5 truncate text-[13px] font-semibold">{isAdmin ? 'SSI GLOBAL · Head Office' : orgName}</div>
+        <div className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{portal === 'admin' ? 'Admin Portal' : portal === 'staff' ? 'Staff Portal' : 'Partner Portal'}</div>
+        <div className="mt-0.5 truncate text-[13px] font-semibold">{portal === 'client' ? orgName : orgName || 'SSI GLOBAL · Head Office'}</div>
       </div>
 
       {/* Navigation */}
@@ -261,42 +280,13 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Account */}
-      <div className="shrink-0 border-t border-line p-3">
-        <Menu
-          align="left"
-          side={collapsed ? 'right' : 'top'}
-          width="w-60"
-          trigger={(open) => (
-            <button
-              type="button"
-              aria-label={collapsed ? `Account menu for ${user.name}` : undefined}
-              className={cn('flex w-full items-center gap-3 rounded-xl text-left transition hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300', collapsed ? 'justify-center p-1.5' : 'p-2.5')}
-            >
-              <Avatar name={user.name} size={collapsed ? 36 : 38} />
-              {!collapsed && (
-                <>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-heading">{user.name}</div>
-                    <div className="truncate text-xs text-ink-mute">{user.title}</div>
-                  </div>
-                  <ChevronDown className={cn('h-4 w-4 text-ink-mute transition', open && 'rotate-180')} />
-                </>
-              )}
-            </button>
-          )}
-          items={menuItems}
-        />
-      </div>
     </div>
   );
 }
 
 // ------------------------------------------------------------------ shell pieces
 
-type SharedProps = Omit<ContentProps, 'collapsed' | 'onClose' | 'menuItems' | 'closedSections' | 'onToggleSection'> & {
-  menuItems: ContentProps['menuItems'];
-};
+type SharedProps = Omit<ContentProps, 'collapsed' | 'onClose' | 'closedSections' | 'onToggleSection'>;
 
 /** Fixed sidebar for tablet (rail) and desktop (collapsible). */
 export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: SharedProps; prefs: ReturnType<typeof useSidebarPrefs>; onOpenDrawer: () => void }) {
@@ -333,7 +323,6 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
           collapsed={collapsed}
           closedSections={closedSections}
           onToggleSection={(id) => setClosedSections((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
-          menuItems={shared.menuItems}
         />
         {/* Round toggle on the sidebar edge (stays put while the width animates). */}
         <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="right">

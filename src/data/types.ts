@@ -26,6 +26,7 @@ export interface Partner {
   portalEnabled?: boolean;
   modules?: string[];
   archivedAt?: string | null;
+  address?: string | null;
 }
 
 export type StudentStatus = 'Lead' | 'Active' | 'Enrolled' | 'On Hold';
@@ -118,6 +119,8 @@ export interface Application {
   status: AppStatus;
   checklist: ChecklistItem[];
   timeline: TimelineEntry[];
+  /** Employee responsible for this application. */
+  assignedTo?: string | null;
 }
 
 export type DocStatus = 'Verified' | 'Pending' | 'Rejected';
@@ -185,6 +188,8 @@ export interface Task {
   priority: Priority;
   done: boolean;
   assignee: string;
+  /** Employee the task is assigned to (they are notified). */
+  assignedTo?: string | null;
   related?: string;
 }
 
@@ -217,9 +222,35 @@ export interface Activity {
   id: ID;
   at: string;
   partnerId?: ID;
-  kind: 'application' | 'status' | 'student' | 'document' | 'partner' | 'update' | 'assessment' | 'payment';
+  kind: 'application' | 'status' | 'student' | 'document' | 'partner' | 'update' | 'assessment' | 'payment' | 'task' | 'account';
   title: string;
   detail: string;
+  refId?: string;
+  /** Stamped by the database from the signed-in user — never supplied by the browser. */
+  actorName?: string;
+  actorRole?: string;
+  actorOrg?: string;
+  studentName?: string;
+}
+
+/** Per-user notification written by database triggers. */
+export interface AppNotification {
+  id: ID;
+  createdAt: string;
+  kind: string;
+  title: string;
+  body?: string | null;
+  /** Portal-relative path, e.g. "applications?open=…". */
+  link?: string | null;
+  readAt?: string | null;
+}
+
+/** Active SSI GLOBAL employee (for assigning work). */
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  role: UserRole;
+  department?: string | null;
 }
 
 export type UserRole =
@@ -237,7 +268,8 @@ export type UserRole =
  * It is held in memory only; the database enforces access regardless of this value.
  */
 export interface Session {
-  role: 'admin' | 'client';
+  /** Which portal: Admin (Super Admin / Admin Staff), Staff (other employees) or Client (partners). */
+  role: 'admin' | 'staff' | 'client';
   userRole: UserRole;
   userId: string;
   partnerId?: ID;
@@ -265,6 +297,6 @@ export interface DB {
   tasks: Task[];
   announcements: Announcement[];
   activities: Activity[];
-  /** When the current user last opened notifications (kept per user in this browser). */
-  readAt: string;
+  notifications: AppNotification[];
+  staff: StaffMember[];
 }

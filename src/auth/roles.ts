@@ -20,6 +20,9 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 export const isStaffRole = (r: UserRole): r is StaffRole => (STAFF_ROLES as readonly string[]).includes(r);
+/** Super Admins and Admin Staff use the Admin Portal; other employees use the Staff Portal. */
+export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
+  r === 'super_admin' || r === 'admin_staff' ? 'admin' : isStaffRole(r) ? 'staff' : 'client';
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
@@ -47,11 +50,11 @@ export const ROLE_DEFAULTS: Record<StaffRole, StaffModule[]> = {
 export type PartnerModule = 'students' | 'applications' | 'course_finder' | 'assessments' | 'documents' | 'finance' | 'updates';
 export const PARTNER_MODULES: { id: PartnerModule; label: string }[] = [
   { id: 'students', label: 'Student Management' },
-  { id: 'applications', label: 'Applications' },
+  { id: 'applications', label: 'Application Management' },
   { id: 'course_finder', label: 'Course Finder' },
-  { id: 'assessments', label: 'Assessments' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'finance', label: 'Finance' },
+  { id: 'assessments', label: 'Assessment Access' },
+  { id: 'documents', label: 'Document Management' },
+  { id: 'finance', label: 'Finance Access' },
   { id: 'updates', label: 'Important Updates' },
 ];
 
@@ -83,12 +86,16 @@ export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
 };
 
 /** Whether a session may open a portal page (menu + route guard; RLS enforces the data). */
-export function canOpen(session: { role: 'admin' | 'client'; userRole: UserRole; permissions: string[]; partnerModules: string[]; previewOf?: unknown } | null, segment: string): boolean {
+export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole: UserRole; permissions: string[]; partnerModules: string[]; previewOf?: unknown } | null, segment: string): boolean {
   if (!session) return false;
-  if (session.role === 'admin') {
+  if (session.role === 'admin' || session.role === 'staff') {
+    // The Staff Portal has no partner directory or account management.
+    if (session.role === 'staff' && (segment === 'partners' || segment === 'users')) return false;
     const m = ADMIN_ROUTE_MODULE[segment];
     if (!m) return true;
     if (m === 'users') return session.userRole === 'super_admin';
+    // Tasks: everyone sees their own assigned tasks.
+    if (m === 'tasks') return true;
     return session.permissions.includes(m);
   }
   const m = CLIENT_ROUTE_MODULE[segment];

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Award, Building2, ClipboardCheck, FilePlus2, FileText, Megaphone, RefreshCw, UserPlus, Wallet } from 'lucide-react';
+import { Award, Building2, ClipboardCheck, FilePlus2, FileText, ListTodo, Megaphone, RefreshCw, ShieldCheck, UserPlus, Wallet } from 'lucide-react';
 import type { Activity } from '../data/types';
 import { cn, timeAgo } from '../lib/utils';
 
@@ -12,6 +12,8 @@ const meta: Record<Activity['kind'], { icon: typeof Award; cls: string; to: stri
   update: { icon: Megaphone, cls: 'bg-amber-50 text-amber-600', to: 'updates' },
   assessment: { icon: ClipboardCheck, cls: 'bg-teal-50 text-teal-600', to: 'assessments' },
   payment: { icon: Wallet, cls: 'bg-emerald-50 text-emerald-600', to: 'finance' },
+  task: { icon: ListTodo, cls: 'bg-navy-50 text-heading', to: 'tasks' },
+  account: { icon: ShieldCheck, cls: 'bg-violet-50 text-violet-600', to: 'users' },
 };
 
 export function ActivityFeed({ items, base }: { items: Activity[]; base: string }) {

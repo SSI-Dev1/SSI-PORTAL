@@ -53,6 +53,14 @@ export function cleanModules(v: unknown): string[] | undefined {
   return set.every((m) => (PARTNER_MODULES as readonly string[]).includes(m)) ? set : undefined;
 }
 
+/** Optional short text (phone, department, designation…); null when empty, undefined when invalid. */
+export function cleanOptional(v: unknown, max = 80): string | null | undefined {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim().replace(/\s+/g, ' ');
+  if (!s) return null;
+  return s.length <= max ? s : undefined;
+}
+
 export interface PartnerInput {
   name: string;
   code: string;
@@ -65,6 +73,7 @@ export interface PartnerInput {
   tier: 'Platinum' | 'Gold' | 'Silver';
   branches: string[];
   commission_rate: number;
+  address: string | null;
 }
 
 export function cleanPartner(v: unknown): PartnerInput | null {
@@ -94,5 +103,6 @@ export function cleanPartner(v: unknown): PartnerInput | null {
     tier,
     branches: branches.length ? branches : [city],
     commission_rate: rate,
+    address: String(p.address ?? '').trim().slice(0, 300) || null,
   };
 }

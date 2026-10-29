@@ -4,7 +4,6 @@
 // The UI keeps a local copy for fast rendering and re-syncs after each change.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
-  Activity,
   Announcement,
   AppStatus,
   Application,
@@ -43,7 +42,8 @@ const emptyDB = (): DB => ({
   tasks: [],
   announcements: [],
   activities: [],
-  readAt: '',
+  notifications: [],
+  staff: [],
 });
 
 // ------------------------------------------------------------------ row mapping
@@ -89,35 +89,59 @@ function useStoreValue() {
   const toast = useMemo(() => ({ error: (t: string, m?: string) => toastRef.current.error(t, m) }), []);
   const [db, setDb] = useState<DB>(emptyDB);
   const [loading, setLoading] = useState(false);
+  /** Realtime connection state, shown as the "Live" indicator. */
+  const [live, setLive] = useState<'connecting' | 'live' | 'offline'>('connecting');
+  /** Bumps whenever any visible account changes, so account screens can re-query. */
+  const [profilesRev, setProfilesRev] = useState(0);
   const userId = realSession?.userId;
-  const readKey = userId ? `ssi-read-${userId}` : '';
+  const internal = realSession?.role === 'admin' || realSession?.role === 'staff';
 
-  const load = useCallback(async () => {
-    if (!supabase || status !== 'signed-in' || !realSession) return;
+  // Every read goes through RLS, so each portal only ever receives rows it may see.
+  const fetchers = useMemo(() => {
+    if (!supabase) return null;
     const sb = supabase;
-    const keys = Object.keys(TABLES).filter((k) => k !== 'tasks' || realSession.role === 'admin') as TableKey[];
-    const results = await Promise.all([
-      ...keys.map((k) => sb.from(TABLES[k]).select('*').limit(5000)),
-      sb.from('activities').select('*').order('at', { ascending: false }).limit(80),
-    ]);
-    const failed = results.find((r) => r.error);
-    if (failed?.error) {
-      toast.error('Could not load data', 'Please refresh the page. If this continues, contact SSI GLOBAL.');
-      return;
-    }
-    const next = emptyDB();
-    keys.forEach((k, i) => {
-      (next[k] as unknown[]) = (results[i].data ?? []).map((r) => fromRow(r as Row));
+    const f: Record<string, () => PromiseLike<{ data: unknown; error: unknown }>> = {};
+    (Object.keys(TABLES) as TableKey[]).forEach((k) => {
+      f[k] = () => sb.from(TABLES[k]).select('*').limit(5000);
     });
-    next.activities = (results[results.length - 1].data ?? []).map((r) => fromRow<Activity>(r as Row));
-    try {
-      next.readAt = localStorage.getItem(readKey) ?? '';
-    } catch {
-      next.readAt = '';
-    }
-    setDb(next);
-    setLoading(false);
-  }, [status, realSession, readKey, toast]);
+    f.activities = () => sb.from('activities').select('*').order('at', { ascending: false }).limit(80);
+    f.notifications = () => sb.from('notifications').select('id, created_at, kind, title, body, link, read_at').order('created_at', { ascending: false }).limit(50);
+    f.staff = () => sb.rpc('staff_directory');
+    return f;
+  }, []);
+
+  const keysFor = useCallback(
+    (only?: string[]) => {
+      const all = [...Object.keys(TABLES), 'activities', 'notifications', ...(internal ? ['staff'] : [])].filter((k) => k !== 'tasks' || internal);
+      return only ? all.filter((k) => only.includes(k)) : all;
+    },
+    [internal],
+  );
+
+  /** (Re)loads the given collections — or everything — from the server. */
+  const load = useCallback(
+    async (only?: string[]) => {
+      if (!fetchers || status !== 'signed-in' || !realSession) return;
+      const keys = keysFor(only);
+      if (!keys.length) return;
+      const results = await Promise.all(keys.map((k) => fetchers[k]()));
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        if (!only) toast.error('Could not load data', 'Please refresh the page. If this continues, contact SSI GLOBAL.');
+        setLoading(false);
+        return;
+      }
+      setDb((d) => {
+        const next = only ? { ...d } : emptyDB();
+        keys.forEach((k, i) => {
+          (next as unknown as Record<string, unknown[]>)[k] = ((results[i].data ?? []) as Row[]).map((r) => fromRow(r));
+        });
+        return next;
+      });
+      setLoading(false);
+    },
+    [fetchers, status, realSession, keysFor, toast],
+  );
 
   // Initial load, and re-sync when the tab regains focus (picks up other users' changes).
   const loadedFor = useRef<string | null>(null);
@@ -132,16 +156,81 @@ function useStoreValue() {
       setLoading(true);
       void load();
     }
+    // Reconcile anything missed while hidden or offline (events are not the only source of truth).
     const h = () => document.visibilityState === 'visible' && void load();
     document.addEventListener('visibilitychange', h);
-    return () => document.removeEventListener('visibilitychange', h);
+    window.addEventListener('online', h);
+    return () => {
+      document.removeEventListener('visibilitychange', h);
+      window.removeEventListener('online', h);
+    };
   }, [status, userId, load]);
 
+  // ---------------------------------------------------------------- realtime
+  // Supabase Realtime delivers a change only to subscribers whose RLS allows reading the row.
+  // We treat events as "something changed in table X" and re-fetch X through RLS, so the UI
+  // always shows the committed server state and no row data is trusted from the event.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const { refresh: refreshAccess } = useAuth();
+  const refreshAccessRef = useRef(refreshAccess);
+  refreshAccessRef.current = refreshAccess;
+  useEffect(() => {
+    if (!supabase || status !== 'signed-in' || !userId) return;
+    const sb = supabase;
+    const pending = new Set<string>();
+    let timer = 0;
+    let wasLive = false;
+    let accessTimer = 0;
+    const flush = () => {
+      const tables = [...pending];
+      pending.clear();
+      void loadRef.current(tables);
+    };
+    const queue = (t: string) => {
+      pending.add(t);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(flush, 250); // batch bursts (e.g. a status change + its activity)
+    };
+    const channel = sb.channel(`crm-sync-${userId}-${Math.random().toString(36).slice(2, 8)}`);
+    const watch = (table: string, onChange: () => void, filter?: string) =>
+      channel.on('postgres_changes', { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) }, onChange);
+    (Object.keys(TABLES) as TableKey[]).forEach((k) => watch(TABLES[k], () => queue(k)));
+    watch('activities', () => queue('activities'));
+    watch('notifications', () => queue('notifications'), `user_id=eq.${userId}`);
+    // My own account or organisation changed (permissions, suspension, portal access):
+    // re-resolve access from the server; a suspended user is signed out.
+    const recheck = () => {
+      window.clearTimeout(accessTimer);
+      accessTimer = window.setTimeout(() => void refreshAccessRef.current(), 400);
+    };
+    // A partner's organisation access (portal switch, modules, archive) changed.
+    if (!internal) watch('partners', recheck);
+    watch('profiles', () => {
+      recheck();
+      queue('staff');
+      setProfilesRev((n) => n + 1);
+    });
+    channel.subscribe((s) => {
+      if (s === 'SUBSCRIBED') {
+        setLive('live');
+        if (wasLive) void loadRef.current(); // reconnected: reconcile everything we may have missed
+        wasLive = true;
+      } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+        setLive('offline'); // supabase-js retries automatically
+      }
+    });
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(accessTimer);
+      void sb.removeChannel(channel);
+      setLive('connecting');
+    };
+  }, [status, userId, internal]);
+
   const refreshActivities = useCallback(async () => {
-    if (!supabase) return;
-    const { data } = await supabase.from('activities').select('*').order('at', { ascending: false }).limit(80);
-    if (data) setDb((d) => ({ ...d, activities: data.map((r) => fromRow<Activity>(r as Row)) }));
-  }, []);
+    await load(['activities']);
+  }, [load]);
 
   /** Runs a server write; on failure shows a safe message and re-syncs from the server. */
   const commit = useCallback(
@@ -179,9 +268,23 @@ function useStoreValue() {
     if (await commit(Promise.resolve(res), failMsg)) upsertLocal(key, fromRow<DB[K][number]>(res.data as Row));
   };
   const update = async <K extends TableKey>(key: K, id: ID, patch: Partial<DB[K][number]>, failMsg?: string) => {
+    // Optimistic concurrency: only apply if nobody changed the row since we loaded it.
+    const version = ((db[key] as { id: ID; updatedAt?: string }[]).find((r) => r.id === id) ?? {}).updatedAt;
     patchLocal(key, id, patch);
-    const res = await sb().from(TABLES[key]).update(toRow(patch)).eq('id', id).select('*');
-    if (!res.error && (res.data?.length ?? 0) === 0) return void (await commit(Promise.resolve({ error: 'denied' }), failMsg));
+    let q = sb().from(TABLES[key]).update(toRow(patch, ['updatedAt'])).eq('id', id);
+    if (version) q = q.eq('updated_at', version);
+    const res = await q.select('*');
+    if (!res.error && (res.data?.length ?? 0) === 0) {
+      if (version) {
+        const { data: still } = await sb().from(TABLES[key]).select('id').eq('id', id).maybeSingle();
+        if (still) {
+          toastRef.current.info('Updated by someone else', 'This record changed since you opened it. The latest version is shown — please re-apply your change.');
+          await load([key]);
+          return;
+        }
+      }
+      return void (await commit(Promise.resolve({ error: 'denied' }), failMsg));
+    }
     if (await commit(Promise.resolve(res), failMsg) && res.data?.[0]) upsertLocal(key, fromRow<DB[K][number]>(res.data[0] as Row));
   };
   const remove = async (key: TableKey, id: ID, failMsg?: string) => {
@@ -194,13 +297,19 @@ function useStoreValue() {
 
   const actions = {
     markNotificationsRead() {
-      const t = now();
-      try {
-        if (readKey) localStorage.setItem(readKey, t);
-      } catch {
-        /* ignore */
-      }
-      setDb((d) => ({ ...d, readAt: t }));
+      const at = now();
+      setDb((d) => ({ ...d, notifications: d.notifications.map((n) => (n.readAt ? n : { ...n, readAt: at })) }));
+      void sb().from('notifications').update({ read_at: at }).is('read_at', null).then(() => {});
+    },
+    markNotificationRead(id: ID) {
+      const at = now();
+      setDb((d) => ({ ...d, notifications: d.notifications.map((n) => (n.id === id && !n.readAt ? { ...n, readAt: at } : n)) }));
+      void sb().from('notifications').update({ read_at: at }).eq('id', Number(id)).is('read_at', null).then(() => {});
+    },
+    /** Deletes this user's notifications on the server (other users are unaffected). */
+    clearNotifications() {
+      setDb((d) => ({ ...d, notifications: [] }));
+      void sb().from('notifications').delete().gte('id', 0).then(({ error }) => error && void load(['notifications']));
     },
     reload: load,
 
@@ -214,7 +323,7 @@ function useStoreValue() {
       void update('partners', id, patch);
     },
     removePartner(id: ID) {
-      void remove('partners', id, 'Only a Super Admin can remove partners.').then(load);
+      void remove('partners', id, 'Only a Super Admin can remove partners.').then(() => load());
     },
 
     // ---------- students
@@ -381,7 +490,7 @@ function useStoreValue() {
     },
   };
 
-  return { db, session, actions, loading };
+  return { db, session, actions, loading, live, profilesRev };
 }
 
 type StoreValue = ReturnType<typeof useStoreValue>;
@@ -423,9 +532,9 @@ export function useScoped() {
       universities: db.universities,
       courses: db.courses,
       partners: db.partners,
-      base: partnerId ? '/client' : '/admin',
+      base: partnerId ? '/client' : session?.role === 'staff' ? '/staff' : '/admin',
     };
-  }, [db, partnerId, session?.userRole]);
+  }, [db, partnerId, session?.userRole, session?.role]);
 }
 
 /** Lookup helpers shared by many pages. */

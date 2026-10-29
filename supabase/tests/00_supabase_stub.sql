@@ -35,3 +35,7 @@ grant select, insert, update, delete on storage.objects to authenticated;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+
+-- Supabase creates this publication; Realtime streams the tables added to it.
+do $$ begin
+  create publication supabase_realtime; exception when duplicate_object then null; end $$;

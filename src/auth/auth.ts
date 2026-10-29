@@ -5,7 +5,7 @@
 import { createClient, type SupabaseClient, type SupportedStorage, type User } from '@supabase/supabase-js';
 import type { Session, UserRole } from '../data/types';
 import { authConfigured, googleEnabled, siteUrl, SUPABASE_ANON_KEY, SUPABASE_URL } from './config';
-import { isStaffRole, ROLE_LABEL } from './roles';
+import { isStaffRole, portalFor, ROLE_LABEL } from './roles';
 
 export class AuthError extends Error {}
 
@@ -60,7 +60,7 @@ export async function resolveStage(user: User): Promise<AuthStage> {
   // Role, status, permissions and partner access are all computed by the database.
   const { data, error } = await sb.rpc('my_access').maybeSingle<{
     role: UserRole; status: string; permissions: string[] | null; partner_id: string | null; partner_name: string | null;
-    partner_modules: string[] | null; portal_open: boolean; must_change_password: boolean;
+    partner_modules: string[] | null; portal_open: boolean; must_change_password: boolean; department: string | null;
   }>();
   if (error) throw new AuthError('Could not load your account. Please try again.');
   if (!data) throw new AuthError('Your account has not been set up yet. Please contact SSI GLOBAL.');
@@ -73,7 +73,8 @@ export async function resolveStage(user: User): Promise<AuthStage> {
   const email = user.email ?? '';
   let session: Session;
   if (isStaffRole(userRole)) {
-    session = { role: 'admin', userRole, userId: user.id, name, email, title: ROLE_LABEL[userRole], permissions: data.permissions ?? [], partnerModules: [] };
+    const portal = portalFor(userRole) as 'admin' | 'staff';
+    session = { role: portal, userRole, userId: user.id, name, email, title: ROLE_LABEL[userRole] + (data.department ? ` · ${data.department}` : ''), permissions: data.permissions ?? [], partnerModules: [] };
   } else {
     if (!data.portal_open) throw new AuthError('Portal access for your organisation is currently disabled. Please contact SSI GLOBAL.');
     session = {

@@ -16,6 +16,9 @@ export interface DirectoryUser {
   mustChangePassword: boolean;
   createdAt: string;
   lastSignInAt: string | null;
+  phone: string | null;
+  department: string | null;
+  designation: string | null;
 }
 
 export class AdminApiError extends Error {}
@@ -35,6 +38,9 @@ export async function loadDirectory(): Promise<DirectoryUser[]> {
     mustChangePassword: !!r.must_change_password,
     createdAt: String(r.created_at),
     lastSignInAt: (r.last_sign_in_at as string | null) ?? null,
+    phone: (r.phone as string | null) ?? null,
+    department: (r.department as string | null) ?? null,
+    designation: (r.designation as string | null) ?? null,
   }));
 }
 
@@ -51,7 +57,10 @@ async function call<T = { ok: true }>(body: Record<string, unknown>): Promise<T>
 }
 
 export const adminApi = {
-  createEmployee: (b: { email: string; fullName: string; role: UserRole; permissions: string[] | null; password: string; mustChangePassword: boolean }) =>
+  createEmployee: (b: {
+    email: string; fullName: string; role: UserRole; permissions: string[] | null; password: string; mustChangePassword: boolean;
+    phone?: string; department?: string; designation?: string; status?: DirectoryUser['status'];
+  }) =>
     call<{ ok: true; userId: string }>({ action: 'create_employee', ...b }),
   createPartner: (b: {
     partner: Record<string, unknown>;
@@ -61,7 +70,7 @@ export const adminApi = {
   }) => call<{ ok: true; partnerId: string; userId: string }>({ action: 'create_partner', ...b }),
   createPartnerUser: (b: { partnerId: string; email: string; fullName: string; role: UserRole; password: string; mustChangePassword: boolean }) =>
     call<{ ok: true; userId: string }>({ action: 'create_partner_user', ...b }),
-  updateUser: (b: { userId: string; fullName?: string; role?: UserRole; permissions?: string[] | null; mustChangePassword?: boolean }) =>
+  updateUser: (b: { userId: string; fullName?: string; role?: UserRole; permissions?: string[] | null; mustChangePassword?: boolean; phone?: string; department?: string; designation?: string }) =>
     call({ action: 'update_user', ...b }),
   setStatus: (userId: string, status: DirectoryUser['status']) => call({ action: 'set_status', userId, status }),
   resetPassword: (userId: string, password: string, mustChangePassword: boolean) => call({ action: 'reset_password', userId, password, mustChangePassword }),

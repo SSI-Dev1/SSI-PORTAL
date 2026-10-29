@@ -13,6 +13,7 @@ import { lazy, Suspense } from 'react';
 const DesignSystem = import.meta.env.DEV ? lazy(() => import('./pages/DesignSystem')) : null;
 const ShellDemo = import.meta.env.DEV ? lazy(() => import('./pages/ShellDemo')) : null;
 const UsersDemo = import.meta.env.DEV ? lazy(() => import('./pages/admin/UserManagement')) : null;
+const RealtimeDemo = import.meta.env.DEV ? lazy(() => import('./pages/RealtimeDemo')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -23,6 +24,7 @@ import UpdatesAdmin from './pages/admin/UpdatesAdmin';
 import Reports from './pages/admin/Reports';
 import Settings from './pages/admin/Settings';
 import UserManagement from './pages/admin/UserManagement';
+import StaffDashboard from './pages/staff/StaffDashboard';
 import ClientDashboard from './pages/client/ClientDashboard';
 import CourseFinder from './pages/client/CourseFinder';
 import UpdatesClient from './pages/client/UpdatesClient';
@@ -43,7 +45,7 @@ function FullScreenLoader() {
 }
 
 // UX routing only — authorisation is enforced by the database (RLS), not by this guard.
-function RequireRole({ role, children }: { role: 'admin' | 'client'; children: ReactNode }) {
+function RequireRole({ role, children }: { role: 'admin' | 'staff' | 'client'; children: ReactNode }) {
   const { status } = useAuth();
   const { session } = useStore();
   if (status === 'loading') return <FullScreenLoader />;
@@ -83,6 +85,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {RealtimeDemo && (
+              <Route
+                path="/ui/live"
+                element={
+                  <Suspense fallback={null}>
+                    <RealtimeDemo />
+                  </Suspense>
+                }
+              />
+            )}
             {UsersDemo && (
               <Route
                 path="/ui/users"
@@ -133,6 +145,24 @@ export default function App() {
                 <Route path="reports" element={<Reports />} />
                 <Route path="users" element={<UserManagement />} />
                 <Route path="settings" element={<Settings />} />
+              </Route>
+              <Route
+                path="/staff"
+                element={
+                  <RequireRole role="staff">
+                    <AppShell />
+                  </RequireRole>
+                }
+              >
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<StaffDashboard />} />
+                {sharedRoutes}
+                <Route path="providers" element={<Providers />} />
+                <Route path="courses" element={<Courses />} />
+                <Route path="tasks" element={<Tasks />} />
+                <Route path="updates" element={<UpdatesAdmin />} />
+                <Route path="reports" element={<Reports />} />
+                <Route path="profile" element={<Settings />} />
               </Route>
               <Route
                 path="/client"

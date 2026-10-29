@@ -119,13 +119,14 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
             <Detail label="Faculty">{course.faculty}</Detail>
           </dl>
 
-          {uni && (uni.casDeposit || uni.paymentPlan || (uni.moiAccepted?.length ?? 0) > 0) && (
+          {uni && (uni.casDeposit || uni.paymentPlan || uni.notes || (uni.moiAccepted?.length ?? 0) > 0) && (
             <section className="rounded-2xl border border-line p-4">
               <h4 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-heading"><GraduationCap className="h-4 w-4 text-rust" />{uni.name}</h4>
               <dl className="grid gap-3">
                 <Detail label="Location">{[uni.city, uni.country].filter(Boolean).join(', ')}</Detail>
                 <Detail label="CAS deposit">{uni.casDeposit}</Detail>
                 <Detail label="Payment plan">{uni.paymentPlan}</Detail>
+                <Detail label="Rankings & notes">{uni.notes}</Detail>
                 {(uni.moiAccepted?.length ?? 0) > 0 && (
                   <Detail label={`MOI accepted from (${uni.moiAccepted!.length})`}>
                     <span className="text-xs text-ink-soft">{uni.moiAccepted!.join(' · ')}</span>

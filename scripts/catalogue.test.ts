@@ -66,6 +66,7 @@ test('course finder export: program name, open intakes + year, score columns', (
       [1, 'Sample University', 'QS Ranking - 381', 'MSc Data', 'https://example.ac.uk/msc', 'Norwich', 'United Kingdom', 'Postgraduate', '12 Months', 'Jan,Sep', 2027,
         '2.2 or equivalent', 6, 5.5, 60, 'Sep: 1 Aug 2027, Jan: ASAP', 'No Application Fee', 'GBP 25700.00 (Approx INR 3260999)', 'Yes', 'GBP 5000.00 (Approx INR 634436)',
         'Line one_x000D_\n line two', 'MOI accepted'],
+      [],
       ['*Note: The Tuition Fee is subject to change.'],
     ],
   });
@@ -80,9 +81,10 @@ test('course finder export: program name, open intakes + year, score columns', (
   assert.equal(c.intakes[0].notes, 'Application deadline: ASAP');
   assert.equal(c.intakes[1].application_deadline, '2027-08-01');
   assert.match(c.english_requirement ?? '', /IELTS 6 \(no band less than 5\.5\) · PTE 60\nWaiver: MOI accepted/);
-  assert.match(c.scholarship ?? '', /average GBP 5,000/);
+  assert.match(c.scholarship ?? '', /average GBP 5,000 \(Approx INR 634436\)/);
+  assert.match(c.course_requirement ?? '', /Tuition: GBP 25,700 per year \(Approx INR 3260999\)/);
   assert.match(c.course_requirement ?? '', /^Line one\nline two\n.*Course page: https:\/\/example\.ac\.uk\/msc$/s);
-  assert.equal(r.payload.universities[0].notes, 'QS Ranking - 381');
+  assert.equal(r.payload.universities[0].notes, 'QS Ranking - 381\n\nNote: The Tuition Fee is subject to change.');
 });
 
 test('toolkit layout: fees by level, dates per course, MOI list', () => {

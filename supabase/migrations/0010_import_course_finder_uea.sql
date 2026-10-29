@@ -18,7 +18,7 @@ select public.import_catalogue($catalogue$
       "country": "United Kingdom",
       "city": "Norwich",
       "moi_accepted": [],
-      "notes": "Webometrics World Ranking - 329\nWebometrics United Kingdom National Ranking - 349\nUS News Ranking - 36\nQS Ranking - 381"
+      "notes": "Webometrics World Ranking - 329\nWebometrics United Kingdom National Ranking - 349\nUS News Ranking - 36\nQS Ranking - 381\n\nNote: The Tuition Fee is subject to change Semester wise, as such for exact Tuition Fee kindly see the Website of the respective University.\n\nNote: Pathways : Students who want to pursue a Graduate Degree through a particular University but are unable to meet the university requirements for the GPA, GRE/GMAT or English Language scores, have to take up an additional academic and language support i.e. pathways in order to ensure the admit and study at the desired University."
     }
   ],
   "courses": [
@@ -33,8 +33,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "UK Bachelor degree - 2.2 or equivalent\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-business-and-management/2025-26/jan#",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-business-and-management/2025-26/jan#",
       "intakes": [
         {
           "month": 1,
@@ -65,8 +65,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors Degree 2.2 ( 52% or above) is required,Health related subjects preferred.\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Only following State Boards will get IELTS Waive off: West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-global-public-health",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Only following State Boards will get IELTS Waive off: West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 23,850 per year (Approx INR 3026258)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-global-public-health",
       "intakes": [
         {
           "month": 9,
@@ -97,8 +97,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "UK Bachelors degree - 2.2 or equivalent\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/international",
-      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-cyber-security-with-artificial-intelligence",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/international",
+      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-cyber-security-with-artificial-intelligence",
       "intakes": [
         {
           "month": 1,
@@ -121,8 +121,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "UK Bachelor degree - 2.2 or equivalent\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-sustainable-business-management",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-sustainable-business-management",
       "intakes": [
         {
           "month": 9,
@@ -153,8 +153,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors degree - 2.2 is required.\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59)\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Application mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-applied-ai-and-business-analytics/2025-26/jan",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Tuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-applied-ai-and-business-analytics/2025-26/jan",
       "intakes": [
         {
           "month": 1,
@@ -185,8 +185,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "UK Bachelors degree - 2.2\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "• IELTS: 6.0 overall (minimum 5.5 in all components).\n• PTE: 60 overall with minimum of 59 in each component.\n• (Old) TOEFL: 79 overall with minimum of Reading 18, Writing 17, Listening 17, Speaking 20.\n• (New) TOEFL: 4 overall with minimum of Reading 4, Writing 4, Listening 4, Speaking 4.\n• DET: 105 overall with minimum of 100 in each component.\n• Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-sustainable-business-management-with-a-placement-year",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "• IELTS: 6.0 overall (minimum 5.5 in all components).\n• PTE: 60 overall with minimum of 59 in each component.\n• (Old) TOEFL: 79 overall with minimum of Reading 18, Writing 17, Listening 17, Speaking 20.\n• (New) TOEFL: 4 overall with minimum of Reading 4, Writing 4, Listening 4, Speaking 4.\n• DET: 105 overall with minimum of 100 in each component.\n• Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-sustainable-business-management-with-a-placement-year",
       "intakes": [
         {
           "month": 1,
@@ -209,8 +209,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors degree - 2.2 is required.\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 70 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Application mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-purchasing-and-supply-chain-management",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Tuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-purchasing-and-supply-chain-management",
       "intakes": [
         {
           "month": 1,
@@ -241,8 +241,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors degree - 2.2 is required.\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Application mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-international-business-and-innovation",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Tuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-international-business-and-innovation",
       "intakes": [
         {
           "month": 1,
@@ -273,8 +273,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors degree - 2.2\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "• IELTS: 6.0 overall with minimum of 6.0 in Writing and Speaking and 5.5 in Reading and Listening.\n• PTE: 60 overall with minimum of 59 in each component.\n• (Old) TOEFL: 79 overall with minimum of 17 in Writing, 20 in Speaking, 18 in Reading and17 in Listening.\n• (New) TOEFL: 4 overall with minimum of 4 in each component.\n• DET: 105 overall with minimum of 100 in each component.\n• Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-project-management",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "• IELTS: 6.0 overall with minimum of 6.0 in Writing and Speaking and 5.5 in Reading and Listening.\n• PTE: 60 overall with minimum of 59 in each component.\n• (Old) TOEFL: 79 overall with minimum of 17 in Writing, 20 in Speaking, 18 in Reading and17 in Listening.\n• (New) TOEFL: 4 overall with minimum of 4 in each component.\n• DET: 105 overall with minimum of 100 in each component.\n• Only following State Boards will get IELTS Waive off : West Bengal, Karnataka, Maharashtra, Tamil Nadu, Andhra Pradesh, Kerala, Goa, Delhi.\nTuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-project-management",
       "intakes": [
         {
           "month": 9,
@@ -305,8 +305,8 @@ select public.import_catalogue($catalogue$
       "academic_requirement": "Bachelors degree - 2.2 is required.\nBacklogs accepted: 0 - 30",
       "english_requirement": "IELTS 6 (no band less than 5.5) · TOEFL 79 (no band less than 17) · PTE 60 (no band less than 59) · DET 105\nWaiver: Medium of Instruction and 12th English marks 70%",
       "ielts_min": 6,
-      "scholarship": "Available · average GBP 5,000 · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
-      "course_requirement": "Application mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-purchasing-and-supply-chain-management",
+      "scholarship": "Available · average GBP 5,000 (Approx INR 634436) · https://www.uea.ac.uk/study/fees-and-funding/scholarships/postgraduate",
+      "course_requirement": "Tuition: GBP 25,700 per year (Approx INR 3260999)\nApplication mode: Online\nApplication fee: None\nCourse page: https://www.uea.ac.uk/course/postgraduate/msc-purchasing-and-supply-chain-management",
       "intakes": [
         {
           "month": 9,

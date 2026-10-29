@@ -556,14 +556,16 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
     const invalid: ParseResult['invalid'] = [];
     const unis = new Map<string, UniversityInput>();
     const courses = new Map<string, CourseInput>();
+    // Footnote rows ("*Note: …") under the table apply to every university on the sheet.
+    const isNote = (v: string | undefined) => /^\*?\s*note\b/i.test(v ?? '');
+    const footnotes = s.rows.slice(hi + 1).map(({ cells }) => Object.values(cells)[0]).filter(isNote).map((v) => v.replace(/^\*\s*/, ''));
     for (const { r, cells } of s.rows.slice(hi + 1)) {
       const get = (k: keyof typeof map) => (map[k] ? cells[map[k]!] : undefined);
       const uniName = clean(get('uni'));
       const name = clean(get('course'));
       if (!uniName && !name) continue;
       if (!uniName || !name) {
-        // Footnote rows ("*Note: …") under the table are not courses.
-        if (!/^\*?\s*note\b/i.test(Object.values(cells)[0] ?? '')) invalid.push({ where: `${s.name} row ${r}`, reason: 'University and course name are required' });
+        if (!isNote(Object.values(cells)[0])) invalid.push({ where: `${s.name} row ${r}`, reason: 'University and course name are required' });
         continue;
       }
       const level = levelOf(get('level')) ?? levelFromCourseName(name);
@@ -589,13 +591,16 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
       const academic = [clean(get('academic')), backlog && `Backlogs accepted: ${backlog}`].filter(Boolean).join('\n') || null;
       const sch = clean(get('scholarship'));
       const avg = parseMoney(get('avgScholarship'));
+      // Bracketed asides such as "(Approx INR 3260999)" are kept as text.
+      const aside = (k: keyof typeof map) => clean(get(k))?.match(/\(([^)]+)\)/)?.[1]?.trim();
       const schInfo = clean(get('scholarshipInfo'));
       const scholarship = sch && /^no$/i.test(sch) ? 'No'
-        : [sch && /^yes$/i.test(sch) ? 'Available' : sch, avg.amount != null && `average ${avg.currency ?? ''} ${avg.amount.toLocaleString('en-GB')}`.replace('  ', ' '), schInfo].filter(Boolean).join(' · ') || null;
+        : [sch && /^yes$/i.test(sch) ? 'Available' : sch, avg.amount != null && `average ${avg.currency ?? ''} ${avg.amount.toLocaleString('en-GB')}${aside('avgScholarship') ? ` (${aside('avgScholarship')})` : ''}`.replace('  ', ' '), schInfo].filter(Boolean).join(' · ') || null;
       const appFee = clean(get('appFee'));
       const appMode = clean(get('appMode'));
       const site = clean(get('website'));
-      const extra = [clean(get('remarks'))?.split('\n').map((l) => l.trim()).join('\n'), appMode && `Application mode: ${appMode}`, appFee && `Application fee: ${appFee.replace(/^no application fee$/i, 'None')}`, site && `Course page: ${site}`]
+      const extra = [clean(get('remarks'))?.split('\n').map((l) => l.trim()).join('\n'), aside('tuition') && money.amount != null && `Tuition: ${money.currency ?? ''} ${money.amount.toLocaleString('en-GB')} per year (${aside('tuition')})`.replace('  ', ' '),
+        appMode && `Application mode: ${appMode}`, appFee && `Application fee: ${appFee.replace(/^no application fee$/i, 'None')}`, site && `Course page: ${site}`]
         .filter(Boolean).join('\n') || null;
       const course = courses.get(key) ?? {
         university: u.name, name, level, category: clean(get('category')), duration: clean(get('duration')),
@@ -629,7 +634,10 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
       }
       courses.set(key, course);
     }
-    for (const u of unis.values()) if (!u.country) invalid.push({ where: u.name, reason: 'Country is required' });
+    for (const u of unis.values()) {
+      if (!u.country) invalid.push({ where: u.name, reason: 'Country is required' });
+      if (footnotes.length) u.notes = [u.notes, ...footnotes].filter(Boolean).join('\n\n');
+    }
     return { layout: 'flat', payload: { source, universities: [...unis.values()], courses: [...courses.values()], blacklist: [] }, invalid, notes: [] };
   }
   return null;

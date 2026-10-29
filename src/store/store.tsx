@@ -10,6 +10,7 @@ import type {
   Assessment,
   AssessmentStatus,
   Course,
+  CourseIntake,
   DB,
   DocStatus,
   DocType,
@@ -26,6 +27,13 @@ import { useToast } from '../components/feedback';
 import { prepareUpload } from '../lib/files';
 
 type Without<T, K extends keyof T> = Omit<T, K>;
+export interface ImportSummary {
+  universities: { new: number; updated: number; unchanged: number };
+  courses: { new: number; updated: number; unchanged: number };
+  intakes: { new: number; updated: number; unchanged: number };
+  blacklist: { new: number; unchanged: number };
+  invalid: { kind: string; name: string; reason: string }[];
+}
 type Row = Record<string, unknown>;
 
 const BUCKET = 'student-documents';
@@ -42,6 +50,8 @@ const emptyDB = (): DB => ({
   tasks: [],
   announcements: [],
   activities: [],
+  courseIntakes: [],
+  blacklist: [],
   notifications: [],
   staff: [],
 });
@@ -78,6 +88,8 @@ const TABLES = {
   payments: 'payments',
   tasks: 'tasks',
   announcements: 'announcements',
+  courseIntakes: 'course_intakes',
+  blacklist: 'blacklisted_institutions',
 } as const;
 type TableKey = keyof typeof TABLES;
 
@@ -532,6 +544,26 @@ function useStoreValue() {
     },
     removeCourse(id: ID) {
       void remove('courses', id);
+    },
+    updateUniversity(id: ID, patch: Partial<University>) {
+      void update('universities', id, patch);
+    },
+    addIntake(i: Without<CourseIntake, 'id'>) {
+      const id = newId();
+      void insert('courseIntakes', { ...i, id }, toRow({ ...i, id }), 'This intake could not be added (it may already exist for this course).');
+    },
+    updateIntake(id: ID, patch: Partial<CourseIntake>) {
+      void update('courseIntakes', id, patch, 'This intake could not be saved (another intake may use the same month and year).');
+    },
+    removeIntake(id: ID) {
+      void remove('courseIntakes', id);
+    },
+    /** Server-side, validated, transactional import (public.import_catalogue). */
+    async importCatalogue(payload: unknown, overwrite: boolean) {
+      const { data, error } = await sb().rpc('import_catalogue', { p: payload, p_overwrite: overwrite });
+      if (error) throw new Error(error.message.includes('catalogue') ? error.message : 'The import was rejected by the server.');
+      await load(['universities', 'courses', 'courseIntakes', 'blacklist']);
+      return data as ImportSummary;
     },
   };
 

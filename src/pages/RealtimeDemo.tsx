@@ -1,10 +1,11 @@
-// Development-only gallery (route #/ui/live): the Live Activity table and the Add Partner
-// form, for visual checks without signing in. The rows below are clearly fake sample data
+// Development-only gallery (route #/ui/live): the Live Activity table, the Add Partner
+// form and the course import dialog, for visual checks without signing in. The rows below are clearly fake sample data
 // and this file is excluded from production builds.
 import { useState } from 'react';
 import { LiveActivity } from '../components/LiveActivity';
 import { Button } from '../components/ui';
 import { PartnerDialog } from './admin/UserManagement';
+import { CatalogueImportDialog } from '../components/catalogue';
 import type { Activity } from '../data/types';
 
 const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -18,6 +19,7 @@ const sample: Activity[] = [
 export default function RealtimeDemo() {
   const [items, setItems] = useState(sample);
   const [open, setOpen] = useState(false);
+  const [imp, setImp] = useState(false);
   return (
     <div className="min-h-screen space-y-4 bg-canvas p-6 lg:p-10">
       <div className="flex gap-2">
@@ -29,8 +31,10 @@ export default function RealtimeDemo() {
           Simulate incoming row (dev only)
         </Button>
         <Button variant="secondary" onClick={() => setOpen(true)}>Open Add Partner form</Button>
+        <Button variant="secondary" onClick={() => setImp(true)}>Open course import</Button>
       </div>
       <LiveActivity items={items} />
+      <CatalogueImportDialog open={imp} onClose={() => setImp(false)} />
       <PartnerDialog open={open} onClose={() => setOpen(false)} onCreated={async () => setOpen(false)} />
     </div>
   );

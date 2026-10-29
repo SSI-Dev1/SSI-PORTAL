@@ -67,6 +67,13 @@ export interface University {
   type: 'Public' | 'Private';
   partnerSince: string;
   website: string;
+  active?: boolean;
+  casDeposit?: string | null;
+  paymentPlan?: string | null;
+  moiAccepted?: string[];
+  notes?: string | null;
+  source?: string | null;
+  updatedAt?: string;
 }
 
 export interface Course {
@@ -78,8 +85,48 @@ export interface Course {
   duration: string;
   tuition: number;
   currency: string;
+  /** Labels of open intakes ("Jan 2027"), maintained by the database from course_intakes. */
   intakes: string[];
   ieltsMin: number;
+  active?: boolean;
+  faculty?: string | null;
+  scholarship?: string | null;
+  tuitionAfterScholarship?: number | null;
+  earlyBird?: string | null;
+  accommodation?: string | null;
+  academicRequirement?: string | null;
+  englishRequirement?: string | null;
+  complianceRequirement?: string | null;
+  courseRequirement?: string | null;
+  documentsRequired?: string | null;
+  source?: string | null;
+  updatedAt?: string;
+}
+
+export type IntakeStatus = 'Available' | 'Upcoming' | 'Closed';
+
+/** One intake of a course; editable by Admin without code changes. */
+export interface CourseIntake {
+  id: ID;
+  courseId: ID;
+  intakeMonth: number;
+  intakeYear: number;
+  inductionDate?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  applicationDeadline?: string | null;
+  enrolmentDeadline?: string | null;
+  status: IntakeStatus;
+  active: boolean;
+  notes?: string | null;
+  source?: string | null;
+  updatedAt?: string;
+}
+
+export interface BlacklistedInstitution {
+  id: ID;
+  name: string;
+  source?: string | null;
 }
 
 export const APP_STATUSES = [
@@ -297,6 +344,8 @@ export interface DB {
   tasks: Task[];
   announcements: Announcement[];
   activities: Activity[];
+  courseIntakes: CourseIntake[];
+  blacklist: BlacklistedInstitution[];
   notifications: AppNotification[];
   staff: StaffMember[];
 }

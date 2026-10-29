@@ -366,6 +366,8 @@ export function createSeed(): DB {
       tasks,
       announcements,
       activities,
+      courseIntakes: [],
+      blacklist: [],
       notifications: [],
       staff: [],
     } satisfies DB),

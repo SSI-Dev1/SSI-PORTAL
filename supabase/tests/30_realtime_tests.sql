@@ -193,4 +193,4 @@ select pg_temp.trusted(); select pg_temp.act_as(:p1admin);
 select pg_temp.check((select count(*) from public.staff_directory()) = 0, 'partners cannot list employees');
 rollback;
 
-\echo 'ALL SECURITY TESTS PASSED'
+\echo 'REALTIME TESTS PASSED'

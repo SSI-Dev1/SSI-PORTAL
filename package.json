@@ -10,7 +10,8 @@
     "typecheck": "tsc -b && tsc -p tsconfig.node.json",
     "test:security": "bash supabase/tests/run.sh",
     "audit": "npm audit --omit=dev",
-    "demo:sql": "esbuild scripts/gen-demo-sql.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gen-demo-sql.mjs --log-level=warning && node node_modules/.cache/gen-demo-sql.mjs"
+    "demo:sql": "esbuild scripts/gen-demo-sql.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gen-demo-sql.mjs --log-level=warning && node node_modules/.cache/gen-demo-sql.mjs",
+    "test:catalogue": "node --test scripts/catalogue.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "5.3.0",
@@ -25,6 +26,7 @@
     "@supabase/supabase-js": "2.117.3",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
+    "fflate": "0.8.3",
     "lucide-react": "0.441.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

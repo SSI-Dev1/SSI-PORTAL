@@ -89,6 +89,7 @@ const staffNav: NavSection[] = [
     { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
     { to: 'documents', label: 'Document Verification', icon: FileCheck2 },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
+    { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
   ] },
   { id: 'operations', title: 'Operations', items: [
     { to: 'finance', label: 'Finance', icon: Wallet },

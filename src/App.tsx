@@ -159,6 +159,7 @@ export default function App() {
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />
                 <Route path="courses" element={<Courses />} />
+                <Route path="course-finder" element={<CourseFinder />} />
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="updates" element={<UpdatesAdmin />} />
                 <Route path="reports" element={<Reports />} />

@@ -160,7 +160,7 @@ by someone else" and the latest version.
 1. SQL Editor: run `supabase/migrations/0002_security_hardening.sql` (0001 is already applied), then `supabase/seed.sql`. Never run `demo_data.sql` on production.
 2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are created only by a Super Admin). Enable "Secure email change".
 3. Authentication → Policies (Passwords): minimum length 12; require lower, upper, digits, symbols. Enable leaked-password protection (Pro plan).
-4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql`, then `0004_account_management.sql`, then `0005_realtime_notifications.sql` — **together with this frontend and the new `admin-users` function** (the new app expects `my_access()`; the old function cannot create accounts).
+4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql`, then `0004_account_management.sql`, then `0005_realtime_notifications.sql`, then `0006_realtime_catalogue.sql` — **together with this frontend and the new `admin-users` function** (the new app expects `my_access()`; the old function cannot create accounts).
 5. Authentication → Sessions: JWT expiry 15–60 min; refresh-token rotation on (reuse interval ≤10 s); inactivity timeout/time-box (Pro plan).
 6. Authentication → Rate Limits: review sign-in/OTP limits. Attack Protection → enable CAPTCHA (Cloudflare Turnstile/hCaptcha) — requires a small app change to pass the token.
 7. Authentication → URL Configuration: Site URL and Redirect URLs = your exact production URL only.

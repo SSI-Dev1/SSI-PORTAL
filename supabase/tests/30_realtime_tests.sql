@@ -54,8 +54,8 @@ create or replace function pg_temp.n(uid text, k text default null) returns bigi
 
 \echo '== realtime publication'
 select pg_temp.check((select count(*) from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public'
-  and tablename in ('partners', 'profiles', 'students', 'applications', 'documents', 'assessments', 'payments', 'tasks',
-                    'announcements', 'activities', 'notifications')) = 11, 'all synced tables are in the supabase_realtime publication');
+  and tablename in ('partners', 'profiles', 'students', 'universities', 'courses', 'applications', 'documents', 'assessments',
+                    'payments', 'tasks', 'announcements', 'activities', 'notifications')) = 13, 'every table the app subscribes to is in the supabase_realtime publication');
 select pg_temp.check(not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'audit_log'),
   'audit log is not streamed');
 

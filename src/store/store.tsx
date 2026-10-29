@@ -192,38 +192,83 @@ function useStoreValue() {
       window.clearTimeout(timer);
       timer = window.setTimeout(flush, 250); // batch bursts (e.g. a status change + its activity)
     };
-    const channel = sb.channel(`crm-sync-${userId}-${Math.random().toString(36).slice(2, 8)}`);
-    const watch = (table: string, onChange: () => void, filter?: string) =>
-      channel.on('postgres_changes', { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) }, onChange);
-    (Object.keys(TABLES) as TableKey[]).forEach((k) => watch(TABLES[k], () => queue(k)));
-    watch('activities', () => queue('activities'));
-    watch('notifications', () => queue('notifications'), `user_id=eq.${userId}`);
     // My own account or organisation changed (permissions, suspension, portal access):
     // re-resolve access from the server; a suspended user is signed out.
     const recheck = () => {
       window.clearTimeout(accessTimer);
       accessTimer = window.setTimeout(() => void refreshAccessRef.current(), 400);
     };
-    // A partner's organisation access (portal switch, modules, archive) changed.
-    if (!internal) watch('partners', recheck);
-    watch('profiles', () => {
+    const debug = (() => {
+      try {
+        return localStorage.getItem('ssi-debug-realtime') === '1';
+      } catch {
+        return false;
+      }
+    })();
+
+    // One channel per table: if Realtime rejects one subscription, the others keep working
+    // (a rejected listener on a shared channel silently stops all of them).
+    const handlers: Record<string, () => void> = {};
+    (Object.keys(TABLES) as TableKey[]).forEach((k) => (handlers[TABLES[k]] = () => queue(k)));
+    handlers.activities = () => queue('activities');
+    // RLS already limits notifications to their owner, so no server-side filter is needed.
+    handlers.notifications = () => queue('notifications');
+    handlers.profiles = () => {
       recheck();
       queue('staff');
       setProfilesRev((n) => n + 1);
+    };
+    if (!internal) {
+      const base = handlers.partners;
+      handlers.partners = () => {
+        base();
+        recheck(); // a partner's own portal switch / modules / archive changed
+      };
+    }
+
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const state: Record<string, 'ok' | 'down'> = {};
+    const report = () => {
+      const values = Object.values(state);
+      setLive(values.length && values.every((v) => v === 'ok') ? 'live' : 'offline');
+    };
+    const channels = Object.entries(handlers).map(([table, onChange]) => {
+      const ch = sb.channel(`crm-${table}-${suffix}`);
+      ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        if (debug) console.info('[realtime] change in', table);
+        onChange();
+      });
+      ch.on('system', {}, (m: { status?: string; message?: string }) => {
+        if (m?.status === 'error') {
+          console.warn('[realtime]', table, m.message);
+          state[table] = 'down';
+          report();
+        }
+      });
+      ch.subscribe((s) => {
+        if (s === 'SUBSCRIBED') {
+          if (state[table] === 'down' || wasLive) void loadRef.current([table === 'profiles' ? 'staff' : table].filter((t) => t !== 'staff' || internal));
+          state[table] = 'ok';
+          wasLive = true;
+        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+          state[table] = 'down'; // supabase-js retries automatically
+        }
+        report();
+      });
+      return ch;
     });
-    channel.subscribe((s) => {
-      if (s === 'SUBSCRIBED') {
-        setLive('live');
-        if (wasLive) void loadRef.current(); // reconnected: reconcile everything we may have missed
-        wasLive = true;
-      } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
-        setLive('offline'); // supabase-js retries automatically
-      }
-    });
+
+    // Safety net: re-sync while the page is visible even if no events arrive, so every
+    // portal converges on the database state within seconds (events are not trusted alone).
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadRef.current();
+    }, 20_000);
+
     return () => {
       window.clearTimeout(timer);
       window.clearTimeout(accessTimer);
-      void sb.removeChannel(channel);
+      window.clearInterval(poll);
+      channels.forEach((ch) => void sb.removeChannel(ch));
       setLive('connecting');
     };
   }, [status, userId, internal]);

@@ -5,7 +5,7 @@ import { Avatar, Button, Card, CardHeader, Progress } from '../../components/ui'
 import { StatCard } from '../../components/StatCard';
 import { StatusDonut } from '../../components/charts';
 import { ActivityFeed } from '../../components/ActivityFeed';
-import { StatusBadge, stageProgress, ApplicationDrawer } from '../../components/ApplicationDrawer';
+import { StatusBadge, stageProgress, ApplicationDetailsModal } from '../../components/ApplicationDetailsModal';
 import { categoryMeta, priorityTone } from '../../components/UpdateCard';
 import { Badge } from '../../components/ui';
 import { StudentForm } from '../../components/forms/StudentForm';
@@ -193,7 +193,7 @@ export default function ClientDashboard() {
       <StudentForm open={addStudent} onClose={() => setAddStudent(false)} onSaved={(id) => navigate(`/client/students/${id}`)} />
       <ApplicationForm open={newApp} onClose={() => setNewApp(false)} onSaved={(id) => setOpenApp(id)} />
       <DocumentUpload open={upload} onClose={() => setUpload(false)} />
-      <ApplicationDrawer app={apps.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
+      <ApplicationDetailsModal app={apps.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
     </>
   );
 }

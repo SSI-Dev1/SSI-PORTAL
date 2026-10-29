@@ -282,7 +282,8 @@ export function Modal({
   subtitle?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** `wide`: ~960px detail view; full screen on phones. */
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'wide';
   /** When true, closing (×, Esc, backdrop) asks for confirmation first. */
   dirty?: boolean;
 }) {
@@ -292,17 +293,33 @@ export function Modal({
   useEscape(open, requestClose, container);
   useLockScroll(open);
   if (!open) return null;
-  const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }[size];
+  const wide = size === 'wide';
+  const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl', wide: 'max-w-[960px]' }[size];
   return createPortal(
-    <div ref={setContainer} className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-6">
+    <div ref={setContainer} className={cn('fixed inset-0 z-[60] flex justify-center p-0 sm:items-center sm:p-6', wide ? 'items-stretch' : 'items-end')}>
       <div className="absolute inset-0 animate-fade-in bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClick={requestClose} aria-hidden />
       <PortalContainerContext.Provider value={container}>
-        <FocusScope trapped loop asChild>
+        <FocusScope
+          trapped
+          loop
+          asChild
+          // Start on the dialog itself (not the × button, whose tooltip would pop up), unless a
+          // field inside already took focus via autoFocus.
+          onMountAutoFocus={(e) => {
+            e.preventDefault();
+            const el = e.currentTarget as HTMLElement;
+            if (!el.contains(document.activeElement)) el.focus();
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className={cn('relative flex max-h-[92vh] w-full animate-scale-in flex-col overflow-hidden rounded-t-3xl bg-surface shadow-2xl outline-none sm:rounded-3xl', width)}
+            className={cn(
+              'relative flex w-full animate-scale-in flex-col overflow-hidden bg-surface shadow-2xl outline-none sm:rounded-3xl',
+              wide ? 'h-[100dvh] ring-1 ring-line sm:h-auto sm:max-h-[88vh]' : 'max-h-[92vh] rounded-t-3xl',
+              width,
+            )}
             tabIndex={-1}
           >
             <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">

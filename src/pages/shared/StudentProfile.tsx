@@ -23,7 +23,7 @@ import { useConfirm, useToast } from '../../components/feedback';
 import { StudentForm } from '../../components/forms/StudentForm';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { DocumentUpload } from '../../components/forms/DocumentUpload';
-import { ApplicationDrawer, StatusBadge, stageProgress } from '../../components/ApplicationDrawer';
+import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { countryFlag, fileSize, formatDate, fullName, timeAgo } from '../../lib/utils';
 import { studentTone } from './Students';
@@ -254,7 +254,7 @@ export default function StudentProfile() {
       <StudentForm open={edit} onClose={() => setEdit(false)} student={s} />
       <ApplicationForm open={newApp} onClose={() => setNewApp(false)} studentId={s.id} onSaved={(aid) => { setTab('applications'); setOpenApp(aid); }} />
       <DocumentUpload open={upload} onClose={() => { setUpload(false); }} studentId={s.id} />
-      <ApplicationDrawer app={scoped.applications.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
+      <ApplicationDetailsModal app={scoped.applications.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
     </>
   );
 }

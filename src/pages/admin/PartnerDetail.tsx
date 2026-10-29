@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Building2, CalendarDays, ExternalLink, Globe, LogIn, Mail, MapPin, Pencil, Percent, Phone, Users } from 'lucide-react';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Progress, Table, Tabs } from '../../components/ui';
 import { StatusDonut, TrendChart } from '../../components/charts';
-import { ApplicationDrawer, StatusBadge, stageProgress } from '../../components/ApplicationDrawer';
+import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
@@ -215,7 +215,7 @@ export default function PartnerDetail() {
       )}
 
       <PartnerForm open={edit} onClose={() => setEdit(false)} partner={p} />
-      <ApplicationDrawer app={apps.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
+      <ApplicationDetailsModal app={apps.find((a) => a.id === openApp)} onClose={() => setOpenApp(undefined)} />
     </>
   );
 }

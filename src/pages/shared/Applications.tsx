@@ -4,7 +4,7 @@ import { FilePlus2, FileStack } from 'lucide-react';
 import { Avatar, Button, Card, EmptyState, FilterSelect, PageHeader, Pagination, Progress, SearchInput, Segmented, Table, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
-import { ApplicationDrawer, StatusBadge, stageProgress } from '../../components/ApplicationDrawer';
+import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { APP_STATUSES, type AppStatus } from '../../data/types';
 import { INTAKES } from '../../data/seed';
@@ -209,7 +209,7 @@ export default function Applications() {
       </Card>
 
       <ApplicationForm open={formOpen} onClose={() => setFormOpen(false)} onSaved={(id) => setOpenId(id)} />
-      <ApplicationDrawer app={scoped.applications.find((a) => a.id === openId)} onClose={() => setOpenId(undefined)} />
+      <ApplicationDetailsModal app={scoped.applications.find((a) => a.id === openId)} onClose={() => setOpenId(undefined)} />
     </>
   );
 }

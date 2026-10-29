@@ -5,6 +5,7 @@
 import { createClient, type SupabaseClient, type SupportedStorage, type User } from '@supabase/supabase-js';
 import type { Session, UserRole } from '../data/types';
 import { authConfigured, googleEnabled, siteUrl, SUPABASE_ANON_KEY, SUPABASE_URL } from './config';
+import { isStaffRole, ROLE_LABEL } from './roles';
 
 export class AuthError extends Error {}
 
@@ -41,8 +42,7 @@ export function requireClient(): SupabaseClient {
 }
 
 const GENERIC = 'Incorrect email or password.';
-const STAFF: UserRole[] = ['super_admin', 'admin_staff'];
-export const isStaffRole = (r: UserRole) => STAFF.includes(r);
+export { isStaffRole };
 
 /** Fire-and-forget security event (actor is taken from the verified JWT on the server). */
 export function logEvent(event: 'login' | 'logout' | 'idle_timeout' | 'password_changed') {
@@ -52,28 +52,36 @@ export function logEvent(event: 'login' | 'logout' | 'idle_timeout' | 'password_
   );
 }
 
-export type AuthStage = { kind: 'signed-in'; session: Session };
+export type AuthStage = { kind: 'signed-in' | 'password-change'; session: Session };
 
 /** Reads the signed-in user's role from the server and decides what they must do next. */
 export async function resolveStage(user: User): Promise<AuthStage> {
   const sb = requireClient();
-  const { data, error } = await sb
-    .from('profiles')
-    .select('role, partner_id, full_name, status, partners(name)')
-    .eq('id', user.id)
-    .maybeSingle();
+  // Role, status, permissions and partner access are all computed by the database.
+  const { data, error } = await sb.rpc('my_access').maybeSingle<{
+    role: UserRole; status: string; permissions: string[] | null; partner_id: string | null; partner_name: string | null;
+    partner_modules: string[] | null; portal_open: boolean; must_change_password: boolean;
+  }>();
   if (error) throw new AuthError('Could not load your account. Please try again.');
   if (!data) throw new AuthError('Your account has not been set up yet. Please contact SSI GLOBAL.');
+  if (data.status === 'deactivated') throw new AuthError('Your account has been deactivated. Please contact SSI GLOBAL.');
   if (data.status !== 'active') throw new AuthError('Your account has been suspended. Please contact SSI GLOBAL.');
 
-  const userRole = data.role as UserRole;
-  const name = (data.full_name as string | null) || (user.email ?? '').split('@')[0];
+  const userRole = data.role;
+  const { data: prof } = await sb.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+  const name = (prof?.full_name as string | null) || (user.email ?? '').split('@')[0];
   const email = user.email ?? '';
-  const partnerName = (data.partners as { name?: string } | null)?.name;
-  const session: Session = isStaffRole(userRole)
-    ? { role: 'admin', userRole, userId: user.id, name, email, title: userRole === 'super_admin' ? 'Super Admin' : 'Admin Staff' }
-    : { role: 'client', userRole, userId: user.id, partnerId: data.partner_id as string, name, email, title: partnerName ?? 'Partner' };
-
+  let session: Session;
+  if (isStaffRole(userRole)) {
+    session = { role: 'admin', userRole, userId: user.id, name, email, title: ROLE_LABEL[userRole], permissions: data.permissions ?? [], partnerModules: [] };
+  } else {
+    if (!data.portal_open) throw new AuthError('Portal access for your organisation is currently disabled. Please contact SSI GLOBAL.');
+    session = {
+      role: 'client', userRole, userId: user.id, partnerId: data.partner_id ?? undefined, name, email,
+      title: data.partner_name ?? 'Partner', permissions: [], partnerModules: data.partner_modules ?? [],
+    };
+  }
+  if (data.must_change_password) return { kind: 'password-change', session };
   return { kind: 'signed-in', session };
 }
 
@@ -136,6 +144,7 @@ export async function updatePassword(password: string) {
   const { error } = await sb.auth.updateUser({ password });
   if (error) throw new AuthError(error.message.includes('different') ? 'Choose a password you have not used before.' : 'Could not update your password. Please try again.');
   logEvent('password_changed');
+  await sb.rpc('password_change_done');
   // Revoke other sessions after a credential change.
   await sb.auth.signOut({ scope: 'others' });
 }

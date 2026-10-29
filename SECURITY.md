@@ -26,6 +26,14 @@ Postgres RLS, triggers and storage policies, which were tested directly (section
 
 ## 2. Authentication & passwords
 
+Passwords are set by a Super Admin at account creation or reset (typed, or generated in the
+browser with the Web Crypto CSPRNG). They are sent once over HTTPS to the `admin-users`
+function, which passes them to Supabase Auth (bcrypt). They are never stored by the app,
+logged, emailed, written to the audit log or shown again; the creation dialog shows the
+password once so the admin can hand it over privately. "Require a password change at first
+sign-in" is optional per account (off by default); it is enforced by the app's sign-in flow,
+not by RLS.
+
 | Control | Implementation |
 | --- | --- |
 | Password storage | Supabase Auth (bcrypt, per-password salt). The app never stores, logs or hashes passwords itself. |
@@ -42,18 +50,50 @@ Postgres RLS, triggers and storage policies, which were tested directly (section
 
 ## 3. Authorisation (RBAC + tenant isolation)
 
-Roles (`profiles.role`): `super_admin`, `admin_staff` (SSI GLOBAL), `partner_admin`,
-`partner_staff` (consultancy). A user's organisation is `profiles.partner_id`, set only
-by a Super Admin.
+Roles (`profiles.role`): employees — `super_admin`, `admin_staff`, `application_manager`,
+`assessment_staff`, `finance_staff`, `support_staff`; partner users — `partner_admin`,
+`partner_staff`. A user's organisation is `profiles.partner_id`, set only by a Super Admin.
 
-| Data | Super Admin | Admin Staff | Partner Admin | Partner Staff |
+**Employee permissions** (`0004_account_management.sql`). Each employee has module
+permissions: `partners`, `students`, `applications`, `assessments`, `documents`, `finance`,
+`catalogue`, `tasks`, `updates`, `reports`. They default by role and a Super Admin can
+override them per person. Every table policy checks the module (`staff_can()`), so a
+Finance Staff account gets no student rows even through the raw API. Account management
+and the audit log are Super Admin only.
+
+| Role | Default modules |
+| --- | --- |
+| Super Admin | everything + account management + audit log |
+| Admin Staff | all modules |
+| Application Manager | partners, students, applications, documents, catalogue, tasks, reports |
+| Assessment Staff | partners, students, assessments, documents, catalogue, tasks |
+| Finance Staff | partners, finance, reports, tasks |
+| Support Staff | partners, students, updates, tasks |
+
+**Partner portal control.** Each partner organisation has `portal_enabled`, a status
+(Active / Onboarding / Inactive), `archived_at` and a module list (students, applications,
+course finder, assessments, documents, finance, updates). If the portal is off, the partner
+is Inactive or archived, `my_partner_id()` returns nothing and every partner user loses all
+data access at once. Only a Super Admin can change these (database trigger); partners cannot
+grant themselves anything. Course Finder is a menu switch — the catalogue itself stays readable
+because applications reference it.
+
+**Accounts and sessions.** Accounts are created by a Super Admin through the `admin-users`
+Edge Function (service role) with an admin-chosen initial password — no invitations or
+self-registration. Statuses: active / suspended / deactivated. Leaving "active", or an
+administrative password reset, sets `sessions_revoked_at` and deletes the user's
+`auth.sessions`; RLS rejects any access token issued before that time, so revocation is
+immediate, not at token expiry. Suspended/deactivated users are also banned in Supabase Auth.
+The last active Super Admin cannot be demoted or suspended.
+
+| Data (employees: if the module is permitted) | Super Admin | Other employees | Partner Admin | Partner Staff |
 | --- | --- | --- | --- | --- |
-| Students, applications, documents, assessments | all | all | own org only | own org only |
+| Students, applications, documents, assessments | all | all, per module | own org, per enabled module | own org, per enabled module |
 | Application offer/visa stages, document verification, assessment review | ✔ | ✔ | — | — |
-| Invoices / finance | all | all | own org, read | — |
-| Partner records | all; delete | create/update | own contact details | read own |
+| Invoices / finance | all | all, with `finance` | own org, read (if enabled) | — |
+| Partner records | all; access, archive, delete | create/update details (portal closed until a Super Admin opens it) | own contact details | read own |
 | Announcements | manage | manage | published + addressed only | same |
-| Users, roles, suspension | ✔ | — | — | — |
+| Accounts, passwords, roles, permissions, suspension | ✔ | — | — | — |
 | Audit log | read | — | — | — |
 
 IDOR/BOLA defences: rows are filtered by RLS, so guessing another record's id returns
@@ -87,18 +127,18 @@ server-managed. No user can change their own role, organisation or status.
 
 **Supabase dashboard**
 1. SQL Editor: run `supabase/migrations/0002_security_hardening.sql` (0001 is already applied), then `supabase/seed.sql`. Never run `demo_data.sql` on production.
-2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are invite-only). Enable "Secure email change".
+2. Authentication → Sign In / Providers → Email: **disable "Allow new users to sign up"** (accounts are created only by a Super Admin). Enable "Secure email change".
 3. Authentication → Policies (Passwords): minimum length 12; require lower, upper, digits, symbols. Enable leaked-password protection (Pro plan).
-4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql` (removes the staff MFA requirement from 0002; deploy together with this frontend).
+4. SQL Editor: run `supabase/migrations/0003_remove_mfa_requirement.sql`, then `0004_account_management.sql` — **together with this frontend and the new `admin-users` function** (the new app expects `my_access()`; the old function cannot create accounts).
 5. Authentication → Sessions: JWT expiry 15–60 min; refresh-token rotation on (reuse interval ≤10 s); inactivity timeout/time-box (Pro plan).
 6. Authentication → Rate Limits: review sign-in/OTP limits. Attack Protection → enable CAPTCHA (Cloudflare Turnstile/hCaptcha) — requires a small app change to pass the token.
 7. Authentication → URL Configuration: Site URL and Redirect URLs = your exact production URL only.
 8. Authentication → SMTP: your own SMTP (default is heavily rate-limited).
 9. Database → Settings: **Enforce SSL**; Network Restrictions to your backup host IP.
-10. Edge Function: `supabase functions deploy admin-users --project-ref goiyhrlhczygeweykwqq` and `supabase secrets set ALLOWED_ORIGINS=https://crm.example.com SITE_URL=https://crm.example.com/`.
+10. Edge Function: `supabase functions deploy admin-users --project-ref goiyhrlhczygeweykwqq` and `supabase secrets set ALLOWED_ORIGINS=https://ssi-dev1.github.io` (your exact site origin).
 11. First Super Admin: create the user in Authentication → Users, then
     `insert into public.profiles (id, role, full_name, email) select id, 'super_admin', 'Name', email from auth.users where email = '…';`
-    Invite everyone else from Settings → Users & access.
+    Create everyone else from **User Management** (Add partner / Add employee / Add partner user).
 12. Backups: Pro plan daily backups / PITR, or `deploy/backup.sh` (encrypted) — test restores.
 13. Run Advisors → Security after applying migrations; resolve findings.
 
@@ -113,7 +153,7 @@ protection). Use it for demos only; host production on your server.
 
 | Test | Result |
 | --- | --- |
-| `npm run test:security` — 65 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
+| `npm run test:security` — 117 automated DB tests on PostgreSQL 16 with Supabase auth/storage stand-ins: anon lockout; cross-org read/write/delete (IDOR); tenant spoofing; cross-org linking; finance per role; role escalation; self-unsuspend; suspended user lockout; partner workflow guards; server-managed ref/timeline; audit log append-only and PII-free; storage cross-org upload/list/delete and path traversal; private bucket; **accounts (`20_account_tests.sql`)**: per-role module access for Finance Staff / Application Manager, permission grant/revoke takes effect immediately, employees cannot change their own or others' permissions, partner module switches, portal off / Inactive / archived removes access, partners cannot change their own access, new partners from non-super staff start closed, cross-partner read/write denied, suspension and deactivation lock-out, tokens issued before a reset or suspension rejected, `admin_revoke_sessions` service-role only, duplicate email rejected, user directory Super Admin only | **All pass** (also runs in CI: `.github/workflows/security.yml`) |
 | Secret scan (source + built bundle) for service keys, private keys, JWTs, demo passwords | Clean. Anon key is only in git-ignored `.env` / CI secret |
 | Removed client-side auth: demo account hashes deleted; role no longer stored in browser | Verified in `dist/` |
 | Browser test of production build under CSP: no violations, 0 third-party requests, wrong-password sign-in returns generic error, only `ssi-remember` flag in storage, protected routes redirect to sign-in | Pass |
@@ -122,7 +162,8 @@ protection). Use it for demos only; host production on your server.
 | CSRF: no cookie-based auth (bearer tokens in headers), so classic CSRF does not apply; edge function checks Origin | Pass |
 | SQL injection: no raw SQL from the client; PostgREST parameterises; DB functions take typed args | Pass |
 | `npm audit --omit=dev` | No high/critical in production deps (see risks) |
-| Edge function type-check (`deno check`) | Pass |
+| Edge function type-check (`deno check`) and input/password-policy unit tests (`deno test supabase/functions/admin-users/lib.test.ts`) | Pass |
+| End-to-end account flows (create employee/partner → sign in, reset → old sessions out, suspend, permission change) against your live project | **Not run** — needs migration 0004 and the new `admin-users` function deployed; the database rules behind each flow are covered by the tests above |
 
 **Not tested (requires your live project):** end-to-end sign-in with real users, Google OAuth, the edge function deployed, and the
 migration on your actual database. Run `supabase/tests/run.sh` logic again after any
@@ -146,7 +187,7 @@ passports and financial documents.
 5. **Client-reported events** (`log_event`) are recorded with the verified user id but
    their occurrence is reported by the client; authoritative sign-in records are in
    Supabase Auth logs.
-6. **Partner admins cannot yet manage their own staff** (Super Admin invites everyone).
+6. **Partner admins cannot manage their own staff** — by design, a Super Admin creates every account.
 7. **CAPTCHA, leaked-password protection, session time-box** need dashboard
    configuration (some require a paid Supabase plan).
 8. **Git history** still contains the removed prototype account hashes (weak demo

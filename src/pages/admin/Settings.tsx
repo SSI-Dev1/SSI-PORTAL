@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Bell, Building2, Palette, SunMoon, User } from 'lucide-react';
-import { AccountSecurityCard, AuditLogCard, UsersAccessCard } from '../../components/SecurityPanels';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Bell, Building2, Palette, SunMoon, User, UsersRound } from 'lucide-react';
+import { AccountSecurityCard, AuditLogCard } from '../../components/SecurityPanels';
 import { supabase } from '../../auth/auth';
 import { useAuth } from '../../auth/AuthProvider';
 import { ThemeSegmented } from '../../components/ThemeSwitcher';
@@ -49,7 +50,17 @@ export default function Settings() {
               </Button>
             </div>
           </Card>
-          {superAdmin && <UsersAccessCard />}
+          {superAdmin && (
+            <Card>
+              <CardHeader title="Users & access" subtitle="Create partner and employee accounts, set passwords, roles and permissions." action={<UsersRound className="h-5 w-5 text-ink-mute" />} />
+              <div className="flex flex-wrap items-center justify-between gap-3 p-5 pt-2 text-sm text-ink-soft">
+                Accounts are created directly by a Super Admin — there are no invitations or self-registration.
+                <Link to="/admin/users" className="inline-flex items-center gap-1.5 rounded-xl bg-rust px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                  Open User Management <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </Card>
+          )}
           {superAdmin && <AuditLogCard />}
           <Card>
             <CardHeader title="Organisation" action={<Building2 className="h-5 w-5 text-ink-mute" />} />

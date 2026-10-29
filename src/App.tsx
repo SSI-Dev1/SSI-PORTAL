@@ -12,6 +12,7 @@ import { lazy, Suspense } from 'react';
 // Component gallery for development only; the import is dropped from production builds.
 const DesignSystem = import.meta.env.DEV ? lazy(() => import('./pages/DesignSystem')) : null;
 const ShellDemo = import.meta.env.DEV ? lazy(() => import('./pages/ShellDemo')) : null;
+const UsersDemo = import.meta.env.DEV ? lazy(() => import('./pages/admin/UserManagement')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -21,6 +22,7 @@ import Tasks from './pages/admin/Tasks';
 import UpdatesAdmin from './pages/admin/UpdatesAdmin';
 import Reports from './pages/admin/Reports';
 import Settings from './pages/admin/Settings';
+import UserManagement from './pages/admin/UserManagement';
 import ClientDashboard from './pages/client/ClientDashboard';
 import CourseFinder from './pages/client/CourseFinder';
 import UpdatesClient from './pages/client/UpdatesClient';
@@ -81,6 +83,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {UsersDemo && (
+              <Route
+                path="/ui/users"
+                element={
+                  <Suspense fallback={null}>
+                    <div className="min-h-screen bg-canvas p-6 lg:p-10"><UsersDemo /></div>
+                  </Suspense>
+                }
+              />
+            )}
             {ShellDemo && (
               <Route
                 path="/ui/shell/*"
@@ -119,6 +131,7 @@ export default function App() {
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="updates" element={<UpdatesAdmin />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="users" element={<UserManagement />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
               <Route

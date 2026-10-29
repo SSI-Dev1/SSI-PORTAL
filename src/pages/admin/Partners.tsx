@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
+import { Building2, Eye, Globe, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
-import { useConfirm, useToast } from '../../components/feedback';
+import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
+import { useAuth } from '../../auth/AuthProvider';
+import { CredentialsOnce, PartnerDialog } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, formatDate, initials, matches, type Tone } from '../../lib/utils';
 
@@ -13,10 +15,19 @@ export const tierTone: Record<PartnerTier, Tone> = { Platinum: 'navy', Gold: 'or
 
 export default function Partners() {
   const { db, actions } = useStore();
+  const { realSession } = useAuth();
+  const superAdmin = realSession?.userRole === 'super_admin';
   const navigate = useNavigate();
-  const toast = useToast();
-  const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [created, setCreated] = useState<{ title: string; email: string; password: string } | null>(null);
+  // Super Admins create the organisation together with its login account; other staff can
+  // only record the organisation (its portal stays closed until a Super Admin opens it).
+  const openAdd = () => {
+    setEditing(undefined);
+    if (superAdmin) setAccountOpen(true);
+    else setFormOpen(true);
+  };
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [tier, setTier] = useState('');
@@ -26,8 +37,7 @@ export default function Partners() {
 
   useEffect(() => {
     if (params.get('new') === '1') {
-      setEditing(undefined);
-      setFormOpen(true);
+      openAdd();
       params.delete('new');
       setParams(params, { replace: true });
     }
@@ -36,6 +46,7 @@ export default function Partners() {
   const rows = useMemo(
     () =>
       db.partners
+        .filter((p) => !p.archivedAt)
         .filter((p) => matches(q, p.name, p.code, p.city, p.contactName, p.email))
         .filter((p) => !status || p.status === status)
         .filter((p) => !tier || p.tier === tier),
@@ -48,23 +59,10 @@ export default function Partners() {
     visas: db.applications.filter((a) => a.partnerId === id && a.status === 'Visa Granted').length,
   });
 
-  const remove = async (p: Partner) => {
-    const ok = await confirm({
-      title: `Remove ${p.name}?`,
-      message: 'This permanently deletes the partner workspace including its students, applications, documents and invoices.',
-      confirmLabel: 'Remove partner',
-      danger: true,
-    });
-    if (ok) {
-      actions.removePartner(p.id);
-      toast.success('Partner removed', p.name);
-    }
-  };
-
   const menu = (p: Partner) => [
     { label: 'Open workspace', icon: Eye, onClick: () => navigate(`/admin/partners/${p.id}`) },
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
-    { label: 'Remove', icon: Trash2, onClick: () => remove(p), danger: true },
+    ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
   ];
 
   return (
@@ -75,7 +73,7 @@ export default function Partners() {
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
-            <Button icon={Plus} onClick={() => { setEditing(undefined); setFormOpen(true); }}>
+            <Button icon={Plus} onClick={openAdd}>
               Add Partner
             </Button>
           </>
@@ -93,7 +91,7 @@ export default function Partners() {
 
       {rows.length === 0 ? (
         <Card>
-          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={<Button icon={Plus} onClick={() => setFormOpen(true)}>Add Partner</Button>} />
+          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={<Button icon={Plus} onClick={openAdd}>Add Partner</Button>} />
         </Card>
       ) : view === 'grid' ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -181,6 +179,16 @@ export default function Partners() {
       )}
 
       <PartnerForm open={formOpen} onClose={() => setFormOpen(false)} partner={editing} onCreated={(id) => navigate(`/admin/partners/${id}`)} />
+      <PartnerDialog
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        onCreated={async (email, password) => {
+          setAccountOpen(false);
+          setCreated({ title: 'Partner and login account created', email, password });
+          await actions.reload();
+        }}
+      />
+      <CredentialsOnce data={created} onClose={() => setCreated(null)} />
     </>
   );
 }
@@ -190,6 +198,8 @@ const empty: Draft = { name: '', code: '', contactName: '', email: '', phone: ''
 
 export function PartnerForm({ open, onClose, partner, onCreated }: { open: boolean; onClose: () => void; partner?: Partner; onCreated?: (id: string) => void }) {
   const { db, actions } = useStore();
+  const { realSession } = useAuth();
+  const superAdmin = realSession?.userRole === 'super_admin';
   const toast = useToast();
   const [d, setD] = useState<Draft>(empty);
   const [branches, setBranches] = useState('');
@@ -276,11 +286,13 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
             {['Platinum', 'Gold', 'Silver'].map((t) => <option key={t}>{t}</option>)}
           </Select>
         </Field>
-        <Field label="Status">
-          <Select value={d.status} onChange={(e) => set('status', e.target.value as PartnerStatus)}>
-            {['Active', 'Onboarding', 'Inactive'].map((t) => <option key={t}>{t}</option>)}
-          </Select>
-        </Field>
+        {superAdmin && (
+          <Field label="Status">
+            <Select value={d.status} onChange={(e) => set('status', e.target.value as PartnerStatus)}>
+              {['Active', 'Onboarding', 'Inactive'].map((t) => <option key={t}>{t}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label="Commission rate (%)">
           <Input type="number" min={0} max={40} value={d.commissionRate} onChange={(e) => set('commissionRate', Number(e.target.value))} />
         </Field>

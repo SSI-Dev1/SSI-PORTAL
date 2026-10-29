@@ -18,5 +18,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0001_crm_auth_and_rls.sql
 "${PSQL[@]}" -f migrations/0002_security_hardening.sql
 "${PSQL[@]}" -f migrations/0003_remove_mfa_requirement.sql
+"${PSQL[@]}" -f migrations/0004_account_management.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
+"${PSQL[@]}" -f tests/20_account_tests.sql

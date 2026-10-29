@@ -29,7 +29,7 @@ function StepHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
-export function SetNewPassword({ onDone }: { onDone: () => Promise<void> }) {
+export function SetNewPassword({ onDone, required }: { onDone: () => Promise<void>; required?: boolean }) {
   const toast = useToast();
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -59,7 +59,10 @@ export function SetNewPassword({ onDone }: { onDone: () => Promise<void> }) {
 
   return (
     <form onSubmit={submit} noValidate>
-      <StepHeader title="Choose a new password" sub="Your reset link is valid once. Pick a strong password you don’t use anywhere else." />
+      <StepHeader
+        title={required ? 'Set your own password' : 'Choose a new password'}
+        sub={required ? 'Your administrator asked you to replace the initial password before continuing.' : 'Your reset link is valid once. Pick a strong password you don’t use anywhere else.'}
+      />
       <ErrorBox message={error} />
       <div className="mt-6 space-y-4">
         <Field label="New password">

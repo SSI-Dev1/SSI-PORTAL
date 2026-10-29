@@ -1,10 +1,10 @@
 // Collapsible navigation for the Admin and Client portals.
 //
 //  ≥1024px  fixed sidebar: expanded (264px) or icon rail (76px); choice remembered per browser.
-//           Optional hover-to-expand floats the full sidebar over the content (no layout shift).
+//           Only the toggle (or Ctrl/⌘+B) changes it — the sidebar never expands on hover.
 //  768–1023 compact icon rail; the expand button opens the full menu as a drawer.
 //  <768     hidden; the top-bar menu button opens a slide-out drawer.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
 import {
@@ -20,11 +20,11 @@ import {
   LayoutDashboard,
   ListTodo,
   Megaphone,
-  MousePointer2,
   Settings,
   Sparkles,
   UserCircle2,
   Users,
+  UsersRound,
   Wallet,
   X,
   type LucideIcon,
@@ -32,7 +32,8 @@ import {
 import { Logo, LogoMark } from '../components/brand';
 import { Avatar, Menu, Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
-import type { UserRole } from '../data/types';
+import type { Session } from '../data/types';
+import { canOpen } from '../auth/roles';
 
 export const SIDEBAR_EXPANDED = 264;
 export const SIDEBAR_RAIL = 76;
@@ -69,7 +70,10 @@ const adminNav: NavSection[] = [
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
-  { id: 'system', title: 'System', items: [{ to: 'settings', label: 'Settings', icon: Settings }] },
+  { id: 'system', title: 'System', items: [
+    { to: 'users', label: 'User Management', icon: UsersRound },
+    { to: 'settings', label: 'Settings', icon: Settings },
+  ] },
 ];
 
 const clientNav: NavSection[] = [
@@ -88,11 +92,11 @@ const clientNav: NavSection[] = [
   { id: 'account', title: 'Account', items: [{ to: 'profile', label: 'My Profile', icon: UserCircle2 }] },
 ];
 
-export function navFor(isAdmin: boolean, userRole?: UserRole): NavSection[] {
-  if (isAdmin) return adminNav;
-  // Partner staff have no finance access (the database returns no invoices to them either).
-  return clientNav
-    .map((s) => ({ ...s, items: s.items.filter((n) => n.to !== 'finance' || userRole === 'partner_admin') }))
+/** Menu for this session: only modules its role / organisation may use (the database enforces the same). */
+export function navFor(session: Session | null): NavSection[] {
+  if (!session) return [];
+  return (session.role === 'admin' ? adminNav : clientNav)
+    .map((s) => ({ ...s, items: s.items.filter((n) => canOpen(session, n.to)) }))
     .filter((s) => s.items.length);
 }
 
@@ -101,14 +105,14 @@ export function navFor(isAdmin: boolean, userRole?: UserRole): NavSection[] {
 const PREF_KEY = 'ssi-sidebar';
 interface Prefs {
   collapsed: boolean;
-  hoverExpand: boolean;
 }
 function readPrefs(): Prefs {
   try {
+    // Older builds also stored `hoverExpand`; it is ignored now.
     const p = JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
-    return { collapsed: p.collapsed === true, hoverExpand: p.hoverExpand === true };
+    return { collapsed: p.collapsed === true };
   } catch {
-    return { collapsed: false, hoverExpand: false };
+    return { collapsed: false };
   }
 }
 
@@ -297,34 +301,9 @@ type SharedProps = Omit<ContentProps, 'collapsed' | 'onClose' | 'menuItems' | 'c
 /** Fixed sidebar for tablet (rail) and desktop (collapsible). */
 export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: SharedProps; prefs: ReturnType<typeof useSidebarPrefs>; onOpenDrawer: () => void }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
-  const [hovered, setHovered] = useState(false);
   const [closedSections, setClosedSections] = useState<string[]>([]);
-  const timer = useRef(0);
-
-  const pinnedCollapsed = isDesktop ? prefs.collapsed : true;
-  // Hover-to-expand only on desktop, only when the user enabled it, and only after a short dwell.
-  const expandedByHover = isDesktop && prefs.collapsed && prefs.hoverExpand && hovered;
-  const collapsed = pinnedCollapsed && !expandedByHover;
-
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  useEffect(() => {
-    if (!prefs.collapsed || !prefs.hoverExpand) setHovered(false);
-  }, [prefs.collapsed, prefs.hoverExpand]);
-
-  const enter = () => {
-    if (!isDesktop || !prefs.collapsed || !prefs.hoverExpand) return;
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setHovered(true), 350);
-  };
-  const leave = () => {
-    window.clearTimeout(timer.current);
-    const close = () => {
-      // Keep it open while its account menu (portalled outside the aside) is showing.
-      if (document.querySelector('[data-radix-popper-content-wrapper] [role="menu"]')) timer.current = window.setTimeout(close, 300);
-      else setHovered(false);
-    };
-    timer.current = window.setTimeout(close, 250);
-  };
+  // Tablet always shows the rail; desktop follows the saved choice.
+  const collapsed = isDesktop ? prefs.collapsed : true;
 
   // Keyboard shortcut: Ctrl/⌘ + B toggles the sidebar on desktop.
   useEffect(() => {
@@ -334,7 +313,6 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setHovered(false);
         prefs.update({ collapsed: !prefs.collapsed });
       }
     };
@@ -346,13 +324,8 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
 
   return (
     <aside
-        onPointerEnter={(e) => e.pointerType === 'mouse' && enter()}
-        onPointerLeave={(e) => e.pointerType === 'mouse' && leave()}
         style={{ width }}
-        className={cn(
-          'fixed inset-y-0 left-0 z-30 hidden border-r border-line bg-surface transition-[width,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] md:block',
-          expandedByHover && 'shadow-2xl',
-        )}
+        className="fixed inset-y-0 left-0 z-30 hidden border-r border-line bg-surface transition-[width] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] md:block"
         aria-label="Sidebar"
       >
         <SidebarContent
@@ -360,27 +333,21 @@ export function DesktopSidebar({ shared, prefs, onOpenDrawer }: { shared: Shared
           collapsed={collapsed}
           closedSections={closedSections}
           onToggleSection={(id) => setClosedSections((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))}
-          menuItems={[
-            ...(isDesktop
-              ? [{ label: prefs.hoverExpand ? 'Expand on hover: On' : 'Expand on hover: Off', icon: MousePointer2, onClick: () => prefs.update({ hoverExpand: !prefs.hoverExpand }) }]
-              : []),
-            ...shared.menuItems,
-          ]}
+          menuItems={shared.menuItems}
         />
         {/* Round toggle on the sidebar edge (stays put while the width animates). */}
-        <Tooltip content={pinnedCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="right">
+        <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="right">
           <button
             type="button"
             onClick={() => {
-              setHovered(false);
               if (isDesktop) prefs.update({ collapsed: !prefs.collapsed });
               else onOpenDrawer();
             }}
-            aria-label={pinnedCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!pinnedCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
             className="absolute -right-3.5 top-[24px] z-10 flex h-7 w-7 items-center justify-center rounded-full border border-line bg-surface text-ink-mute shadow-sm transition hover:border-rust hover:text-rust focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
           >
-            <ChevronLeft className={cn('h-4 w-4 transition-transform duration-300', pinnedCollapsed && 'rotate-180')} />
+            <ChevronLeft className={cn('h-4 w-4 transition-transform duration-300', collapsed && 'rotate-180')} />
           </button>
         </Tooltip>
     </aside>

@@ -6,5 +6,6 @@ export const partnerPreviewSession = (p: Partner, staff: Session): Session => ({
   role: 'client',
   partnerId: p.id,
   title: p.name,
+  partnerModules: p.modules ?? [],
   previewOf: staff,
 });

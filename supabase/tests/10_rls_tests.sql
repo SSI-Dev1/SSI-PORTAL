@@ -213,4 +213,4 @@ rollback;
 
 select pg_temp.check((select public from storage.buckets where id = 'student-documents') = false, 'document bucket is private');
 
-\echo 'ALL SECURITY TESTS PASSED'
+\echo 'RLS TESTS PASSED'

@@ -22,6 +22,10 @@ export interface Partner {
   branches: string[];
   joinedAt: string;
   commissionRate: number;
+  /** Super Admin controls (read-only for everyone else). */
+  portalEnabled?: boolean;
+  modules?: string[];
+  archivedAt?: string | null;
 }
 
 export type StudentStatus = 'Lead' | 'Active' | 'Enrolled' | 'On Hold';
@@ -218,7 +222,15 @@ export interface Activity {
   detail: string;
 }
 
-export type UserRole = 'super_admin' | 'admin_staff' | 'partner_admin' | 'partner_staff';
+export type UserRole =
+  | 'super_admin'
+  | 'admin_staff'
+  | 'application_manager'
+  | 'assessment_staff'
+  | 'finance_staff'
+  | 'support_staff'
+  | 'partner_admin'
+  | 'partner_staff';
 
 /**
  * The signed-in user, always derived from the server (Supabase Auth + profiles table).
@@ -232,6 +244,10 @@ export interface Session {
   name: string;
   email: string;
   title: string;
+  /** Employee modules (server-computed). Empty for partner users. */
+  permissions: string[];
+  /** Modules enabled for the partner organisation (server-computed). */
+  partnerModules: string[];
   /** Set while staff preview a partner's portal (UI only); holds the staff session to return to. */
   previewOf?: Session;
 }

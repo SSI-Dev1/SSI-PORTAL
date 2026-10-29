@@ -14,7 +14,11 @@ export default function ShellDemo() {
   const [client, setClient] = useState(false);
   const close = useCallback(() => setDrawer(false), []);
   const shared = {
-    sections: navFor(!client, 'partner_staff'),
+    sections: navFor({
+      role: client ? 'client' : 'admin', userRole: client ? 'partner_staff' : 'super_admin', userId: 'demo', name: 'Demo User', email: 'demo@example.com', title: '',
+      permissions: ['partners', 'students', 'applications', 'assessments', 'documents', 'finance', 'catalogue', 'tasks', 'updates', 'reports'],
+      partnerModules: ['students', 'applications', 'course_finder', 'assessments', 'documents', 'updates'],
+    }),
     base: '/ui/shell',
     isAdmin: !client,
     orgName: 'Demo Partner Pvt Ltd',

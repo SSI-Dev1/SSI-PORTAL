@@ -27,8 +27,10 @@ npm run audit           # production dependency audit
 
 Users sign in with email and password (or Google, once enabled). The app reads their
 role from the server and sends SSI GLOBAL staff to the Admin Portal and partner users to
-their own Client Portal. Accounts are invite-only: a Super Admin invites users from
-**Settings → Users & access**.
+their own Client Portal. There is no self-registration and no invitation: a Super Admin
+creates every account in **User Management** (partners with their login, partner staff and
+employees), sets the initial password, roles, permissions and portal access, and can reset
+passwords, suspend or deactivate accounts.
 
 ## Configuration
 
@@ -37,7 +39,7 @@ build, so only public values belong there — never the service-role key.
 
 ### Connecting Supabase (project `goiyhrlhczygeweykwqq`)
 
-1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `0003_remove_mfa_requirement.sql`, then `supabase/seed.sql`.
+1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `0003_remove_mfa_requirement.sql`, `0004_account_management.sql`, then `supabase/seed.sql`.
 2. For a demo/staging project only: `npm run demo:sql` and run `supabase/demo_data.sql`.
 3. Deploy the admin edge function: `supabase functions deploy admin-users`.
 4. Create the first Super Admin and complete the dashboard settings in SECURITY.md §5.

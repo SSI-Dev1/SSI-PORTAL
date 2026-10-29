@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, Building2, CheckCheck, ChevronDown, Eye, LogOut, Menu as MenuIcon, Search, Settings, UserCircle2 } from 'lucide-react';
+import { Bell, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, UserCircle2 } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from './Sidebar';
-import { Alert, Avatar, Badge, Button, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
+import { canOpen } from '../auth/roles';
+import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
 import { ThemeMenu } from '../components/ThemeSwitcher';
@@ -41,7 +42,7 @@ export default function AppShell() {
   };
 
   const sharedNav = {
-    sections: navFor(isAdmin, session?.userRole),
+    sections: navFor(session),
     base,
     isAdmin,
     orgName: scoped.partner?.name,
@@ -103,8 +104,18 @@ export default function AppShell() {
             <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading data">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-rust border-t-transparent" />
             </div>
-          ) : (
+          ) : canOpen(session, location.pathname.split('/')[2] ?? '') ? (
             <Outlet />
+          ) : (
+            // Direct URLs to modules this account may not use (the database returns no data anyway).
+            <Card>
+              <EmptyState
+                icon={Lock}
+                title="You don't have access to this section"
+                description="Ask a Super Admin to enable it for your account or organisation."
+                action={<Button onClick={() => navigate(`${base}/dashboard`)}>Go to dashboard</Button>}
+              />
+            </Card>
           )}
         </main>
       </div>

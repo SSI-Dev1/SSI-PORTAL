@@ -4,7 +4,7 @@ import type { Session } from '../data/types';
 import { AuthError, resolveStage, signOut as authSignOut, supabase } from './auth';
 import { IDLE_TIMEOUT_MINUTES } from './config';
 
-export type AuthStatus = 'loading' | 'signed-out' | 'recovery' | 'signed-in';
+export type AuthStatus = 'loading' | 'signed-out' | 'recovery' | 'password-change' | 'signed-in';
 
 interface AuthValue {
   status: AuthStatus;
@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Automatic sign-out after inactivity.
   useEffect(() => {
-    if (status !== 'signed-in') return;
+    if (status !== 'signed-in' && status !== 'password-change') return;
     let timer = 0;
     let warn = 0;
     let tick = 0;

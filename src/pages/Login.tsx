@@ -80,7 +80,9 @@ export default function Login() {
   if (auth.status === 'signed-in' && auth.session) return <Navigate to={`/${auth.session.role}/dashboard`} replace />;
 
   const step =
-    auth.status === 'recovery' ? (
+    auth.status === 'password-change' ? (
+      <SetNewPassword required onDone={auth.refresh} />
+    ) : auth.status === 'recovery' ? (
       <SetNewPassword onDone={auth.refresh} />
     ) : null;
 

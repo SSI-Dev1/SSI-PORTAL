@@ -148,7 +148,7 @@ select pg_temp.denied($$insert into public.applications (id, ref, student_id, pa
 select pg_temp.denied($$insert into public.applications (id, ref, student_id, partner_id, university_id, course_id, intake, status)
   values ('a_m', 'x', 's1', 'p1', 'u1', 'c2', 'Jul 2026', 'Draft')$$, 'course must belong to the university');
 insert into public.applications (id, ref, student_id, partner_id, university_id, course_id, intake, status, timeline)
-  values ('a_ok', 'FAKE-REF', 's1', 'p9', 'u1', 'c1', 'Jul 2026', 'Pending Assessment', '[{"status":"Visa Granted"}]');
+  values ('a_ok', 'FAKE-REF', 's1', 'p9', 'u1', 'c1', 'Sep 2026', 'Pending Assessment', '[{"status":"Visa Granted"}]');
 select pg_temp.check((select ref like 'SSI-%' and partner_id = 'p1' and jsonb_array_length(timeline) = 1
   and timeline -> 0 ->> 'status' = 'Pending Assessment' from public.applications where id = 'a_ok'), 'ref, tenant and timeline are server-managed');
 update public.applications set ref = 'CHANGED', timeline = '[]' where id = 'a_ok';

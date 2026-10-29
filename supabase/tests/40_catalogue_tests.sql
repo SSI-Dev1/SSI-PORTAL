@@ -130,4 +130,4 @@ rollback;
 select pg_temp.check((select count(*) from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('course_intakes', 'blacklisted_institutions')) = 2,
   'intakes and blacklist are streamed');
 
-\echo 'ALL SECURITY TESTS PASSED'
+\echo 'CATALOGUE TESTS PASSED'

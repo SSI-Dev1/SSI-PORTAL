@@ -48,7 +48,9 @@ export function StudentForm({ open, onClose, student, onSaved }: { open: boolean
     setD(init);
     setErrors({});
     setStep(0);
-  }, [open, student, scoped.partnerId]);
+    // Keyed on the record id, not the object: background re-syncs create new objects and
+    // must not wipe what the user is typing.
+  }, [open, student?.id, scoped.partnerId]);
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
 

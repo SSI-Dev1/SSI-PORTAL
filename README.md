@@ -39,7 +39,7 @@ build, so only public values belong there — never the service-role key.
 
 ### Connecting Supabase (project `goiyhrlhczygeweykwqq`)
 
-1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `0003_remove_mfa_requirement.sql`, `0004_account_management.sql`, `0005_realtime_notifications.sql`, `0006_realtime_catalogue.sql`, `0007_course_catalogue.sql`, `0008_import_oxford_direct_fy27.sql`, then `supabase/seed.sql`.
+1. SQL Editor: run `supabase/migrations/0001_crm_auth_and_rls.sql` (already applied), then `0002_security_hardening.sql`, then `0003_remove_mfa_requirement.sql`, `0004_account_management.sql`, `0005_realtime_notifications.sql`, `0006_realtime_catalogue.sql`, `0007_course_catalogue.sql`, `0008_import_oxford_direct_fy27.sql`, `0009_application_duplicates.sql`, then `supabase/seed.sql`.
 2. For a demo/staging project only: `npm run demo:sql` and run `supabase/demo_data.sql`.
 3. Deploy the admin edge function: `supabase functions deploy admin-users`.
 4. Create the first Super Admin and complete the dashboard settings in SECURITY.md §5.

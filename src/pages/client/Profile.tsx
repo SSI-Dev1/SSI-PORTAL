@@ -16,9 +16,11 @@ export default function Profile() {
   const p = scoped.partner!;
   const [d, setD] = useState({ contactName: p.contactName, email: p.email, phone: p.phone, website: p.website ?? '', city: p.city });
 
+  // Reset only when a different organisation is shown; background re-syncs (new objects with
+  // the same data) must not discard edits in progress.
   useEffect(() => {
     setD({ contactName: p.contactName, email: p.email, phone: p.phone, website: p.website ?? '', city: p.city });
-  }, [p]);
+  }, [p.id]);
 
   const save = () => {
     if (!d.contactName.trim() || !/^\S+@\S+\.\S+$/.test(d.email) || d.phone.replace(/\D/g, '').length < 8) return toast.error('Please enter a valid name, email and phone');

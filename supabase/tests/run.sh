@@ -24,6 +24,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0007_course_catalogue.sql
 "${PSQL[@]}" -f migrations/0008_import_oxford_direct_fy27.sql
 "${PSQL[@]}" -f migrations/0009_application_duplicates.sql
+"${PSQL[@]}" -f migrations/0010_import_course_finder_uea.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
 "${PSQL[@]}" -f tests/20_account_tests.sql

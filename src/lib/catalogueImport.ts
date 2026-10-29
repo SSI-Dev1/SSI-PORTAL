@@ -11,7 +11,8 @@
 //     "Fees & Scholarships", "CAS Deposit Requirement", "<ABBR> - Course List",
 //     "Blacklisted Universities".
 //  2. Flat sheet: one row per course (or course + intake) with a header row containing at
-//     least "University", "Course" and "Tuition".
+//     least "University", "Course"/"Program Name" and "Tuition". Also reads "course finder"
+//     exports (Open Intakes + Intake Year, IELTS/TOEFL/PTE/DET score columns, scholarship).
 // Nothing is invented: blank, "NA" and "TBC" cells stay empty (TBC is noted on the intake).
 import { strFromU8, unzipSync } from 'fflate';
 
@@ -125,7 +126,8 @@ export function readWorkbook(bytes: Uint8Array): Sheet[] {
         if (t === 's' && v != null) val = shared[Number(v)] ?? '';
         else if (t === 'inlineStr') val = texts(inner);
         else if (v != null) val = decode(v);
-        val = val.replace(/\r\n?/g, '\n').trim();
+        // Excel escapes control characters as _xHHHH_ (e.g. _x000D_ for a carriage return).
+        val = val.replace(/_x([0-9a-f]{4})_/gi, (_, n: string) => String.fromCharCode(parseInt(n, 16))).replace(/\r\n?/g, '\n').trim();
         if (val) cells[col] = val;
       }
       if (Object.keys(cells).length) rows.push({ r: Number(attr(row[1], 'r') ?? rows.length + 1), cells });
@@ -184,7 +186,7 @@ function dateFor(cell: string | undefined, courseName: string): { date: string |
 export function parseMoney(s: string | undefined | null): { amount: number | null; currency: string | null } {
   if (!s || empty(s)) return { amount: null, currency: null };
   const cur = /£|gbp/i.test(s) ? 'GBP' : /€|eur/i.test(s) ? 'EUR' : /a\$|aud/i.test(s) ? 'AUD' : /c\$|cad/i.test(s) ? 'CAD' : /\$|usd/i.test(s) ? 'USD' : /nz\$|nzd/i.test(s) ? 'NZD' : null;
-  const n = s.replace(/[^\d.]/g, '');
+  const n = s.match(/\d[\d,]*(?:\.\d+)?/)?.[0].replace(/,/g, '');
   return { amount: n ? Number(n) : null, currency: cur };
 }
 
@@ -534,16 +536,22 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
   for (const s of sheets) {
     const hi = s.rows.findIndex(({ cells }) => {
       const v = Object.values(cells).map((x) => x.toLowerCase());
-      return v.some((x) => /^university|provider/.test(x)) && v.some((x) => /^course/.test(x)) && v.some((x) => /tuition|fee/.test(x));
+      return v.some((x) => /^university|provider/.test(x)) && v.some((x) => /^(course|program)/.test(x)) && v.some((x) => /tuition|fee/.test(x));
     });
     if (hi < 0) continue;
     const h = s.rows[hi].cells;
     const c = (re: RegExp) => Object.entries(h).find(([, v]) => re.test(v.toLowerCase()))?.[0];
     const map = {
-      uni: c(/^university|^provider/), country: c(/^country/), city: c(/city|location|campus/), course: c(/^course( name| title)?$/),
-      level: c(/level/), category: c(/category|field|subject|faculty/), duration: c(/duration/), tuition: c(/tuition|fee/),
-      currency: c(/currency/), intake: c(/^intake/), start: c(/start/), deadline: c(/deadline/), academic: c(/academic|entry req/),
-      english: c(/english|ielts/), status: c(/status/),
+      uni: c(/^(university|provider)( name)?$/) ?? c(/^university|^provider/), country: c(/^country/), city: c(/city|location|campus/),
+      course: c(/^(course|program|programme)( name| title)?$/), level: c(/level/), category: c(/category|field|subject|faculty/), duration: c(/duration/),
+      tuition: c(/tuition/) ?? c(/fee/), currency: c(/currency/), intake: c(/^(open )?intakes?$/) ?? c(/^intake(?! year)/), year: c(/intake year|^year$/),
+      start: c(/start/), deadline: c(/deadline/), academic: c(/academic|entry req/), english: c(/^english( requirement)?$/) ?? c(/^ielts$/), status: c(/status/),
+      // "Course finder" exports: one column per test score, plus scholarship / application details.
+      ielts: c(/^ielts score$/), ieltsBand: c(/^ielts .*(band|less)/), toefl: c(/^toefl score$/), toeflBand: c(/^toefl .*(band|less)/),
+      pte: c(/^pte score$/), pteBand: c(/^pte .*(band|less)/), det: c(/^(det|duolingo)( score)?$/), waiver: c(/waiver/),
+      ranking: c(/ranking/), website: c(/website|url/), backlog: c(/backlog/), remarks: c(/^remarks?$|^notes?$/),
+      appFee: c(/^application fee/), appMode: c(/application mode/), scholarship: c(/^scholarship( available)?$/),
+      avgScholarship: c(/average scholarship|scholarship amount/), scholarshipInfo: c(/scholarship (detail|link|info)/),
     };
     const invalid: ParseResult['invalid'] = [];
     const unis = new Map<string, UniversityInput>();
@@ -554,7 +562,8 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
       const name = clean(get('course'));
       if (!uniName && !name) continue;
       if (!uniName || !name) {
-        invalid.push({ where: `${s.name} row ${r}`, reason: 'University and course name are required' });
+        // Footnote rows ("*Note: …") under the table are not courses.
+        if (!/^\*?\s*note\b/i.test(Object.values(cells)[0] ?? '')) invalid.push({ where: `${s.name} row ${r}`, reason: 'University and course name are required' });
         continue;
       }
       const level = levelOf(get('level')) ?? levelFromCourseName(name);
@@ -562,29 +571,59 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
         invalid.push({ where: `${s.name} row ${r}`, reason: `Unknown study level "${get('level') ?? ''}"` });
         continue;
       }
-      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [] };
+      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [], notes: clean(get('ranking')) };
       if (!u.country && clean(get('country'))) u.country = clean(get('country'))!;
       unis.set(norm(uniName), u);
       const money = parseMoney(get('tuition'));
       const key = `${norm(uniName)}|${norm(name)}`;
+      const score = (label: string, k: keyof typeof map, band?: keyof typeof map) => {
+        const v = clean(get(k));
+        if (!v) return null;
+        const b = band ? clean(get(band)) : null;
+        return `${label} ${v}${b ? ` (no band less than ${b})` : ''}`;
+      };
+      const scores = [score('IELTS', 'ielts', 'ieltsBand'), score('TOEFL', 'toefl', 'toeflBand'), score('PTE', 'pte', 'pteBand'), score('DET', 'det')].filter(Boolean);
+      const waiver = clean(get('waiver'));
+      const english = [clean(get('english')), scores.join(' · ') || null, waiver && `Waiver: ${waiver}`].filter(Boolean).join('\n') || null;
+      const backlog = clean(get('backlog'));
+      const academic = [clean(get('academic')), backlog && `Backlogs accepted: ${backlog}`].filter(Boolean).join('\n') || null;
+      const sch = clean(get('scholarship'));
+      const avg = parseMoney(get('avgScholarship'));
+      const schInfo = clean(get('scholarshipInfo'));
+      const scholarship = sch && /^no$/i.test(sch) ? 'No'
+        : [sch && /^yes$/i.test(sch) ? 'Available' : sch, avg.amount != null && `average ${avg.currency ?? ''} ${avg.amount.toLocaleString('en-GB')}`.replace('  ', ' '), schInfo].filter(Boolean).join(' · ') || null;
+      const appFee = clean(get('appFee'));
+      const appMode = clean(get('appMode'));
+      const site = clean(get('website'));
+      const extra = [clean(get('remarks'))?.split('\n').map((l) => l.trim()).join('\n'), appMode && `Application mode: ${appMode}`, appFee && `Application fee: ${appFee.replace(/^no application fee$/i, 'None')}`, site && `Course page: ${site}`]
+        .filter(Boolean).join('\n') || null;
       const course = courses.get(key) ?? {
         university: u.name, name, level, category: clean(get('category')), duration: clean(get('duration')),
-        tuition: money.amount, currency: clean(get('currency')) ?? money.currency, academic_requirement: clean(get('academic')),
-        english_requirement: clean(get('english')), ielts_min: ieltsOf(clean(get('english'))), intakes: [],
+        tuition: money.amount, currency: clean(get('currency')) ?? money.currency, academic_requirement: academic,
+        english_requirement: english, ielts_min: map.ielts ? (Number(clean(get('ielts'))) || null) : ieltsOf(clean(get('english'))),
+        scholarship, course_requirement: extra, intakes: [],
       };
+      const year = Number(clean(get('year'))?.match(/\d{4}/)?.[0]) || 0;
+      const deadlineCell = get('deadline') ?? '';
       const intakeCell = get('intake') ?? get('start');
       for (const piece of (intakeCell ?? '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean)) {
         const d = findDates(piece)[0]?.date;
-        const m = piece.match(/([A-Za-z]{3,9})\.?\s+(\d{4})/);
+        const m = piece.match(/([A-Za-z]{3,9})\.?\s+(\d{4})/) ?? (year ? piece.match(/^([A-Za-z]{3,9})\.?$/) : null);
         const month = d ? Number(d.slice(5, 7)) : m ? MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) + 1 : 0;
-        const year = d ? Number(d.slice(0, 4)) : m ? Number(m[2]) : 0;
-        if (!month || !year) {
+        const y = d ? Number(d.slice(0, 4)) : m?.[2] ? Number(m[2]) : year;
+        if (!month || !y) {
           invalid.push({ where: `${s.name} row ${r}`, reason: `Cannot read intake "${piece}"` });
           continue;
         }
+        if (course.intakes.some((i) => i.month === month && i.year === y)) continue;
+        // Deadline cells may be per intake ("Sep: ASAP, Jan: ASAP") or free text ("ASAP").
+        const mon = MONTHS[month - 1];
+        const own = deadlineCell.split(/[,;\n]+/).find((x) => new RegExp(`^\\s*${mon}[a-z]*\\s*:`, 'i').test(x));
+        const dl = (own ? own.replace(/^[^:]*:/, '') : /^\s*[a-z]{3,9}\s*:/i.test(deadlineCell) ? '' : deadlineCell).trim();
         const st = clean(get('status'));
         course.intakes.push({
-          month, year, start_date: d ?? null, application_deadline: findDates(get('deadline') ?? '')[0]?.date ?? null,
+          month, year: y, start_date: d ?? null, application_deadline: findDates(dl)[0]?.date ?? null,
+          notes: dl && !findDates(dl).length && !empty(dl) ? `Application deadline: ${dl}` : null,
           status: st && /closed/i.test(st) ? 'Closed' : st && /upcoming/i.test(st) ? 'Upcoming' : 'Available',
         });
       }

@@ -57,6 +57,34 @@ test('flat layout: one row per course with intakes', () => {
   assert.ok(p.invalid.some((x) => /without a tuition/.test(x.reason)));
 });
 
+test('course finder export: program name, open intakes + year, score columns', () => {
+  const bytes = xlsx({
+    Sheet1: [
+      ['Serial No.', 'University', 'University Ranking', 'Program Name', 'Website URL', 'Campus', 'Country', 'Study Level', 'Duration', 'Open Intakes', 'Intake Year',
+        'Entry Requirements', 'IELTS Score', 'IELTS No Band Less Than', 'PTE Score', 'Application Deadline', 'Application Fee', 'Yearly Tuition Fee',
+        'Scholarship Available', 'Average Scholarship', 'Remarks', 'English Proficiency Exam Waiver'],
+      [1, 'Sample University', 'QS Ranking - 381', 'MSc Data', 'https://example.ac.uk/msc', 'Norwich', 'United Kingdom', 'Postgraduate', '12 Months', 'Jan,Sep', 2027,
+        '2.2 or equivalent', 6, 5.5, 60, 'Sep: 1 Aug 2027, Jan: ASAP', 'No Application Fee', 'GBP 25700.00 (Approx INR 3260999)', 'Yes', 'GBP 5000.00 (Approx INR 634436)',
+        'Line one_x000D_\n line two', 'MOI accepted'],
+      ['*Note: The Tuition Fee is subject to change.'],
+    ],
+  });
+  const r = parseCatalogue(readWorkbook(bytes), 'course finder test');
+  assert.equal(r.layout, 'flat');
+  assert.deepEqual(r.invalid, [], 'footnote rows are ignored');
+  const [c] = r.payload.courses;
+  assert.equal(c.tuition, 25700, 'INR approximation is not part of the fee');
+  assert.equal(c.currency, 'GBP');
+  assert.equal(c.ielts_min, 6);
+  assert.deepEqual(c.intakes.map((i) => `${i.month}/${i.year}`), ['1/2027', '9/2027']);
+  assert.equal(c.intakes[0].notes, 'Application deadline: ASAP');
+  assert.equal(c.intakes[1].application_deadline, '2027-08-01');
+  assert.match(c.english_requirement ?? '', /IELTS 6 \(no band less than 5\.5\) · PTE 60\nWaiver: MOI accepted/);
+  assert.match(c.scholarship ?? '', /average GBP 5,000/);
+  assert.match(c.course_requirement ?? '', /^Line one\nline two\n.*Course page: https:\/\/example\.ac\.uk\/msc$/s);
+  assert.equal(r.payload.universities[0].notes, 'QS Ranking - 381');
+});
+
 test('toolkit layout: fees by level, dates per course, MOI list', () => {
   const bytes = xlsx({
     'Entry Requirement & Dates': [

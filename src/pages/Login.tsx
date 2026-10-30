@@ -77,7 +77,7 @@ export default function Login() {
     toast.success('Check your inbox', `If an account exists for ${resetEmail.trim()}, we’ve sent password reset instructions.`);
   };
 
-  if (auth.status === 'signed-in' && auth.session) return <Navigate to={`/${auth.session.role}/dashboard`} replace />;
+  if (auth.status === 'signed-in' && auth.session) return <Navigate to="/" replace />;
 
   const step =
     auth.status === 'password-change' ? (

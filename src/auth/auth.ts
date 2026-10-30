@@ -61,6 +61,7 @@ export async function resolveStage(user: User): Promise<AuthStage> {
   const { data, error } = await sb.rpc('my_access').maybeSingle<{
     role: UserRole; status: string; permissions: string[] | null; partner_id: string | null; partner_name: string | null;
     partner_modules: string[] | null; portal_open: boolean; must_change_password: boolean; department: string | null;
+    employee: boolean | null; designations: string[] | null; has_team: boolean | null;
   }>();
   if (error) throw new AuthError('Could not load your account. Please try again.');
   if (!data) throw new AuthError('Your account has not been set up yet. Please contact SSI GLOBAL.');
@@ -68,13 +69,18 @@ export async function resolveStage(user: User): Promise<AuthStage> {
   if (data.status !== 'active') throw new AuthError('Your account has been suspended. Please contact SSI GLOBAL.');
 
   const userRole = data.role;
-  const { data: prof } = await sb.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+  const { data: prof } = await sb.from('profiles').select('full_name, designation').eq('id', user.id).maybeSingle();
   const name = (prof?.full_name as string | null) || (user.email ?? '').split('@')[0];
   const email = user.email ?? '';
   let session: Session;
   if (isStaffRole(userRole)) {
     const portal = portalFor(userRole) as 'admin' | 'staff';
-    session = { role: portal, userRole, userId: user.id, name, email, title: ROLE_LABEL[userRole] + (data.department ? ` · ${data.department}` : ''), permissions: data.permissions ?? [], partnerModules: [] };
+    session = {
+      role: portal, userRole, userId: user.id, name, email,
+      title: ((prof?.designation as string | null) || ROLE_LABEL[userRole]) + (data.department ? ` · ${data.department}` : ''),
+      permissions: data.permissions ?? [], partnerModules: [],
+      employee: data.employee === true, designations: data.designations ?? [], hasTeam: data.has_team === true,
+    };
   } else {
     if (!data.portal_open) throw new AuthError('Portal access for your organisation is currently disabled. Please contact SSI GLOBAL.');
     session = {

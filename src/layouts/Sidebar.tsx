@@ -5,15 +5,27 @@
 //  768–1023 compact icon rail; the expand button opens the full menu as a drawer.
 //  <768     hidden; the top-bar menu button opens a slide-out drawer.
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
 import {
   BarChart3,
   BookOpen,
   Building2,
+  ArrowLeftRight,
+  Bell,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ClipboardCheck,
+  ClipboardList,
+  Clock,
+  Coffee,
+  FilePen,
+  History,
+  LogOut,
+  Palmtree,
+  Timer,
+  UserCog,
   FileStack,
   FileCheck2,
   FileText,
@@ -31,10 +43,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Logo, LogoMark } from '../components/brand';
-import { Tooltip } from '../components/ui';
+import { Menu, Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { Session } from '../data/types';
-import { canOpen } from '../auth/roles';
+import { canOpen, isHR } from '../auth/roles';
 
 export const SIDEBAR_EXPANDED = 264;
 export const SIDEBAR_RAIL = 76;
@@ -71,6 +83,7 @@ const adminNav: NavSection[] = [
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
+  { id: 'workforce', title: 'People', items: [{ to: 'work-reports', label: 'Daily Work Reports', icon: ClipboardList }] },
   { id: 'system', title: 'System', items: [
     { to: 'users', label: 'User Management', icon: UsersRound },
     { to: 'settings', label: 'Settings', icon: Settings },
@@ -96,9 +109,91 @@ const staffNav: NavSection[] = [
     { to: 'providers', label: 'Education Providers', icon: Landmark },
     { to: 'courses', label: 'Courses', icon: BookOpen },
     { to: 'updates', label: 'Important Updates', icon: Megaphone },
+    { to: 'work-reports', label: 'Daily Work Reports', icon: ClipboardList },
   ] },
   { id: 'account', title: 'Account', items: [{ to: 'profile', label: 'My Profile', icon: UserCircle2 }] },
 ];
+
+// Employee workspace (self-service): the same for every designation except the report
+// template, the team section (managers) and the work tools their permissions allow.
+const employeeNav: NavSection[] = [
+  { id: 'w-overview', title: 'My Workspace', items: [
+    { to: 'work/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
+    { to: 'work/reports', label: 'Report History', icon: History },
+  ] },
+  { id: 'w-time', title: 'Attendance & Leave', items: [
+    { to: 'work/attendance', label: 'My Attendance', icon: Clock },
+    { to: 'work/leave', label: 'My Leave', icon: Palmtree },
+    { to: 'work/holidays', label: 'Holidays', icon: CalendarDays },
+  ] },
+  { id: 'w-team', title: 'Team', items: [{ to: 'work/team', label: 'Team & Approvals', icon: UsersRound }] },
+  { id: 'w-tools', title: 'Work Tools', items: [
+    { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'students', label: 'Students', icon: Users },
+    { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
+    { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
+  ] },
+  { id: 'w-account', title: 'Account', items: [{ to: 'work/profile', label: 'My Profile', icon: UserCircle2 }] },
+];
+
+const hrNav: NavSection[] = [
+  { id: 'hr-overview', title: 'HR', items: [
+    { to: 'hr/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: 'hr/employees', label: 'Employees', icon: UserCog },
+  ] },
+  { id: 'hr-time', title: 'Time', items: [
+    { to: 'hr/attendance', label: 'Attendance', icon: Clock },
+    { to: 'hr/hours', label: 'Working Hours', icon: Timer },
+    { to: 'hr/leave', label: 'Leave Management', icon: Palmtree },
+    { to: 'hr/early-checkout', label: 'Early Checkout', icon: LogOut },
+    { to: 'hr/corrections', label: 'Attendance Corrections', icon: FilePen },
+    { to: 'hr/holidays', label: 'Holiday Calendar', icon: CalendarDays },
+  ] },
+  { id: 'hr-work', title: 'Work', items: [
+    { to: 'hr/work-reports', label: 'Daily Work Reports', icon: ClipboardList },
+    { to: 'hr/reminders', label: 'Employee Reminders', icon: Bell },
+    { to: 'hr/reports', label: 'HR Reports', icon: BarChart3 },
+    { to: 'hr/settings', label: 'Settings', icon: Settings },
+  ] },
+];
+
+export type WorkspaceId = 'business' | 'hr' | 'work';
+export const workspaceOf = (pathname: string): WorkspaceId => {
+  const seg = pathname.split('/')[2] ?? '';
+  return seg === 'hr' ? 'hr' : seg === 'work' ? 'work' : 'business';
+};
+
+/** Workspaces this user can switch between without signing in again. */
+export function workspacesFor(session: Session | null, designationName: (id: string) => string) {
+  if (!session || session.role === 'client') return [];
+  const out: { id: string; label: string; to: string; designation?: string }[] = [
+    { id: 'business', label: session.role === 'admin' ? 'Admin Portal' : 'Staff Portal', to: 'dashboard' },
+  ];
+  if (canOpen(session, 'hr')) out.push({ id: 'hr', label: 'HR Portal', to: isHR(session) ? 'hr/dashboard' : 'hr/employees' });
+  for (const d of session.designations ?? []) out.push({ id: `work:${d}`, label: designationName(d), to: 'work/dashboard', designation: d });
+  return out;
+}
+
+const WS_KEY = 'ssi-workspace';
+/** The designation workspace last chosen (UI preference only; the server decides access). */
+export function chosenDesignation(session: Session | null) {
+  try {
+    const v = localStorage.getItem(WS_KEY);
+    if (v && session?.designations?.includes(v)) return v;
+  } catch {
+    /* storage unavailable */
+  }
+  return session?.designations?.[0];
+}
+export function chooseDesignation(id: string) {
+  try {
+    localStorage.setItem(WS_KEY, id);
+  } catch {
+    /* storage unavailable */
+  }
+  window.dispatchEvent(new Event('ssi-workspace'));
+}
 
 const clientNav: NavSection[] = [
   { id: 'overview', title: 'Overview', items: [{ to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
@@ -117,11 +212,19 @@ const clientNav: NavSection[] = [
 ];
 
 /** Menu for this session: only modules its role / organisation may use (the database enforces the same). */
-export function navFor(session: Session | null): NavSection[] {
+export function navFor(session: Session | null, workspace: WorkspaceId = 'business'): NavSection[] {
   if (!session) return [];
-  return (session.role === 'admin' ? adminNav : session.role === 'staff' ? staffNav : clientNav)
-    .map((s) => ({ ...s, items: s.items.filter((n) => canOpen(session, n.to)) }))
-    .filter((s) => s.items.length);
+  const sets = session.role === 'client' ? clientNav
+    : workspace === 'hr' ? hrNav
+    : workspace === 'work' ? employeeNav
+    : session.role === 'admin' ? adminNav : staffNav;
+  const allowed = (to: string) => {
+    if (to === 'work/team') return canOpen(session, 'team');
+    if (to.startsWith('hr/') && to !== 'hr/employees') return isHR(session);
+    if (to === 'hr/employees') return canOpen(session, 'hr');
+    return canOpen(session, to.split('/')[0]);
+  };
+  return sets.map((s) => ({ ...s, items: s.items.filter((n) => allowed(n.to)) })).filter((s) => s.items.length);
 }
 
 // ------------------------------------------------------------------ preferences
@@ -177,6 +280,9 @@ interface ContentProps {
   portal: 'admin' | 'staff' | 'client';
   orgName?: string;
   badges: Record<string, number>;
+  /** Workspaces the user can switch between (internal users). */
+  workspaces?: { id: string; label: string; to: string; designation?: string }[];
+  currentWorkspace?: string;
   onClose?: () => void;
   closedSections: string[];
   onToggleSection: (id: string) => void;
@@ -189,10 +295,14 @@ function SidebarContent({
   portal,
   orgName,
   badges,
+  workspaces = [],
+  currentWorkspace,
   onClose,
   closedSections,
   onToggleSection,
 }: ContentProps) {
+  const navigate = useNavigate();
+  const current = workspaces.find((w) => w.id === currentWorkspace);
   const fade = cn('whitespace-nowrap transition-[opacity,transform] duration-200', collapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'opacity-100');
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -213,8 +323,35 @@ function SidebarContent({
 
       {/* Portal card */}
       <div className={cn('mx-4 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-navy to-navy-600 text-white transition-all duration-300', collapsed ? 'mb-0 max-h-0 px-3.5 py-0 opacity-0' : 'mb-4 max-h-24 px-3.5 py-3 opacity-100')} aria-hidden={collapsed}>
-        <div className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">{portal === 'admin' ? 'Admin Portal' : portal === 'staff' ? 'Staff Portal' : 'Partner Portal'}</div>
-        <div className="mt-0.5 truncate text-[13px] font-semibold">{portal === 'client' ? orgName : orgName || 'SSI GLOBAL · Head Office'}</div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
+              {current && current.id !== 'business' ? (current.id === 'hr' ? 'HR Portal' : 'Employee Workspace') : portal === 'admin' ? 'Admin Portal' : portal === 'staff' ? 'Staff Portal' : 'Partner Portal'}
+            </div>
+            <div className="mt-0.5 truncate text-[13px] font-semibold">
+              {current?.designation ? current.label : portal === 'client' ? orgName : orgName || 'SSI GLOBAL · Head Office'}
+            </div>
+          </div>
+          {workspaces.length > 1 && (
+            <Menu
+              width="w-60"
+              trigger={() => (
+                <button type="button" aria-label="Switch workspace" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                  <ArrowLeftRight className="h-4 w-4" />
+                </button>
+              )}
+              items={workspaces.map((w) => ({
+                label: (w.id === currentWorkspace ? '✓ ' : '') + w.label,
+                icon: w.id === 'hr' ? UserCog : w.designation ? Coffee : LayoutDashboard,
+                onClick: () => {
+                  if (w.designation) chooseDesignation(w.designation);
+                  navigate(`${base}/${w.to}`);
+                  onClose?.();
+                },
+              }))}
+            />
+          )}
+        </div>
       </div>
 
       {/* Navigation */}

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2 } from 'lucide-react';
-import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from './Sidebar';
+import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
+import { useHR } from '../store/hr';
 import { canOpen } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
@@ -40,8 +41,23 @@ export default function AppShell() {
     }
   };
 
+  // Workspace from the URL (/staff/hr/…, /staff/work/…); designation workspace from the last choice.
+  const hr = useHR();
+  const [, setWsTick] = useState(0);
+  useEffect(() => {
+    const h = () => setWsTick((n) => n + 1);
+    window.addEventListener('ssi-workspace', h);
+    return () => window.removeEventListener('ssi-workspace', h);
+  }, []);
+  const workspace = workspaceOf(location.pathname);
+  const designationName = (id: string) => hr.data.designations.find((d) => d.id === id)?.name ?? id.replace(/_/g, ' ');
+  const workspaces = workspacesFor(session, designationName);
+  const currentWorkspace = workspace === 'work' ? `work:${chosenDesignation(session)}` : workspace;
+
   const sharedNav = {
-    sections: navFor(session),
+    sections: navFor(session, workspace),
+    workspaces,
+    currentWorkspace,
     base,
     portal: session?.role ?? 'client',
     orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,

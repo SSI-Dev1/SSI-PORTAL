@@ -24,7 +24,8 @@ export const isStaffRole = (r: UserRole): r is StaffRole => (STAFF_ROLES as read
 export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
   r === 'super_admin' || r === 'admin_staff' ? 'admin' : isStaffRole(r) ? 'staff' : 'client';
 
-export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports';
+export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
+  | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -36,11 +37,19 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'tasks', label: 'Tasks & Reminders', hint: 'Internal task list' },
   { id: 'updates', label: 'Important Updates', hint: 'Announcements to partners' },
   { id: 'reports', label: 'Reports', hint: 'Analytics and exports' },
+  { id: 'work_reports', label: 'Daily Work Reports', hint: 'Every employee\'s daily reports' },
+  { id: 'hr', label: 'HR Portal', hint: 'Employees, attendance, leave, holidays (Super Admin grants)' },
+  { id: 'hr_accounts', label: 'HR · Employee accounts', hint: 'Create and manage employee logins (Super Admin grants)' },
+  { id: 'hr_salary', label: 'HR · Salaries', hint: 'View and edit salaries (Super Admin grants)' },
 ];
+/** Only a Super Admin can grant these. */
+export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary'];
+/** HR account managers can create these roles only. */
+export const HR_MANAGEABLE_ROLES: StaffRole[] = ['application_manager', 'assessment_staff', 'finance_staff', 'support_staff'];
 
 export const ROLE_DEFAULTS: Record<StaffRole, StaffModule[]> = {
   super_admin: STAFF_MODULES.map((m) => m.id),
-  admin_staff: STAFF_MODULES.map((m) => m.id),
+  admin_staff: STAFF_MODULES.map((m) => m.id).filter((m) => !HR_MODULES.includes(m)),
   application_manager: ['partners', 'students', 'applications', 'documents', 'catalogue', 'tasks', 'reports'],
   assessment_staff: ['partners', 'students', 'assessments', 'documents', 'catalogue', 'tasks'],
   finance_staff: ['partners', 'finance', 'reports', 'tasks'],
@@ -85,10 +94,17 @@ export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
   updates: 'updates',
 };
 
+export const isHR = (s: { userRole: UserRole; permissions: string[] } | null) => !!s && (s.userRole === 'super_admin' || s.permissions.includes('hr'));
+
 /** Whether a session may open a portal page (menu + route guard; RLS enforces the data). */
 export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole: UserRole; permissions: string[]; partnerModules: string[]; previewOf?: unknown } | null, segment: string): boolean {
   if (!session) return false;
   if (session.role === 'admin' || session.role === 'staff') {
+    const s = session as typeof session & { employee?: boolean; hasTeam?: boolean };
+    if (segment === 'work') return !!s.employee;
+    if (segment === 'team') return !!s.employee && !!s.hasTeam;
+    if (segment === 'hr') return isHR(session) || session.permissions.includes('hr_accounts');
+    if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
     // The Staff Portal has no partner directory or account management.
     if (session.role === 'staff' && (segment === 'partners' || segment === 'users')) return false;
     const m = ADMIN_ROUTE_MODULE[segment];

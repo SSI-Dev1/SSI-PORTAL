@@ -60,6 +60,10 @@ export const adminApi = {
   createEmployee: (b: {
     email: string; fullName: string; role: UserRole; permissions: string[] | null; password: string; mustChangePassword: boolean;
     phone?: string; department?: string; designation?: string; status?: DirectoryUser['status'];
+    /** HR record (employee ID, designation, manager…) created with the account. */
+    employee?: Record<string, unknown>;
+    /** Only stored when the caller may see salaries. */
+    salary?: { amount: number; currency: string } | null;
   }) =>
     call<{ ok: true; userId: string }>({ action: 'create_employee', ...b }),
   createPartner: (b: {

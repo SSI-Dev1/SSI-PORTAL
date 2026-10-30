@@ -358,6 +358,12 @@ export interface Session {
   partnerModules: string[];
   /** Set while staff preview a partner's portal (UI only); holds the staff session to return to. */
   previewOf?: Session;
+  /** Internal employee with an HR record (attendance, leave, daily reports). */
+  employee?: boolean;
+  /** Designation ids held (primary first); each opens its own workspace. */
+  designations?: string[];
+  /** Has people reporting to them (team approvals and team reports). */
+  hasTeam?: boolean;
 }
 
 export interface DB {

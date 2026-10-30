@@ -1,5 +1,5 @@
 // deno test supabase/functions/admin-users/lib.test.ts
-import { cleanEmail, cleanModules, cleanPartner, cleanPermissions, isPartnerRole, isStaffRole, passwordProblems } from './lib.ts';
+import { cleanEmail, cleanEmployee, cleanModules, cleanPartner, cleanPermissions, cleanSalary, hrPermissionProblem, isPartnerRole, isStaffRole, passwordProblems } from './lib.ts';
 
 function assert(ok: boolean, msg: string) {
   if (!ok) throw new Error(msg);
@@ -42,4 +42,22 @@ Deno.test('partner input', () => {
   assert(cleanPartner({ name: 'X', code: 'SUN', contactName: 'Ravi', email: 'r@s.in', phone: '+919876543210', city: 'Kochi' }) === null, 'short name');
   assert(cleanPartner({ name: 'Sunrise', code: 'S1', contactName: 'Ravi', email: 'r@s.in', phone: '+919876543210', city: 'Kochi' }) === null, 'bad code');
   assert(cleanPartner({ name: 'Sunrise', code: 'SUN', contactName: 'Ravi', email: 'r@s.in', phone: '+919876543210', city: 'Kochi', commissionRate: 90 }) === null, 'rate');
+});
+
+Deno.test('employee records are validated', () => {
+  const ok = cleanEmployee({ employee_code: 'SSI-010', designation_id: 'partnership_officer', additional_designations: ['application_team', 'partnership_officer'],
+    reporting_manager_id: '00000000-0000-0000-0000-0000000000f2', joining_date: '2026-01-05', employment_status: 'Probation', shift_id: 'standard' });
+  assert(!!ok && ok.additional_designations.join() === 'application_team', 'valid record, primary designation not repeated');
+  assert(cleanEmployee({ employee_code: '', designation_id: 'x' }) === null, 'employee ID required');
+  assert(cleanEmployee({ employee_code: 'A1', designation_id: 'x', joining_date: '05/01/2026' }) === null, 'dates must be ISO');
+  assert(cleanEmployee({ employee_code: 'A1', designation_id: 'x', employment_status: 'Fired' }) === null, 'unknown employment status');
+  assert(cleanEmployee({ employee_code: 'A1', designation_id: 'x', reporting_manager_id: 'me' }) === null, 'manager must be an id');
+});
+
+Deno.test('HR cannot grant HR or finance permissions', () => {
+  assert(hrPermissionProblem(['students', 'tasks'], ['tasks']) === null, 'business modules allowed');
+  assert(hrPermissionProblem(['tasks', 'hr'], ['tasks']) !== null, 'adding hr refused');
+  assert(hrPermissionProblem(['tasks'], ['tasks', 'hr_salary']) !== null, 'removing hr_salary refused');
+  assert(hrPermissionProblem(['tasks', 'finance'], ['tasks']) !== null, 'adding finance refused');
+  assert(cleanSalary({ amount: -1 }) === undefined && cleanSalary({ amount: 50000, currency: 'INR' })?.amount === 50000, 'salary validation');
 });

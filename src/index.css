@@ -189,3 +189,6 @@ input[type='number'] {
 [data-radix-popper-content-wrapper] {
   z-index: 75 !important;
 }
+
+/* Tables on the HR / employee pages (cells carry no padding classes of their own). */
+.hr-table td { padding: 0.75rem 1.25rem; vertical-align: middle; }

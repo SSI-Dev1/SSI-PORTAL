@@ -26,6 +26,10 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0009_application_duplicates.sql
 "${PSQL[@]}" -f migrations/0010_course_source_fields.sql
 "${PSQL[@]}" -f migrations/0011_import_course_finder_uea.sql
+"${PSQL[@]}" -f migrations/0012_hr_foundation.sql
+"${PSQL[@]}" -f migrations/0013_attendance.sql
+"${PSQL[@]}" -f migrations/0014_leave.sql
+"${PSQL[@]}" -f migrations/0015_daily_reports.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
 "${PSQL[@]}" -f tests/20_account_tests.sql
@@ -33,6 +37,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f tests/40_catalogue_tests.sql
 "${PSQL[@]}" -f tests/50_application_tests.sql
 "${PSQL[@]}" -f tests/60_course_source_tests.sql
+"${PSQL[@]}" -f tests/70_hr_tests.sql
 # Optional: dump the imported CourseFinder records for scripts/verify-coursefinder.py.
 if [ -n "${CATALOGUE_DUMP:-}" ]; then
   "${PSQL[@]}" -At -c "select jsonb_build_object(

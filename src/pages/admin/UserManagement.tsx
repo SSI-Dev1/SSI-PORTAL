@@ -673,7 +673,7 @@ function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner
 
 /* ================================================================== forms */
 
-function PasswordInput({
+export function PasswordInput({
   value,
   onChange,
   email,
@@ -747,12 +747,12 @@ function PasswordInput({
   );
 }
 
-const pwError = (pw: string, email: string) => {
+export const pwError = (pw: string, email: string) => {
   if (!pw) return 'Set an initial password or generate one.';
   const p = passwordProblems(pw, email);
   return p.length ? `Password must have ${p.join(', ')}.` : undefined;
 };
-const confirmError = (pw: string, confirm: string) => (confirm === pw ? undefined : 'The passwords do not match.');
+export const confirmError = (pw: string, confirm: string) => (confirm === pw ? undefined : 'The passwords do not match.');
 
 function PermissionPicker({ role, value, onChange }: { role: StaffRole; value: string[] | null; onChange: (v: string[] | null) => void }) {
   if (role === 'super_admin') return <Alert tone="info">Super Admins always have every permission and can manage accounts.</Alert>;

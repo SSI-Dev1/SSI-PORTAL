@@ -1,8 +1,10 @@
-// Supabase Edge Function: account administration for SSI GLOBAL Super Admins.
+// Supabase Edge Function: account administration for SSI GLOBAL Super Admins and HR.
 //
 // Runs server-side with the service-role key (provided by Supabase as an environment
 // secret — never shipped to the browser). Every request is re-authorised here: the caller's
-// own token must pass public.is_super_admin() (active, not revoked).
+// own token must pass public.is_super_admin() (active, not revoked), or hold the
+// "hr_accounts" permission. HR account managers can only manage employee accounts below
+// Admin level, never their own account, and never grant HR or finance permissions.
 //
 // Accounts are created directly with an admin-chosen initial password (no invitations).
 // Passwords go straight to Supabase Auth (bcrypt) and are never stored, logged, emailed or
@@ -13,11 +15,15 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.117.3';
 import {
   cleanEmail,
+  cleanEmployee,
   cleanModules,
   cleanName,
   cleanOptional,
   cleanPartner,
   cleanPermissions,
+  cleanSalary,
+  HR_MANAGEABLE_ROLES,
+  hrPermissionProblem,
   isPartnerRole,
   isStaffRole,
   passwordProblems,
@@ -87,7 +93,10 @@ Deno.serve(async (req) => {
   const { data: who, error: whoErr } = await asCaller.auth.getUser(token);
   if (whoErr || !who.user) return json(401, { error: 'Unauthorized' }, origin);
   const { data: isSuper } = await asCaller.rpc('is_super_admin');
-  if (isSuper !== true) return json(403, { error: 'Only a Super Admin can manage accounts.' }, origin);
+  const { data: hrAccounts } = isSuper === true ? { data: false } : await asCaller.rpc('staff_can', { m: 'hr_accounts' });
+  const { data: salaryRights } = isSuper === true ? { data: true } : await asCaller.rpc('staff_can', { m: 'hr_salary' });
+  if (isSuper !== true && hrAccounts !== true) return json(403, { error: 'Only a Super Admin or authorised HR can manage accounts.' }, origin);
+  const hrMode = isSuper !== true;
   const me = who.user.id;
 
   let body: Record<string, unknown>;
@@ -99,7 +108,7 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const audit = (action: string, entity: string, entityId: string, partnerId: string | null, changes: unknown = null) =>
-    admin.from('audit_log').insert({ actor_id: me, actor_role: 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
+    admin.from('audit_log').insert({ actor_id: me, actor_role: hrMode ? 'hr' : 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
   // Live Activity entry (Super Admins only); actor details are stamped by the database.
   const activity = (title: string, detail: string | null, refId: string) =>
     admin.from('activities').insert({ kind: 'account', title, detail, ref_id: refId, actor_id: me });
@@ -124,7 +133,16 @@ Deno.serve(async (req) => {
     if (!count) throw bad('At least one other active Super Admin must remain.');
   };
 
+  // HR account managers: employee accounts below Admin level only, never their own.
+  const hrTarget = (t: { id: string; role: string }) => {
+    if (!hrMode) return;
+    if (t.id === me) throw new Fail(403, 'You cannot manage your own account.');
+    if (!(HR_MANAGEABLE_ROLES as readonly string[]).includes(t.role)) throw new Fail(403, 'Only a Super Admin can manage this account.');
+  };
   try {
+    if (hrMode && !['create_employee', 'update_user', 'set_status', 'reset_password'].includes(String(body.action))) {
+      throw new Fail(403, 'Only a Super Admin can do this.');
+    }
     switch (body.action) {
       // ------------------------------------------------------------ employees
       case 'create_employee': {
@@ -134,6 +152,21 @@ Deno.serve(async (req) => {
         const permissions = cleanPermissions(body.permissions ?? null);
         const status = body.status === undefined ? 'active' : String(body.status);
         if (!email || !fullName || !isStaffRole(role) || permissions === undefined || !(STATUSES as readonly string[]).includes(status)) throw bad();
+        if (hrMode) {
+          if (!(HR_MANAGEABLE_ROLES as readonly string[]).includes(role)) throw new Fail(403, 'Only a Super Admin can create Admin accounts.');
+          const problem = hrPermissionProblem(permissions, null);
+          if (problem) throw new Fail(403, problem);
+        }
+        const employee = body.employee === undefined ? null : cleanEmployee(body.employee);
+        if (body.employee !== undefined && !employee) throw bad('Check the employee details (ID, designation, dates).');
+        const salary = cleanSalary(body.salary);
+        if (salary === undefined) throw bad('Enter a valid salary.');
+        if (employee) {
+          const { count: codeUsed } = await admin.from('employees').select('id', { count: 'exact', head: true }).ilike('employee_code', employee.employee_code);
+          if (codeUsed) throw new Fail(409, 'This employee ID is already in use.');
+          const { data: des } = await admin.from('designations').select('id').in('id', [employee.designation_id, ...employee.additional_designations]);
+          if ((des ?? []).length !== 1 + employee.additional_designations.length) throw bad('Unknown designation.');
+        }
         const extra = contact(body);
         const password = checkPassword(body.password, email);
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
@@ -147,7 +180,15 @@ Deno.serve(async (req) => {
           await admin.auth.admin.deleteUser(id);
           throw new Fail(500, 'Could not create the account.');
         }
-        await audit('account_created', 'profiles', id, null, { role: [null, role] });
+        if (employee) {
+          const { error: empErr } = await admin.from('employees').insert({ id, ...employee, created_by: me });
+          if (empErr) {
+            await admin.auth.admin.deleteUser(id);   // profile row is removed by the cascade
+            throw new Fail(empErr.code === '23503' ? 400 : 500, empErr.code === '23503' ? 'Unknown department, shift or reporting manager.' : 'Could not save the employee record.');
+          }
+          if (salary && salaryRights === true) await admin.from('employee_salaries').insert({ employee_id: id, ...salary, updated_by: me });
+        }
+        await audit('account_created', 'profiles', id, null, { role: [null, role], ...(employee ? { designation: employee.designation_id } : {}) });
         await activity('Employee account created', fullName, id);
         return json(200, { ok: true, userId: id }, origin);
       }
@@ -237,6 +278,10 @@ Deno.serve(async (req) => {
       // ------------------------------------------------------------ any account
       case 'update_user': {
         const t = await loadTarget(body.userId);
+        hrTarget(t);
+        if (hrMode && body.role !== undefined && !(HR_MANAGEABLE_ROLES as readonly string[]).includes(String(body.role))) {
+          throw new Fail(403, 'Only a Super Admin can assign Admin roles.');
+        }
         const patch: Record<string, unknown> = {};
         if (body.fullName !== undefined) {
           const n = cleanName(body.fullName);
@@ -255,6 +300,12 @@ Deno.serve(async (req) => {
           const p = cleanPermissions(body.permissions);
           if (p === undefined) throw bad('Unknown permission.');
           if (t.id === me) throw bad('You cannot change your own permissions.');
+          if (hrMode) {
+            const { data: cur } = await admin.from('profiles').select('permissions').eq('id', t.id).single();
+            const { data: defaults } = await admin.rpc('role_default_permissions', { r: t.role });
+            const problem = hrPermissionProblem(p, (cur?.permissions as string[] | null) ?? (defaults as string[] | null));
+            if (problem) throw new Fail(403, problem);
+          }
           patch.permissions = (patch.role ?? t.role) === 'super_admin' ? null : p;
         }
         if (body.mustChangePassword !== undefined) patch.must_change_password = body.mustChangePassword === true;
@@ -278,6 +329,7 @@ Deno.serve(async (req) => {
 
       case 'set_status': {
         const t = await loadTarget(body.userId);
+        hrTarget(t);
         const status = String(body.status ?? '');
         if (!(STATUSES as readonly string[]).includes(status)) throw bad();
         if (t.id === me) throw bad('You cannot change the status of your own account.');
@@ -296,6 +348,7 @@ Deno.serve(async (req) => {
 
       case 'reset_password': {
         const t = await loadTarget(body.userId);
+        hrTarget(t);
         if (t.id === me) throw bad('Use "Change password" for your own account.');
         const password = checkPassword(body.password, t.email ?? '');
         const { error } = await admin.auth.admin.updateUserById(t.id, { password });

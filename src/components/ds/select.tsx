@@ -5,7 +5,8 @@ import * as Popover from '@radix-ui/react-popover';
 import { Command } from 'cmdk';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { floatingPanel, usePortalContainer } from './layer';
+import { floatingPanel, stopPortalBubble, usePortalContainer } from './layer';
+import { useFieldLabelledBy } from './field';
 
 export interface SelectOption {
   value: string;
@@ -39,6 +40,7 @@ type SingleProps = BaseProps & { multiple?: false; value: string; onChange: (v: 
 type MultiProps = BaseProps & { multiple: true; value: string[]; onChange: (v: string[]) => void; clearable?: boolean };
 
 export function SelectMenu(props: SingleProps | MultiProps) {
+  const labelledBy = useFieldLabelledBy();
   const { options, placeholder = 'Select…', disabled, invalid, className, triggerClassName, size = 'md', renderValue, id } = props;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -90,6 +92,7 @@ export function SelectMenu(props: SingleProps | MultiProps) {
             aria-expanded={open}
             aria-haspopup="listbox"
             aria-label={props['aria-label']}
+            aria-labelledby={props['aria-label'] ? undefined : labelledBy}
             aria-invalid={invalid || undefined}
             className={cn(triggerBase, size === 'sm' ? 'h-10' : 'h-11', props.clearable && selected.length ? 'pr-16' : 'pr-9', invalid && 'border-red-400', triggerClassName)}
           >
@@ -109,7 +112,7 @@ export function SelectMenu(props: SingleProps | MultiProps) {
         <ChevronDown className={cn('pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute transition', open && 'rotate-180')} />
       </div>
       <Popover.Portal container={container}>
-        <Popover.Content
+        <Popover.Content onClick={stopPortalBubble}
           align="start"
           sideOffset={6}
           collisionPadding={12}

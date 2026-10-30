@@ -9,3 +9,11 @@ export const usePortalContainer = () => useContext(PortalContainerContext) ?? un
 export const floatingPanel =
   'rounded-xl border border-line bg-surface p-1.5 text-sm text-ink shadow-lift outline-none ' +
   'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out';
+
+/**
+ * React delivers events from portalled content (dialogs, menus, popovers) to the component
+ * that rendered it — so a click inside a dialog opened from a clickable table row or card would
+ * also run that row's or card's onClick. Portal roots stop the bubbling here; handlers inside
+ * the portal still run normally.
+ */
+export const stopPortalBubble = (e: { stopPropagation: () => void }) => e.stopPropagation();

@@ -68,7 +68,7 @@ export function Checkbox({
   );
   if (!label) return box;
   return (
-    <label className={cn('flex cursor-pointer select-none items-start gap-2.5', disabled && 'cursor-not-allowed opacity-60', className)}>
+    <label className={cn('inline-flex max-w-full cursor-pointer select-none items-start gap-2.5 align-top', disabled && 'cursor-not-allowed opacity-60', className)}>
       <span className="mt-[1px]">{box}</span>
       <span>
         <span className="block text-sm text-ink-soft">{label}</span>

@@ -2,6 +2,7 @@ import {
   forwardRef,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -17,7 +18,8 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, Search, X, typ
 import { avatarColor, cn, initials, type Tone } from '../lib/utils';
 import { Tooltip } from './ds/controls';
 import { DatePicker } from './ds/datetime';
-import { floatingPanel, PortalContainerContext, usePortalContainer } from './ds/layer';
+import { FieldContext, useFieldControlId, useFieldLabelledBy } from './ds/field';
+import { floatingPanel, PortalContainerContext, stopPortalBubble, usePortalContainer } from './ds/layer';
 import { useConfirm } from './feedback';
 
 export { Select, FilterSelect, SelectMenu, type SelectOption } from './ds/select';
@@ -180,28 +182,45 @@ const fieldBase =
   'w-full rounded-xl border border-line bg-surface dark:bg-canvas/50 px-3.5 text-sm text-ink placeholder:text-ink-mute transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15 disabled:bg-canvas';
 
 export function Field({ label, error, hint, children, required, className }: { label?: string; error?: string; hint?: string; children: ReactNode; required?: boolean; className?: string }) {
+  // A plain container: only the label text is linked to the control (first native input
+  // registers its id), so clicks on empty space, hints or errors never trigger anything.
+  const labelId = useId();
+  const [controlId, setControlId] = useState<string | undefined>();
+  const ctx = useMemo(() => ({
+    labelId,
+    register: (id: string) => {
+      setControlId((cur) => cur ?? id);
+      return () => setControlId((cur) => (cur === id ? undefined : cur));
+    },
+  }), [labelId]);
   return (
-    <label className={cn('block', className)}>
-      {label && (
-        <span className="mb-1.5 block text-[13px] font-semibold text-heading">
-          {label} {required && <span className="text-rust">*</span>}
-        </span>
-      )}
-      {children}
-      {error ? (
-        <span role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-red-600 animate-fade-in">
-          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
-          {error}
-        </span>
-      ) : hint ? (
-        <span className="mt-1 block text-xs text-ink-mute">{hint}</span>
-      ) : null}
-    </label>
+    <FieldContext.Provider value={label ? ctx : null}>
+      <div className={cn('block', className)}>
+        {label && (
+          <div className="mb-1.5">
+            <label id={labelId} htmlFor={controlId} className="text-[13px] font-semibold text-heading">
+              {label} {required && <span className="text-rust">*</span>}
+            </label>
+          </div>
+        )}
+        {children}
+        {error ? (
+          <span role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-red-600 animate-fade-in">
+            <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+            {error}
+          </span>
+        ) : hint ? (
+          <span className="mt-1 block text-xs text-ink-mute">{hint}</span>
+        ) : null}
+      </div>
+    </FieldContext.Provider>
   );
 }
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { icon?: LucideIcon; invalid?: boolean }>(
-  function Input({ icon: Icon, invalid, className, ...rest }, ref) {
+  function Input({ icon: Icon, invalid, className, id: explicitId, ...rest }, ref) {
+    // Date inputs render a picker button (named via aria-labelledby), so only real inputs register.
+    const id = useFieldControlId(explicitId, rest.type !== 'date');
     // Dates use the branded calendar instead of the browser's date popup.
     if (rest.type === 'date') {
       return (
@@ -221,14 +240,15 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     return (
       <div className="relative">
         {Icon && <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute" />}
-        <input ref={ref} className={cn(fieldBase, 'h-11', Icon && 'pl-10', invalid && 'border-red-400 focus:border-red-400 focus:ring-red-100', className)} {...rest} />
+        <input ref={ref} id={id} className={cn(fieldBase, 'h-11', Icon && 'pl-10', invalid && 'border-red-400 focus:border-red-400 focus:ring-red-100', className)} {...rest} />
       </div>
     );
   },
 );
 
-export function Textarea({ className, invalid, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
-  return <textarea className={cn(fieldBase, 'min-h-[96px] py-2.5', invalid && 'border-red-400', className)} {...rest} />;
+export function Textarea({ className, invalid, id: explicitId, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
+  const id = useFieldControlId(explicitId);
+  return <textarea id={id} className={cn(fieldBase, 'min-h-[96px] py-2.5', invalid && 'border-red-400', className)} {...rest} />;
 }
 
 export function SearchInput({ value, onChange, placeholder = 'Search…', className }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
@@ -296,7 +316,7 @@ export function Modal({
   const wide = size === 'wide';
   const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl', wide: 'max-w-[960px]' }[size];
   return createPortal(
-    <div ref={setContainer} className={cn('fixed inset-0 z-[60] flex justify-center p-0 sm:items-center sm:p-6', wide ? 'items-stretch' : 'items-end')}>
+    <div ref={setContainer} onClick={stopPortalBubble} className={cn('fixed inset-0 z-[60] flex justify-center p-0 sm:items-center sm:p-6', wide ? 'items-stretch' : 'items-end')}>
       <div className="absolute inset-0 animate-fade-in bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClick={requestClose} aria-hidden />
       <PortalContainerContext.Provider value={container}>
         <FocusScope
@@ -348,7 +368,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer }: { o
   useLockScroll(open);
   if (!open) return null;
   return createPortal(
-    <div ref={setContainer} className="fixed inset-0 z-[55]">
+    <div ref={setContainer} onClick={stopPortalBubble} className="fixed inset-0 z-[55]">
       <div className="absolute inset-0 animate-fade-in bg-navy/30 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} aria-hidden />
       <PortalContainerContext.Provider value={container}>
         <FocusScope trapped loop asChild>
@@ -430,6 +450,7 @@ export function Menu({
       <DropdownMenu.Trigger asChild>{trigger(open)}</DropdownMenu.Trigger>
       <DropdownMenu.Portal container={container}>
         <DropdownMenu.Content
+          onClick={stopPortalBubble}
           side={side}
           align={align === 'right' ? 'end' : 'start'}
           sideOffset={6}
@@ -502,12 +523,14 @@ export function Tabs<T extends string>({ tabs, value, onChange, className }: { t
 }
 
 export function Segmented<T extends string>({ options, value, onChange }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  const labelledBy = useFieldLabelledBy();
   return (
-    <div className="inline-flex rounded-xl bg-canvas p-1 ring-1 ring-line">
+    <div role="group" aria-labelledby={labelledBy} className="inline-flex rounded-xl bg-canvas p-1 ring-1 ring-line">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
+          aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={cn('rounded-lg px-3 py-1.5 text-xs font-semibold transition', o.value === value ? 'bg-surface text-heading shadow-sm' : 'text-ink-mute hover:text-heading')}
         >

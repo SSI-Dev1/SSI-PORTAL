@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import * as Popover from '@radix-ui/react-popover';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { floatingPanel, usePortalContainer } from './layer';
+import { floatingPanel, stopPortalBubble, usePortalContainer } from './layer';
+import { useFieldLabelledBy } from './field';
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -252,6 +253,7 @@ export interface DatePickerProps {
 }
 
 export function DatePicker({ value, onChange, placeholder = 'Select date', min, max, isDisabled, disabled, invalid, clearable = true, className, id, ...rest }: DatePickerProps) {
+  const labelledBy = useFieldLabelledBy();
   const [open, setOpen] = useState(false);
   const container = usePortalContainer();
   const date = parseISODate(value);
@@ -259,7 +261,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', min, 
     <Popover.Root open={open} onOpenChange={setOpen}>
       <div className="relative">
         <Popover.Trigger asChild disabled={disabled}>
-          <button type="button" id={id} aria-label={rest['aria-label'] ?? placeholder} aria-haspopup="dialog" aria-invalid={invalid || undefined} className={cn(fieldTrigger, invalid && 'border-red-400', className)}>
+          <button type="button" id={id} aria-label={rest['aria-label'] ?? (labelledBy ? undefined : placeholder)} aria-labelledby={rest['aria-label'] ? undefined : labelledBy} aria-haspopup="dialog" aria-invalid={invalid || undefined} className={cn(fieldTrigger, invalid && 'border-red-400', className)}>
             <CalendarDays className="h-4 w-4 shrink-0 text-ink-mute" />
             <span className={cn('truncate', !date && 'text-ink-mute')}>{date ? fmt(date) : placeholder}</span>
           </button>
@@ -271,7 +273,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', min, 
         )}
       </div>
       <Popover.Portal container={container}>
-        <Popover.Content
+        <Popover.Content onClick={stopPortalBubble}
           align="start"
           sideOffset={6}
           collisionPadding={12}
@@ -324,6 +326,7 @@ export function DateRangePicker({
   className?: string;
   'aria-label'?: string;
 }) {
+  const labelledBy = useFieldLabelledBy();
   const [open, setOpen] = useState(false);
   const container = usePortalContainer();
   const f = parseISODate(from);
@@ -339,7 +342,7 @@ export function DateRangePicker({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <div className="relative">
         <Popover.Trigger asChild>
-          <button type="button" aria-label={ariaLabel ?? placeholder} aria-haspopup="dialog" className={cn(fieldTrigger, className)}>
+          <button type="button" aria-label={ariaLabel ?? (labelledBy ? undefined : placeholder)} aria-labelledby={ariaLabel ? undefined : labelledBy} aria-haspopup="dialog" className={cn(fieldTrigger, className)}>
             <CalendarDays className="h-4 w-4 shrink-0 text-ink-mute" />
             <span className={cn('truncate', !f && 'text-ink-mute')}>{label}</span>
           </button>
@@ -351,7 +354,7 @@ export function DateRangePicker({
         )}
       </div>
       <Popover.Portal container={container}>
-        <Popover.Content align="start" sideOffset={6} collisionPadding={12} className={floatingPanel}>
+        <Popover.Content onClick={stopPortalBubble} align="start" sideOffset={6} collisionPadding={12} className={floatingPanel}>
           <Calendar
             mode="range"
             range={{ from: f, to: t }}
@@ -397,6 +400,7 @@ export function TimePicker({
   invalid?: boolean;
   'aria-label'?: string;
 }) {
+  const labelledBy = useFieldLabelledBy();
   const [open, setOpen] = useState(false);
   const container = usePortalContainer();
   const valid = /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
@@ -436,7 +440,7 @@ export function TimePicker({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <div className="relative">
         <Popover.Trigger asChild disabled={disabled}>
-          <button type="button" aria-label={ariaLabel ?? placeholder} aria-haspopup="dialog" aria-invalid={invalid || undefined} className={cn(fieldTrigger, invalid && 'border-red-400')}>
+          <button type="button" aria-label={ariaLabel ?? (labelledBy ? undefined : placeholder)} aria-labelledby={ariaLabel ? undefined : labelledBy} aria-haspopup="dialog" aria-invalid={invalid || undefined} className={cn(fieldTrigger, invalid && 'border-red-400')}>
             <Clock className="h-4 w-4 shrink-0 text-ink-mute" />
             <span className={cn('truncate tabular-nums', !valid && 'text-ink-mute')}>{valid ? formatTime12(value) : placeholder}</span>
           </button>
@@ -448,7 +452,7 @@ export function TimePicker({
         )}
       </div>
       <Popover.Portal container={container}>
-        <Popover.Content align="start" sideOffset={6} collisionPadding={12} className={cn(floatingPanel, 'p-2')}>
+        <Popover.Content onClick={stopPortalBubble} align="start" sideOffset={6} collisionPadding={12} className={cn(floatingPanel, 'p-2')}>
           <div className="flex gap-1">
             {col(hours.map((h) => ({ key: `h${h}`, label: String(h), active: valid && h === hour12, onClick: () => set(h, min, pm) })), 'Hour')}
             {col(minutes.map((m) => ({ key: `m${m}`, label: pad(m), active: valid && m === min, onClick: () => set(hour12, m, pm) })), 'Minute')}

@@ -3,6 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Tooltip } from './ds/controls';
 import { floatingPanel } from './ds/layer';
 import { useTheme, type ThemePref } from '../theme/theme';
+import { stopPortalBubble } from './ds/layer';
 import { cn } from '../lib/utils';
 
 const OPTIONS: { value: ThemePref; label: string; icon: typeof Sun }[] = [
@@ -32,7 +33,7 @@ export function ThemeMenu({ className }: { className?: string }) {
         </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={6} collisionPadding={12} className={cn(floatingPanel, 'w-40')}>
+        <DropdownMenu.Content onClick={stopPortalBubble} align="end" sideOffset={6} collisionPadding={12} className={cn(floatingPanel, 'w-40')}>
           <DropdownMenu.RadioGroup value={pref} onValueChange={(v) => setPref(v as ThemePref)}>
             {OPTIONS.map((o) => (
               <DropdownMenu.RadioItem

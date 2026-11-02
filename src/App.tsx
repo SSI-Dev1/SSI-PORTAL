@@ -17,6 +17,7 @@ const RealtimeDemo = import.meta.env.DEV ? lazy(() => import('./pages/RealtimeDe
 const ApplicationFormDemo = import.meta.env.DEV ? lazy(() => import('./pages/ApplicationFormDemo')) : null;
 const CatalogueDemo = import.meta.env.DEV ? lazy(() => import('./pages/CatalogueDemo')) : null;
 const HRDemo = import.meta.env.DEV ? lazy(() => import('./pages/HRDemo')) : null;
+const ClockDemo = import.meta.env.DEV ? lazy(() => import('./pages/ClockDemo')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -144,6 +145,16 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {ClockDemo && (
+              <Route
+                path="/ui/clock"
+                element={
+                  <Suspense fallback={null}>
+                    <ClockDemo />
+                  </Suspense>
+                }
+              />
+            )}
             {HRDemo && (
               <Route
                 path="/ui/hr/*"

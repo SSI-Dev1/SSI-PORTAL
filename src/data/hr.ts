@@ -82,6 +82,13 @@ export interface AttendanceDay {
   late: boolean;
   earlyCheckout: boolean;
   updatedAt: string;
+  /** Worked minutes below / above the day's required hours (closed days only). */
+  shortMinutes: number | null;
+  extraMinutes: number | null;
+  reopenedAt: string | null;
+  reopenedBy: string | null;
+  reopenReason: string | null;
+  previousPunchOutAt: string | null;
 }
 export interface BreakSession { id: string; sessionId: string; startAt: string; endAt: string | null }
 export type RequestStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';

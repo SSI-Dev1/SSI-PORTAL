@@ -1,7 +1,7 @@
 // Building blocks shared by the Employee (work), Manager (team) and HR screens:
 // daily report form and detail, approval queues, the punch card and small helpers.
 // Every action is a database function (useHR().call) that re-checks permission and policy.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -22,6 +22,7 @@ import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, Tabs, Text
 import { useConfirm, useToast } from './feedback';
 import { useHR, useHRLookup } from '../store/hr';
 import { useStore } from '../store/store';
+import { supabase } from '../auth/auth';
 import { cn, formatDateTime, type Tone } from '../lib/utils';
 import {
   CORRECTION_LABEL,
@@ -422,12 +423,30 @@ export function useMyToday() {
   }, [data.attendance, session?.userId, today]);
 }
 
-export function PunchCard({ compact }: { compact?: boolean }) {
-  const { data, call, now, setting } = useHR();
+// In-flight clock action, shared by every clock control on the page (header pill and punch
+// card), like BEClock in Broken English Studio: while a tap is running every control shows
+// progress and is locked, and right after a change they stay locked for a moment so a repeated
+// tap cannot hit the new button. Controls only change after the database has saved the action.
+type ClockKind = 'in' | 'out' | 'break_start' | 'break_end';
+let clockSnap: { busy: ClockKind | null; slow: boolean; coolingDown: boolean; locMsg: string | null } = { busy: null, slow: false, coolingDown: false, locMsg: null };
+const clockListeners = new Set<() => void>();
+const setClock = (patch: Partial<typeof clockSnap>) => {
+  clockSnap = { ...clockSnap, ...patch };
+  clockListeners.forEach((l) => l());
+};
+const subscribeClock = (l: () => void) => {
+  clockListeners.add(l);
+  return () => clockListeners.delete(l);
+};
+
+/** Today's attendance, live worked time and the clock actions (one implementation for every control). */
+export function useClockFlow() {
+  const { data, call, load, now, setting } = useHR();
+  const { session } = useStore();
+  const toast = useToast();
   const confirm = useConfirm();
   const today = useMyToday();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [locMsg, setLocMsg] = useState<string | null>(null);
+  const clock = useSyncExternalStore(subscribeClock, () => clockSnap);
   const [tick, setTick] = useState(0);
   const policy = setting<string>('location_policy', 'optional');
   const open = today && (today.state === 'Checked In' || today.state === 'On Break');
@@ -437,7 +456,6 @@ export function PunchCard({ compact }: { compact?: boolean }) {
     const t = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => window.clearInterval(t);
   }, [open]);
-  void tick;
   // Live figures from server timestamps and the server clock offset.
   const live = useMemo(() => {
     if (!today?.effIn) return null;
@@ -447,35 +465,80 @@ export function PunchCard({ compact }: { compact?: boolean }) {
     const running = openBreak ? (now().getTime() - new Date(openBreak.startAt).getTime()) / 60000 : 0;
     const brk = today.state === 'Checked Out' ? today.breakMinutes : closedBreaks + running;
     return { gross, brk, net: Math.max(0, gross - brk), running };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today, data.breaks, openBreak, now, tick]);
 
-  const punch = async (fn: 'punch_in' | 'punch_out') => {
+  // One request id per tap: a retry after a dropped connection (or a second tab) replays the
+  // first result on the server instead of acting twice.
+  const run = async (kind: ClockKind, loc: unknown, success: string) => {
+    setClock({ busy: kind, slow: false });
+    const slowTimer = window.setTimeout(() => setClock({ slow: true }), 4000);
+    const id = crypto.randomUUID();
+    const args = { p_kind: kind, p_request_id: id, p_location: loc };
+    let r = await call('clock_action', args, { quiet: true });
+    if (!r.ok && /fetch|network|timeout|load failed/i.test(r.error)) r = await call('clock_action', args, { quiet: true });
+    await load(['attendance', 'breaks']);
+    window.clearTimeout(slowTimer);
+    setClock({ busy: null, slow: false, coolingDown: true });
+    window.setTimeout(() => setClock({ coolingDown: false }), 1200);
+    if (r.ok) toast.success(success, companyTime(now()));
+    else toast.error('Not saved', r.error);
+    return r;
+  };
+
+  /** Is today a day off for me? Returns its label (holiday name, Saturday off…) or null. */
+  const dayOffLabel = async () => {
+    if (!supabase || !session) return null;
+    const d = companyDate(now());
+    const hol = data.holidays.find((h) => h.active && h.holidayDate === d);
+    const { data: working } = await supabase.rpc('is_working_day', { p_emp: session.userId, p_date: d });
+    if (working !== false) return null;
+    if (hol) return `Holiday · ${hol.name}`;
+    const cal = data.calendar.find((c) => c.workDate === d);
+    return cal?.kind === 'saturday_off' ? 'Saturday off' : 'Weekly off';
+  };
+
+  const punch = async (fn: 'punch_in' | 'punch_out', opts: { skipDayOffCheck?: boolean } = {}) => {
+    if (clockSnap.busy || clockSnap.coolingDown) return;
+    if (fn === 'punch_in' && !opts.skipDayOffCheck) {
+      // Same as Broken English Studio: clocking in on a holiday / weekly off is allowed, but confirmed first.
+      const off = await dayOffLabel();
+      if (off) {
+        const ok = await confirm({ title: 'Clock in on a day off?', message: `${off} — no clock-in is needed. Clock in only if you are actually working today.`, confirmLabel: 'Clock in' });
+        if (!ok) return;
+      }
+    }
     if (fn === 'punch_out' && live && today && live.net < today.requiredMinutes) {
       const hasApproval = data.earlyCheckouts.some((e) => e.employeeId === today.employeeId && e.workDate === today.workDate && e.status === 'Approved');
       const ok = await confirm({
-        title: 'Punch out before completing your hours?',
+        title: 'Clock out before completing your hours?',
         message: `You have worked ${hm(live.net)} of ${hm(today.requiredMinutes)}.${hasApproval ? ' Your early checkout is approved.' : ' This will be marked as an early checkout. Request approval first if this is an emergency.'}`,
-        confirmLabel: 'Punch out',
+        confirmLabel: 'Clock out',
       });
       if (!ok) return;
     }
-    setBusy(fn);
-    setLocMsg(null);
+    setClock({ busy: fn === 'punch_in' ? 'in' : 'out', locMsg: null });
     const loc = await captureLocation();
     if (loc.status !== 'captured') {
-      setLocMsg(loc.status === 'denied'
+      setClock({ locMsg: loc.status === 'denied'
         ? policy === 'required' ? 'Location permission is off. Your company requires location to punch — allow it in the browser settings, or request an attendance correction.' : 'Location permission is off — punched without location' + (policy === 'approval' ? '; HR will verify this punch.' : '.')
-        : 'Location is unavailable on this device — punched without location' + (policy === 'approval' ? '; HR will verify this punch.' : '.'));
+        : 'Location is unavailable on this device — punched without location' + (policy === 'approval' ? '; HR will verify this punch.' : '.') });
     }
-    const r = await call(fn, { p_location: loc }, { refresh: ['attendance', 'breaks'], success: fn === 'punch_in' ? 'Punched in' : 'Punched out', successDetail: companyTime(now()) });
-    setBusy(null);
-    if (!r.ok && /location/i.test(r.error)) setLocMsg(r.error);
+    const r = await run(fn === 'punch_in' ? 'in' : 'out', loc, fn === 'punch_in' ? 'Clocked in' : 'Clocked out');
+    if (!r.ok && /location/i.test(r.error)) setClock({ locMsg: r.error });
+    return r;
   };
   const brk = async (fn: 'break_start' | 'break_end') => {
-    setBusy(fn);
-    await call(fn, {}, { refresh: ['attendance', 'breaks'], success: fn === 'break_start' ? 'Break started' : 'Break ended' });
-    setBusy(null);
+    if (clockSnap.busy || clockSnap.coolingDown) return;
+    await run(fn, {}, fn === 'break_start' ? 'Break started' : 'Break ended');
   };
+  return { today, live, openBreak, clock, punch, brk, dayOffLabel, now };
+}
+
+export function PunchCard({ compact }: { compact?: boolean }) {
+  const { today, live, openBreak, clock, punch, brk, now } = useClockFlow();
+  const busy = clock.busy;
+  const locMsg = clock.locMsg;
   const state = today?.state ?? 'Not Checked In';
   const pct = live && today ? Math.min(100, (live.net / Math.max(1, today.requiredMinutes)) * 100) : 0;
   return (
@@ -502,14 +565,14 @@ export function PunchCard({ compact }: { compact?: boolean }) {
       </dl>
       <div className="mt-5 flex flex-wrap gap-2">
         {state === 'Not Checked In' || state === 'Missing Punch-out' || (today && today.workDate !== companyDate(now()) && state === 'Checked Out') ? (
-          <Button icon={LogIn} disabled={!!busy} onClick={() => punch('punch_in')}>{busy === 'punch_in' ? 'Punching in…' : 'Punch In'}</Button>
+          <Button icon={LogIn} disabled={!!busy || clock.coolingDown} onClick={() => punch('punch_in')}>{busy === 'in' ? 'Clocking in…' : 'Clock In'}</Button>
         ) : state === 'Checked In' ? (
           <>
-            <Button variant="secondary" icon={Coffee} disabled={!!busy} onClick={() => brk('break_start')}>Start break</Button>
-            <Button icon={LogOut} disabled={!!busy} onClick={() => punch('punch_out')}>{busy === 'punch_out' ? 'Punching out…' : 'Punch Out'}</Button>
+            <Button variant="secondary" icon={Coffee} disabled={!!busy || clock.coolingDown} onClick={() => brk('break_start')}>Start break</Button>
+            <Button icon={LogOut} disabled={!!busy || clock.coolingDown} onClick={() => punch('punch_out')}>{busy === 'out' ? 'Clocking out…' : 'Clock Out'}</Button>
           </>
         ) : state === 'On Break' ? (
-          <Button icon={Coffee} disabled={!!busy} onClick={() => brk('break_end')}>End break</Button>
+          <Button icon={Coffee} disabled={!!busy || clock.coolingDown} onClick={() => brk('break_end')}>End break</Button>
         ) : (
           <p className="text-sm text-ink-soft">Done for today. Use an attendance correction if something is wrong.</p>
         )}
@@ -524,7 +587,7 @@ export function PunchCard({ compact }: { compact?: boolean }) {
 
 // ------------------------------------------------------------------ attendance table
 
-export function AttendanceTable({ rows, showName, onVerify }: { rows: AttendanceDay[]; showName?: boolean; onVerify?: (id: string) => void }) {
+export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: AttendanceDay[]; showName?: boolean; onVerify?: (id: string) => void; onReopen?: (a: AttendanceDay) => void }) {
   const lk = useHRLookup();
   if (!rows.length) return <EmptyState icon={Clock} title="No attendance in this period" />;
   return (
@@ -534,7 +597,7 @@ export function AttendanceTable({ rows, showName, onVerify }: { rows: Attendance
           <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-ink-mute">
             {showName && <th className="py-2.5 pr-3">Employee</th>}
             <th className="py-2.5 pr-3">Date</th><th className="pr-3">In</th><th className="pr-3">Out</th><th className="pr-3 text-right">Gross</th>
-            <th className="pr-3 text-right">Break</th><th className="pr-3 text-right">Net</th><th className="pr-3 text-right">Shortage</th><th className="pr-3">Status</th><th>Location</th>
+            <th className="pr-3 text-right">Break</th><th className="pr-3 text-right">Net</th><th className="pr-3 text-right">Below</th><th className="pr-3 text-right">Extra</th><th className="pr-3">Status</th><th>Location</th>{onReopen && <th />}
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -547,12 +610,14 @@ export function AttendanceTable({ rows, showName, onVerify }: { rows: Attendance
               <td className="pr-3 text-right tabular-nums">{hm(a.grossMinutes)}</td>
               <td className="pr-3 text-right tabular-nums">{hm(a.breakMinutes)}</td>
               <td className="pr-3 text-right font-semibold tabular-nums text-heading">{hm(a.netMinutes)}</td>
-              <td className="pr-3 text-right tabular-nums">{a.state === 'Checked Out' && (a.netMinutes ?? 0) < a.requiredMinutes ? <span className="text-red-600">{hm(a.requiredMinutes - (a.netMinutes ?? 0))}</span> : '—'}</td>
+              <td className="pr-3 text-right tabular-nums">{a.shortMinutes ? <span className="text-red-600" title={`Below the ${hm(a.requiredMinutes)} day`}>{hm(a.shortMinutes)}</span> : '—'}</td>
+              <td className="pr-3 text-right tabular-nums">{a.extraMinutes ? <span className="text-emerald-600">+{hm(a.extraMinutes)}</span> : '—'}</td>
               <td className="pr-3">
                 <span className="flex flex-wrap gap-1">
                   <Badge tone={stateTone[a.state]}>{a.state}</Badge>
                   {a.late && <Badge tone="amber">Late</Badge>}
                   {a.earlyCheckout && <Badge tone={a.earlyCheckoutId ? 'blue' : 'red'}>{a.earlyCheckoutId ? 'Early ✓' : 'Early'}</Badge>}
+                  {a.reopenedAt && <span title={`Re-opened by HR: ${a.reopenReason ?? ''}${a.previousPunchOutAt ? ` · earlier clock-out ${companyTime(a.previousPunchOutAt)}` : ''}`}><Badge tone="violet">Re-opened</Badge></span>}
                 </span>
               </td>
               <td className="text-xs text-ink-soft">
@@ -562,6 +627,13 @@ export function AttendanceTable({ rows, showName, onVerify }: { rows: Attendance
                 )}
                 {a.locationVerifiedAt && <span className="ml-1 text-emerald-600">verified</span>}
               </td>
+              {onReopen && (
+                <td className="pl-3 text-right">
+                  {a.punchInAt && (a.state === 'Checked Out' || a.state === 'Missing Punch-out') && (
+                    <Button size="sm" variant="secondary" onClick={() => onReopen(a)}>Re-open</Button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

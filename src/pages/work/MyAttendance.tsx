@@ -41,7 +41,8 @@ export default function MyAttendance() {
         <PunchCard />
         <div className="grid grid-cols-2 gap-3 xl:col-span-2">
           <KPI icon={Clock} label={`Net hours · ${label(month)}`} value={hm(net)} hint={`${rows.length} day(s)`} />
-          <KPI icon={done >= req ? TrendingUp : TrendingDown} tone={done >= req ? 'green' : 'red'} label="Against required (completed days)" value={req ? `${done >= req ? '+' : '−'}${hm(Math.abs(done - req))}` : '—'} />
+          <KPI icon={done >= req ? TrendingUp : TrendingDown} tone={done >= req ? 'green' : 'red'} label="Against required (completed days)" value={req ? `${done >= req ? '+' : '−'}${hm(Math.abs(done - req))}` : '—'}
+            hint={`Extra ${hm(rows.reduce((t, x) => t + (x.extraMinutes ?? 0), 0))} · below ${hm(rows.reduce((t, x) => t + (x.shortMinutes ?? 0), 0))}`} />
           <KPI icon={Timer} tone="amber" label="Late arrivals" value={rows.filter((a) => a.late).length} />
           <KPI icon={LogOut} tone="orange" label="Early checkouts approved this month" value={`${usedEarly} / ${limit}`} />
         </div>

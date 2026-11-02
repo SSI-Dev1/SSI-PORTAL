@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2 } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
 import { useHR } from '../store/hr';
+import { HeaderClockButton, HeaderClockPill } from '../components/ClockPill';
 import { canOpen } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
@@ -156,6 +157,13 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
         </div>
         <GlobalSearch />
         <div className="ml-auto flex items-center gap-1">
+          {/* Clock In / Clock Out in the header, as in Broken English Studio (pill ≥768px, round button on phones). */}
+          {session?.role !== 'client' && (
+            <>
+              <span className="mr-2 hidden md:inline-flex"><HeaderClockPill /></span>
+              <span className="mr-1 inline-flex md:hidden"><HeaderClockButton /></span>
+            </>
+          )}
           <span className="lg:hidden"><LiveIndicator /></span>
           <ThemeMenu />
           <Notifications />

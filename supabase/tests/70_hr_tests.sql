@@ -289,7 +289,8 @@ select pg_temp.check((select available = 10 and pending = 2 and used = 0 from pu
   'pending leave reserved, not deducted');
 select pg_temp.check((select count(*) from public.leave_ledger where entry_type = 'debit') = 0, 'no ledger deduction while pending');
 select pg_temp.denied(format($$select public.apply_leave('sick', %L, %L, 'Overlap')$$, :'mon1', :'mon1'), 'overlapping leave rejected', '%LEAVE_OVERLAP%');
-select pg_temp.denied(format($$select public.apply_leave('paid', %L, %L, 'Too long')$$, (:'mon1'::date + 7), (:'mon1'::date + 30)), 'leave above the balance rejected', '%LEAVE_BALANCE%');
+-- Rest of the same month (stays inside one leave year; always more than 12 working days).
+select pg_temp.denied(format($$select public.apply_leave('paid', %L, %L, 'Too long')$$, (:'mon1'::date + 2), (date_trunc('month', :'m1'::date) + interval '1 month - 1 day')::date), 'leave above the balance rejected', '%LEAVE_BALANCE%');
 select pg_temp.denied($$select public.decide_leave((select id from public.leave_requests), true)$$, 'employees cannot approve their own leave');
 commit;
 

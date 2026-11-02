@@ -49,7 +49,9 @@ function sample(): HRData {
     const gross = effOut ? (new Date(effOut).getTime() - new Date(effIn).getTime()) / 60000 : (Date.now() - new Date(effIn).getTime()) / 60000;
     return { id, employeeId: emp, workDate: d, punchInAt: effIn, punchOutAt: effOut, correctedInAt: null, correctedOutAt: null, effIn, effOut, closedReason: null, source: 'punch' as const,
       locationStatusIn: 'captured', locationStatusOut: outT ? 'denied' : null, locationVerifiedAt: null, earlyCheckoutId: null, state: (outT ? 'Checked Out' : 'Checked In') as 'Checked Out',
-      grossMinutes: Math.round(gross), breakMinutes: brk, netMinutes: Math.round(gross - brk), requiredMinutes: 480, late, earlyCheckout: !!outT && gross - brk < 480, updatedAt: effIn };
+      grossMinutes: Math.round(gross), breakMinutes: brk, netMinutes: Math.round(gross - brk), requiredMinutes: 480, late, earlyCheckout: !!outT && gross - brk < 480, updatedAt: effIn,
+      shortMinutes: outT ? Math.max(0, 480 - Math.round(gross - brk)) : null, extraMinutes: outT ? Math.max(0, Math.round(gross - brk) - 480) : null,
+      reopenedAt: null, reopenedBy: null, reopenReason: null, previousPunchOutAt: null };
   };
   return {
     employees: directory.map((p) => ({ id: p.id, employeeCode: p.employeeCode, designationId: p.designationId, additionalDesignations: [], departmentId: p.departmentId, reportingManagerId: p.reportingManagerId, joiningDate: '2025-01-06', employmentStatus: p.employmentStatus, probationEndDate: null, dateOfBirth: null, shiftId: 'standard', workLocation: 'Kochi', updatedAt: T })),

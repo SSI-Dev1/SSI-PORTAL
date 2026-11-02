@@ -194,6 +194,8 @@ export interface DailyReport {
   metrics: Record<string, number>;
   notes: Record<string, string>;
   sources: Record<string, string>;
+  sourceActivityIds?: number[];
+  metricDetails?: Record<string, MetricValue>;
   submittedAt: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
@@ -201,6 +203,39 @@ export interface DailyReport {
   createdAt: string;
   updatedAt: string;
 }
+export interface WorkActivityType { id: string; label: string; source: 'crm' | 'logged'; description: string | null; sort: number }
+export interface WorkActivity {
+  id: string;
+  employeeId: string;
+  designationId: string | null;
+  activityType: string;
+  source: 'crm' | 'logged';
+  entityType: string | null;
+  entityId: string | null;
+  applicationId: string | null;
+  studentId: string | null;
+  partnerId: string | null;
+  quantity: number;
+  fromStatus: string | null;
+  toStatus: string | null;
+  note: string | null;
+  occurredAt: string;
+  reportDate: string;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
+}
+export interface MetricSource { templateId: string; fieldKey: string; kind: 'activity' | 'workload'; activityTypes: string[]; workload: string | null }
+/** Server-computed figure of a report field. */
+export interface MetricValue { value: number; kind: 'activity' | 'workload'; activity_ids?: number[]; application_ids?: string[] }
+export const WORKLOAD_LABEL: Record<string, string> = {
+  apps_new: 'Applications assigned to you in Draft or Pending Assessment',
+  apps_awaiting: 'Applications assigned to you awaiting a university decision (Submitted, Offer Pending)',
+  apps_conditional: 'Applications assigned to you with a Conditional Offer',
+  apps_cas_visa: 'Applications assigned to you at Unconditional Offer or Visa Lodged',
+  apps_open: 'Open applications assigned to you (not yet Visa Granted / Refused)',
+};
+
 export interface Reminder { kind: 'birthday' | 'anniversary' | 'probation' | 'leave' | 'holiday'; onDate: string; employeeId: string | null; title: string; detail: string | null }
 
 export const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

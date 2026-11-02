@@ -6,19 +6,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  Coffee,
   Download,
   FileText,
   Inbox,
-  LogIn,
-  LogOut,
   MapPin,
   MapPinOff,
   Printer,
-  Sparkles,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, Tabs, Textarea, TimePicker } from './ui';
+import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, TimePicker } from './ui';
 import { useConfirm, useToast } from './feedback';
 import { useHR, useHRLookup } from '../store/hr';
 import { useStore } from '../store/store';
@@ -33,6 +30,8 @@ import {
   hm,
   type AttendanceDay,
   type DailyReport,
+  type MetricSource,
+  type MetricValue,
   type ReportStatus,
   type ReportTemplate,
   type RequestStatus,
@@ -99,41 +98,26 @@ export function KPI({ label, value, hint, icon: Icon, tone = 'navy', onClick }: 
   );
 }
 
-/** Whole-number input for report counts (never negative, never fractional). */
-function CountInput({ value, onChange, disabled, id }: { value: number | undefined; onChange: (v: number | undefined) => void; disabled?: boolean; id: string }) {
-  return (
-    <Input
-      id={id}
-      inputMode="numeric"
-      value={value == null ? '' : String(value)}
-      disabled={disabled}
-      placeholder="0"
-      className="text-right tabular-nums"
-      onChange={(e) => {
-        const v = e.target.value.replace(/[^\d]/g, '').slice(0, 6);
-        onChange(v === '' ? undefined : Number(v));
-      }}
-    />
-  );
-}
-
 // ------------------------------------------------------------------ daily report form
 
-export interface ReportDraft { metrics: Record<string, number | undefined>; notes: Record<string, string>; sources: Record<string, string> }
+export interface ReportDraft { notes: Record<string, string> }
 
-export function ReportForm({ template, draft, onChange, readOnly, crm }: {
-  template: { sections: TemplateSection[] };
+/**
+ * Report sections. Counts are not typed in: each one is computed on the server from the
+ * employee's recorded work (CRM actions + Quick Log) or current assigned workload, and opens
+ * the activities behind it. Only the written summaries are editable.
+ */
+export function ReportForm({ template, draft, onChange, readOnly, metrics, sources, onShow, onLog }: {
+  template: { id: string; sections: TemplateSection[] };
   draft: ReportDraft;
   onChange: (d: ReportDraft) => void;
   readOnly?: boolean;
-  crm?: Record<string, { label: string; value: number }>;
+  metrics: Record<string, MetricValue | number | undefined>;
+  sources: MetricSource[];
+  onShow: (fieldKey: string, label: string) => void;
+  onLog?: (fieldKey: string) => void;
 }) {
-  const set = (k: string, v: number | undefined, source?: string) => {
-    const sources = { ...draft.sources };
-    if (source) sources[k] = source;
-    else delete sources[k];
-    onChange({ ...draft, metrics: { ...draft.metrics, [k]: v }, sources });
-  };
+  const { data } = useHR();
   return (
     <div className="space-y-5">
       {template.sections.map((s, si) => {
@@ -146,20 +130,29 @@ export function ReportForm({ template, draft, onChange, readOnly, crm }: {
               {s.title}
             </h3>
             {counts.length > 0 && (
-              <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {counts.map((f) => {
-                  const sug = crm?.[f.key];
-                  const fromCrm = draft.sources[f.key] === 'crm';
+                  const m = metrics[f.key];
+                  const value = typeof m === 'number' ? m : m?.value ?? 0;
+                  const src = sources.find((x) => x.templateId === template.id && x.fieldKey === f.key);
+                  const workload = src?.kind === 'workload';
+                  const loggable = !workload && (src?.activityTypes ?? []).some((t) => data.activityTypes.find((x) => x.id === t)?.source === 'logged');
+                  const fromCrm = !workload && (src?.activityTypes ?? []).some((t) => data.activityTypes.find((x) => x.id === t)?.source === 'crm');
                   return (
-                    <div key={f.key}>
-                      <label htmlFor={`f-${f.key}`} className="mb-1.5 flex items-center justify-between gap-2 text-[13px] font-semibold text-heading">
-                        <span>{f.label}</span>
-                        {fromCrm && <Badge tone="teal"><Sparkles className="h-3 w-3" /> CRM</Badge>}
-                      </label>
-                      <CountInput id={`f-${f.key}`} value={draft.metrics[f.key]} disabled={readOnly} onChange={(v) => set(f.key, v)} />
-                      {sug && !readOnly && (
-                        <button type="button" onClick={() => set(f.key, sug.value, 'crm')} className="mt-1 text-[11px] font-medium text-teal-700 hover:underline dark:text-teal-300" title={sug.label}>
-                          From CRM: {sug.value} — use this
+                    <div key={f.key} className="flex items-center gap-3 rounded-xl border border-line bg-canvas/50 px-3.5 py-3">
+                      <button type="button" onClick={() => onShow(f.key, f.label)} className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 rounded-md" title="See the work behind this figure">
+                        <span className="block text-[13px] font-semibold leading-snug text-heading">{f.label}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-1">
+                          <Badge tone={workload ? 'navy' : 'orange'}>{workload ? 'Current workload' : 'Auto'}</Badge>
+                          {fromCrm && <span className="text-[10.5px] text-ink-mute">from CRM</span>}
+                          {loggable && <span className="text-[10.5px] text-ink-mute">{fromCrm ? '+ quick log' : 'quick log'}</span>}
+                        </span>
+                      </button>
+                      <span className={cn('font-display text-2xl font-semibold tabular-nums', value ? 'text-heading' : 'text-ink-mute')}>{value}</span>
+                      {loggable && onLog && !readOnly && (
+                        <button type="button" onClick={() => onLog(f.key)} aria-label={`Log ${f.label}`} title="Log work done outside the CRM"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-brand-600 transition hover:border-brand-300 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                          <Plus className="h-4 w-4" />
                         </button>
                       )}
                     </div>
@@ -186,6 +179,112 @@ export function ReportForm({ template, draft, onChange, readOnly, crm }: {
         );
       })}
     </div>
+  );
+}
+
+/** The activities (or assigned applications) behind one report figure, with corrections. */
+export function MetricActivitiesModal({ open, onClose, label, metric, employeeId, canVoid }: {
+  open: boolean; onClose: () => void; label: string; metric?: MetricValue; employeeId?: string; canVoid?: boolean;
+}) {
+  const { data, call } = useHR();
+  const { db } = useStore();
+  const [voiding, setVoiding] = useState<{ id: string; reason: string } | null>(null);
+  const ids = new Set((metric?.activity_ids ?? []).map(String));
+  const rows = data.activities.filter((a) => ids.has(a.id));
+  const apps = (metric?.application_ids ?? []).map((id) => db.applications.find((a) => a.id === id)).filter(Boolean);
+  const typeLabel = (t: string) => data.activityTypes.find((x) => x.id === t)?.label ?? t;
+  const student = (id: string | null) => {
+    const st = db.students.find((x) => x.id === id);
+    return st ? `${st.firstName} ${st.lastName}` : null;
+  };
+  return (
+    <Modal open={open} onClose={onClose} size="lg" title={label}
+      subtitle={metric?.kind === 'workload' ? 'Current workload — applications assigned to you right now' : `${metric?.value ?? 0} from the work recorded for this day`}>
+      {metric?.kind === 'workload' ? (
+        apps.length === 0 ? <EmptyState icon={Inbox} title="Nothing in this stage" /> : (
+          <ul className="divide-y divide-line">
+            {apps.map((a) => a && (
+              <li key={a.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <span><b className="text-heading">{a.ref}</b> · {student(a.studentId) ?? 'Student'}</span>
+                <Badge tone="slate">{a.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Inbox} title="No recorded work yet" description="CRM actions you take and work you log appear here automatically." />
+      ) : (
+        <ul className="divide-y divide-line">
+          {rows.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <div className="font-semibold text-heading">{typeLabel(a.activityType)}{a.quantity > 1 && <span className="text-ink-soft"> × {a.quantity}</span>}</div>
+                <div className="text-xs text-ink-soft">
+                  {companyTime(a.occurredAt)} · {a.source === 'crm' ? 'Recorded from the CRM' : 'Logged'}
+                  {a.fromStatus && a.toStatus && ` · ${a.fromStatus} → ${a.toStatus}`}
+                  {a.applicationId && ` · ${db.applications.find((x) => x.id === a.applicationId)?.ref ?? 'application'}`}
+                  {student(a.studentId) && ` · ${student(a.studentId)}`}
+                </div>
+                {a.note && <div className="mt-0.5 text-xs text-ink-mute">{a.note}</div>}
+              </div>
+              {canVoid && (a.source === 'logged' || employeeId !== undefined) && (
+                <Button size="sm" variant="secondary" onClick={() => setVoiding({ id: a.id, reason: '' })}>Correct</Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Modal open={!!voiding} onClose={() => setVoiding(null)} size="sm" title="Correct this activity" subtitle="It stops counting and is kept in the history with your reason."
+        footer={<><Button variant="secondary" onClick={() => setVoiding(null)}>Cancel</Button>
+          <Button disabled={(voiding?.reason.trim().length ?? 0) < 3} onClick={async () => {
+            if (!voiding) return;
+            const r = await call('void_work_activity', { p_id: Number(voiding.id), p_reason: voiding.reason }, { refresh: ['activities'], success: 'Activity corrected' });
+            if (r.ok) setVoiding(null);
+          }}>Remove from report</Button></>}>
+        <Field label="Reason" required><Input value={voiding?.reason ?? ''} onChange={(e) => setVoiding((v) => (v ? { ...v, reason: e.target.value } : v))} placeholder="e.g. Logged twice by mistake" /></Field>
+      </Modal>
+    </Modal>
+  );
+}
+
+/** Quick Log: record work done outside the CRM (calls, meetings, LinkedIn, training…). */
+export function QuickLogModal({ open, onClose, types }: { open: boolean; onClose: () => void; types: string[] }) {
+  const { data, call } = useHR();
+  const options = data.activityTypes.filter((t) => t.source === 'logged' && (types.length === 0 || types.includes(t.id)));
+  const [type, setType] = useState('');
+  const [qty, setQty] = useState('1');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const rid = useRef<string>('');
+  useEffect(() => {
+    if (open) {
+      setType(options[0]?.id ?? '');
+      setQty('1');
+      setNote('');
+      rid.current = crypto.randomUUID();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, types.join()]);
+  const submit = async () => {
+    setBusy(true);
+    const r = await call('log_work_activity', { p_type: type, p_quantity: Number(qty), p_note: note || null, p_request_id: rid.current },
+      { refresh: ['activities'], success: 'Work logged', successDetail: 'Your daily report updates automatically.' });
+    setBusy(false);
+    if (r.ok) onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} size="sm" title="Log work" subtitle="For work done outside the CRM. CRM actions are recorded automatically."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || !type || !(Number(qty) >= 1)} onClick={submit}>{busy ? 'Saving…' : 'Log work'}</Button></>}>
+      <div className="space-y-4">
+        <Field label="What did you do?" required>
+          <Select value={type} onChange={(e) => setType(e.target.value)} searchable={options.length > 8}>
+            {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </Select>
+        </Field>
+        <Field label="How many?" required><Input inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, '').slice(0, 3))} /></Field>
+        <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Agencies in Kochi" maxLength={500} /></Field>
+      </div>
+    </Modal>
   );
 }
 
@@ -535,9 +634,9 @@ export function useClockFlow() {
   return { today, live, openBreak, clock, punch, brk, dayOffLabel, now };
 }
 
+/** Today's attendance (read-only): the actions live in the top navigation (AttendanceControl). */
 export function PunchCard({ compact }: { compact?: boolean }) {
-  const { today, live, openBreak, clock, punch, brk, now } = useClockFlow();
-  const busy = clock.busy;
+  const { today, live, openBreak, clock, now } = useClockFlow();
   const locMsg = clock.locMsg;
   const state = today?.state ?? 'Not Checked In';
   const pct = live && today ? Math.min(100, (live.net / Math.max(1, today.requiredMinutes)) * 100) : 0;
@@ -563,20 +662,7 @@ export function PunchCard({ compact }: { compact?: boolean }) {
         <div><dt className="text-xs text-ink-mute">Break</dt><dd className="font-semibold text-heading">{live ? hm(live.brk) : '—'}{openBreak && <span className="ml-1 text-xs font-normal text-amber-600">running</span>}</dd></div>
         <div><dt className="text-xs text-ink-mute">Out</dt><dd className="font-semibold text-heading">{companyTime(today?.effOut)}</dd></div>
       </dl>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {state === 'Not Checked In' || state === 'Missing Punch-out' || (today && today.workDate !== companyDate(now()) && state === 'Checked Out') ? (
-          <Button icon={LogIn} disabled={!!busy || clock.coolingDown} onClick={() => punch('punch_in')}>{busy === 'in' ? 'Clocking in…' : 'Clock In'}</Button>
-        ) : state === 'Checked In' ? (
-          <>
-            <Button variant="secondary" icon={Coffee} disabled={!!busy || clock.coolingDown} onClick={() => brk('break_start')}>Start break</Button>
-            <Button icon={LogOut} disabled={!!busy || clock.coolingDown} onClick={() => punch('punch_out')}>{busy === 'out' ? 'Clocking out…' : 'Clock Out'}</Button>
-          </>
-        ) : state === 'On Break' ? (
-          <Button icon={Coffee} disabled={!!busy || clock.coolingDown} onClick={() => brk('break_end')}>End break</Button>
-        ) : (
-          <p className="text-sm text-ink-soft">Done for today. Use an attendance correction if something is wrong.</p>
-        )}
-      </div>
+      <p className="mt-4 text-[12px] text-ink-soft">Clock In, breaks and Clock Out are in the attendance control at the top of every page.</p>
       <p className="mt-3 flex items-start gap-1.5 text-[11px] text-ink-mute">
         {locMsg ? <MapPinOff className="mt-px h-3.5 w-3.5 shrink-0 text-amber-500" /> : <MapPin className="mt-px h-3.5 w-3.5 shrink-0" />}
         {locMsg ?? 'Your location is requested only when you punch in or out — never in the background. Times come from the server.'}

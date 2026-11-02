@@ -18,6 +18,7 @@ import Employees from './hr/Employees';
 import WorkReports from './hr/WorkReports';
 import HRLeave from './hr/HRLeave';
 import { HRSettings } from './hr/HRMisc';
+import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
 const T = companyDate();
@@ -81,6 +82,18 @@ function sample(): HRData {
     reports: [{ id: 'r1', employeeId: 'demo-po', templateId: 'partnership_officer', templateVersion: 1, designationId: 'partnership_officer', departmentId: 'partnerships', managerId: ME, reportDate: T, status: 'Submitted', metrics: { po_new_partners_contacted: 6, po_mous_signed: 1 }, notes: { achievements: 'Signed MOU with a sample agency.' }, sources: {}, submittedAt: at(T, '17:45'), reviewedBy: null, reviewedAt: null, reviewComment: null, createdAt: T, updatedAt: T }],
     templates,
     myTemplates: [{ ...templates[0], designationId: 'senior_international_recruitment_manager', designation: 'Senior International Recruitment Manager' }],
+    activities: [
+      { id: '1', employeeId: ME, designationId: 'senior_international_recruitment_manager', activityType: 'partner_onboarded', source: 'crm', entityType: 'partner', entityId: 'p1', applicationId: null, studentId: null, partnerId: 'p1', quantity: 1, fromStatus: null, toStatus: null, note: null, occurredAt: at(T, '11:05'), reportDate: T, voidedAt: null, voidedBy: null, voidReason: null },
+      { id: '2', employeeId: ME, designationId: 'senior_international_recruitment_manager', activityType: 'partner_contact', source: 'logged', entityType: null, entityId: null, applicationId: null, studentId: null, partnerId: null, quantity: 3, fromStatus: null, toStatus: null, note: 'Agencies in Kochi (sample)', occurredAt: at(T, '12:40'), reportDate: T, voidedAt: null, voidedBy: null, voidReason: null },
+    ],
+    activityTypes: [
+      { id: 'partner_onboarded', label: 'Partner added to the CRM', source: 'crm', description: 'You added a partner organisation', sort: 24 },
+      { id: 'partner_contact', label: 'New partner contacted', source: 'logged', description: null, sort: 40 },
+    ],
+    metricSources: [
+      { templateId: 'senior_recruitment_manager', fieldKey: 'pd_new_partners_contacted', kind: 'activity', activityTypes: ['partner_contact'], workload: null },
+      { templateId: 'senior_recruitment_manager', fieldKey: 'pd_partners_onboarded', kind: 'activity', activityTypes: ['partner_onboarded'], workload: null },
+    ],
   } as HRData;
 }
 
@@ -101,11 +114,13 @@ export default function HRDemo() {
     load: async () => undefined,
     now: () => new Date(),
     setting: <V,>(k: string, f: V) => ((data.settings.find((s) => s.key === k)?.value ?? f) as V),
-    call: async (fn: string, args: Record<string, unknown>) => {
+    call: async (fnName: string, args: Record<string, unknown>) => {
+      let fn = fnName;
       setLog((l) => [`${fn}(${JSON.stringify(args).slice(0, 120)})`, ...l].slice(0, 8));
       if (fn === 'save_daily_report') {
         setData((d) => ({ ...d, reports: [{ id: `r${Date.now()}`, employeeId: ME, templateId: args.p_template as string, templateVersion: 1, designationId: 'senior_international_recruitment_manager', departmentId: 'partnerships', managerId: null, reportDate: args.p_date as string, status: args.p_submit ? 'Submitted' : 'Draft', metrics: args.p_metrics as Record<string, number>, notes: args.p_notes as Record<string, string>, sources: args.p_sources as Record<string, string>, submittedAt: args.p_submit ? new Date().toISOString() : null, reviewedBy: null, reviewedAt: null, reviewComment: null, createdAt: T, updatedAt: new Date().toISOString() }, ...d.reports.filter((r) => !(r.employeeId === ME && r.reportDate === args.p_date))] }));
       }
+      if (fn === 'clock_action') fn = String(args.p_kind);
       if (fn === 'break_start') setData((d) => ({ ...d, breaks: [...d.breaks, { id: 'b2', sessionId: 'a1', startAt: new Date().toISOString(), endAt: null }], attendance: d.attendance.map((a) => (a.id === 'a1' ? { ...a, state: 'On Break' } : a)) }));
       if (fn === 'break_end') setData((d) => ({ ...d, breaks: d.breaks.map((b) => (b.endAt ? b : { ...b, endAt: new Date().toISOString() })), attendance: d.attendance.map((a) => (a.id === 'a1' ? { ...a, state: 'Checked In' } : a)) }));
       return { ok: true as const, data: undefined as never };
@@ -122,7 +137,8 @@ export default function HRDemo() {
           <div className="sticky top-0 z-30 flex flex-wrap gap-1.5 border-b border-line bg-surface/90 p-3 text-xs backdrop-blur">
             <b className="mr-2 self-center text-heading">HR harness (sample data)</b>
             {PAGES.map(([k, label]) => <NavLink key={k} to={`/ui/hr/${k}`} className={({ isActive }) => `rounded-lg border px-2 py-1 ${isActive ? 'border-rust text-rust' : 'border-line text-ink-soft'}`}>{label}</NavLink>)}
-            <span className="ml-auto max-w-[40%] truncate self-center text-ink-mute" title={log.join('\n')}>{log[0] ?? 'no calls yet'}</span>
+            <span className="ml-auto max-w-[30%] truncate self-center text-ink-mute" title={log.join('\n')}>{log[0] ?? 'no calls yet'}</span>
+            <AttendanceControl />
           </div>
           <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6">
             <Routes>{PAGES.map(([k, , el]) => <Route key={k} path={k} element={el} />)}</Routes>

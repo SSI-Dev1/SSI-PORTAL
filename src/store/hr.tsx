@@ -23,11 +23,14 @@ import type {
   LeaveBalance,
   LeaveRequest,
   LeaveType,
+  MetricSource,
   MyTemplate,
   ReportTemplate,
   Salary,
   Setting,
   Shift,
+  WorkActivity,
+  WorkActivityType,
 } from '../data/hr';
 
 type Row = Record<string, unknown>;
@@ -59,11 +62,14 @@ export interface HRData {
   reports: DailyReport[];
   templates: ReportTemplate[];
   myTemplates: MyTemplate[];
+  activities: WorkActivity[];
+  activityTypes: WorkActivityType[];
+  metricSources: MetricSource[];
 }
 const empty = (): HRData => ({
   employees: [], directory: [], departments: [], designations: [], shifts: [], salaries: [], settings: [], attendance: [], breaks: [],
   corrections: [], earlyCheckouts: [], leaveTypes: [], leaveRequests: [], balances: [], holidays: [], calendar: [], reports: [],
-  templates: [], myTemplates: [],
+  templates: [], myTemplates: [], activities: [], activityTypes: [], metricSources: [],
 });
 type Key = keyof HRData;
 
@@ -86,6 +92,7 @@ const TABLE_KEYS: Record<string, Key[]> = {
   work_calendar: ['calendar'],
   daily_reports: ['reports'],
   report_templates: ['templates', 'myTemplates'],
+  work_activities: ['activities'],
 };
 
 /** How far back attendance and reports are kept in memory (older periods are loaded on demand). */
@@ -127,6 +134,9 @@ function useHRValue() {
       reports: () => sb.from('daily_reports').select('*').gte('report_date', since).order('report_date', { ascending: false }).limit(5000),
       templates: () => sb.from('report_templates').select('*'),
       myTemplates: () => sb.rpc('my_report_templates'),
+      activities: () => sb.from('work_activities').select('*').gte('report_date', addDays(companyDate(), -62)).order('occurred_at', { ascending: false }).limit(5000),
+      activityTypes: () => sb.from('work_activity_types').select('*').order('sort'),
+      metricSources: () => sb.from('report_metric_sources').select('*'),
     };
     return f;
   }, []);

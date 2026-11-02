@@ -159,9 +159,34 @@ const hrNav: NavSection[] = [
 ];
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
+/** Pages listed under "Work Tools" in the Employee Workspace (shared with the Staff Portal). */
+const WORK_TOOLS = ['applications', 'students', 'course-finder', 'tasks'];
+const WS_NOW = 'ssi-workspace-now';
+
+/**
+ * Which menu to show. /…/hr and /…/work pages decide it; the shared Work Tools pages
+ * (Applications, Students, Course Finder, Tasks) keep the workspace they were opened from, so
+ * opening Applications from the Employee Workspace no longer switches to the Staff Portal menu.
+ */
 export const workspaceOf = (pathname: string): WorkspaceId => {
   const seg = pathname.split('/')[2] ?? '';
-  return seg === 'hr' ? 'hr' : seg === 'work' ? 'work' : 'business';
+  let ws: WorkspaceId;
+  if (seg === 'hr' || seg === 'work') ws = seg;
+  else {
+    let prev: string | null = null;
+    try {
+      prev = sessionStorage.getItem(WS_NOW);
+    } catch {
+      /* storage unavailable */
+    }
+    ws = prev === 'work' && WORK_TOOLS.includes(seg) ? 'work' : 'business';
+  }
+  try {
+    sessionStorage.setItem(WS_NOW, ws);
+  } catch {
+    /* storage unavailable */
+  }
+  return ws;
 };
 
 /** Workspaces this user can switch between without signing in again. */

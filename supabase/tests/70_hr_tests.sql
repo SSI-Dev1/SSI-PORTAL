@@ -121,22 +121,34 @@ begin; select pg_temp.trusted();
 select pg_temp.denied($$update public.employees set reporting_manager_id = '00000000-0000-0000-0000-0000000000f3' where id = '00000000-0000-0000-0000-0000000000f2'$$, 'reporting-line loops are rejected');
 rollback;
 
-\echo '== daily reports'
+\echo '== daily reports (figures come from recorded work)'
 begin; select pg_temp.act_as(:po);
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{"po_meetings_fixed": -1}', '{}')$$, 'negative counts rejected', '%whole number%');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{"po_meetings_fixed": 1.5}', '{}')$$, 'fractional counts rejected', '%whole number%');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{"made_up": 3}', '{}')$$, 'unknown fields rejected', '%Unknown report field%');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{}', '{}', '{}', true)$$, 'empty reports cannot be submitted', '%EMPTY_REPORT%');
-select pg_temp.denied($$select public.save_daily_report('application_team', public.company_today(), '{"pr_pending": 1}', '{}')$$, 'another designation''s template rejected');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today() + 1, '{"po_meetings_fixed": 1}', '{}')$$, 'future dates rejected');
-select public.save_daily_report('partnership_officer', public.company_today(), '{"po_new_partners_contacted": 4, "li_new_connections": 0}', '{"achievements": "Two partner calls"}');
-select pg_temp.check((select status = 'Draft' and metrics = '{"po_new_partners_contacted": 4, "li_new_connections": 0}' from public.daily_reports), 'draft saved with zero kept as a real value');
-select public.save_daily_report('partnership_officer', public.company_today(), '{"po_new_partners_contacted": 5, "po_mous_signed": 1}', '{"achievements": "MOU signed", "tomorrow_plan": "Follow up"}', '{}', true);
-select pg_temp.check((select status = 'Submitted' and submitted_at is not null and (metrics ->> 'po_mous_signed')::int = 1 from public.daily_reports), 'report submitted');
+select pg_temp.denied($$select public.log_work_activity('partner_onboarded', 1, null, gen_random_uuid())$$, 'CRM activities cannot be logged by hand', '%automatically%');
+select pg_temp.denied($$select public.log_work_activity('partner_contact', 0, null, gen_random_uuid())$$, 'quantity must be at least 1', '%1 to 500%');
+select public.log_work_activity('partner_contact', 4, 'Agencies in Kochi', '55555555-5555-4555-8555-555555555555');
+select public.log_work_activity('partner_contact', 4, 'Agencies in Kochi', '55555555-5555-4555-8555-555555555555');
+select pg_temp.check((select count(*) from public.work_activities where activity_type = 'partner_contact') = 1, 'repeated quick-log tap records once');
+select pg_temp.denied($$select public.save_daily_report('application_team', public.company_today(), '{}', '{}')$$, 'another designation''s template rejected');
+select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today() + 1, '{}', '{}')$$, 'future dates rejected');
+select public.save_daily_report('partnership_officer', public.company_today(), '{"po_new_partners_contacted": 999, "made_up": 3}', '{"achievements": "Two partner calls"}');
+select pg_temp.check((select status = 'Draft' and (metrics ->> 'po_new_partners_contacted')::int = 4 and (metrics ->> 'li_new_connections')::int = 0 and not metrics ? 'made_up' from public.daily_reports),
+  'figures are computed from recorded work; numbers sent by the browser are ignored');
+select pg_temp.check((select cardinality(source_activity_ids) = 1 from public.daily_reports), 'report keeps the activities behind its figures');
+select public.save_daily_report('partnership_officer', public.company_today(), '{}', '{"achievements": "MOU signed", "tomorrow_plan": "Follow up"}', '{}', true, null, '66666666-6666-4666-8666-666666666666');
+select public.save_daily_report('partnership_officer', public.company_today(), '{}', '{"achievements": "MOU signed", "tomorrow_plan": "Follow up"}', '{}', true, null, '66666666-6666-4666-8666-666666666666');
+select pg_temp.check((select status = 'Submitted' and submitted_at is not null from public.daily_reports), 'report submitted');
+select pg_temp.check((select count(*) from public.daily_report_events where action = 'submitted') = 1, 'double-clicked submit creates one submission');
 select pg_temp.check((select count(*) from public.daily_reports) = 1, 'same day and template updates the one report (no duplicate)');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{"po_closed": 1}', '{}')$$, 'submitted report is locked', '%REPORT_LOCKED%');
+select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today(), '{}', '{}')$$, 'submitted report is locked', '%REPORT_LOCKED%');
+select pg_temp.denied($$select public.log_work_activity('partner_call', 1, null, gen_random_uuid())$$, 'no new work can be logged into a submitted day', '%REPORT_LOCKED%');
 select pg_temp.denied($$select public.review_daily_report((select id from public.daily_reports), 'approve')$$, 'employees cannot approve their own report');
 commit;
+
+begin; select pg_temp.act_as(:pso);
+-- Nothing recorded: the report can still be submitted, with real zeros.
+select public.save_daily_report('partner_success_officer', public.company_today(), '{}', '{}', '{}', true);
+select pg_temp.check((select status = 'Submitted' and (metrics ->> 'lm_new_leads')::int = 0 from public.daily_reports), 'a day with no recorded work submits with zeros');
+rollback;
 
 begin; select pg_temp.act_as(:mgr);
 select pg_temp.check((select count(*) from public.daily_reports where employee_id = '00000000-0000-0000-0000-0000000000f3') = 1, 'manager sees the team report');
@@ -150,14 +162,16 @@ select pg_temp.check((select count(*) from public.daily_reports) = 0, 'colleague
 rollback;
 
 begin; select pg_temp.act_as(:po);
-select public.save_daily_report('partnership_officer', public.company_today(), '{"po_new_partners_contacted": 5, "po_mous_signed": 1, "li_new_connections": 12}', '{"achievements": "MOU signed"}', '{}', true);
-select pg_temp.check((select status = 'Submitted' and (metrics ->> 'li_new_connections')::int = 12 from public.daily_reports), 'corrected report resubmitted');
+select public.log_work_activity('linkedin_connection', 12, null, gen_random_uuid());
+select public.save_daily_report('partnership_officer', public.company_today(), '{}', '{"achievements": "MOU signed"}', '{}', true);
+select pg_temp.check((select status = 'Submitted' and (metrics ->> 'li_new_connections')::int = 12 and (metrics ->> 'po_new_partners_contacted')::int = 4 from public.daily_reports), 'corrected report resubmitted with the newly logged work');
+select pg_temp.check((select count(*) from public.daily_report_events where action = 'submitted' and (snapshot -> 'metrics' ->> 'li_new_connections')::int = 0) = 1, 'the first submission stays in the history unchanged');
 commit;
 
 begin; select pg_temp.act_as(:super);
 select public.review_daily_report((select id from public.daily_reports limit 1), 'approve');
 select pg_temp.check((select status = 'Approved' from public.daily_reports), 'admin approved the report');
-select pg_temp.check((select count(*) from public.daily_report_events) = 5, 'audit history has every save, submission and review (5)');
+select pg_temp.check((select count(*) from public.daily_report_events) = 5, 'audit history: draft, submit, correction request, resubmit, approval (5)');
 select pg_temp.check((select count(*) from public.report_expectations(public.company_today()) where employee_id = '00000000-0000-0000-0000-0000000000f3' and status = 'Approved') = 1, 'expectations list the approved report');
 select pg_temp.check((select count(*) from public.report_expectations(public.company_today()) where report_id is null) = 3, 'three employees with templates have not reported (no rows created)');
 commit;
@@ -169,7 +183,7 @@ commit;
 begin; select pg_temp.act_as(:po);
 select pg_temp.check((select designation_id = 'partnership_officer' and template_id = 'partnership_officer' and template_version = 1 from public.daily_reports), 'old report keeps its designation and template');
 select pg_temp.check((select string_agg(id, ',') from public.my_report_templates()) = 'partner_success_officer', 'new template for future reports');
-select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today() - 1, '{"po_closed": 1}', '{}')$$, 'old template no longer usable for new dates');
+select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today() - 1, '{}', '{}')$$, 'old template no longer usable for new dates');
 select pg_temp.check((select count(*) from public.designation_history where employee_id = '00000000-0000-0000-0000-0000000000f3') = 2, 'designation history recorded');
 rollback;
 
@@ -243,8 +257,8 @@ insert into public.early_checkout_requests (employee_id, work_date, requested_ti
   (:po, date_trunc('month', public.company_today())::date, now(), 'Family emergency', 'Approved'),
   (:po, date_trunc('month', public.company_today())::date + 1, now(), 'Medical emergency', 'Approved');
 select pg_temp.act_as(:po);
-select pg_temp.denied($$select public.request_early_checkout(now() + interval '1 hour', 'Emergency')$$, 'third early checkout in a month rejected', '%EARLY_LIMIT%');
-select pg_temp.denied($$select public.request_early_checkout(now() + interval '1 hour', '')$$, 'reason is mandatory');
+select pg_temp.denied($$select public.request_early_checkout((public.company_today()::timestamp + interval '23 hours 59 minutes') at time zone 'Asia/Kolkata', 'Emergency')$$, 'third early checkout in a month rejected', '%EARLY_LIMIT%');
+select pg_temp.denied($$select public.request_early_checkout((public.company_today()::timestamp + interval '23 hours 59 minutes') at time zone 'Asia/Kolkata', '')$$, 'reason is mandatory');
 rollback;
 begin; select pg_temp.trusted();
 insert into public.early_checkout_requests (id, employee_id, work_date, requested_time, reason, status) values

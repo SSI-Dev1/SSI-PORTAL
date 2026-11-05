@@ -5,6 +5,8 @@ import { Avatar, Button, Card, EmptyState, FilterSelect, PageHeader, Pagination,
 import { useToast } from '../../components/feedback';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
+import { ChatButton } from '../../components/ApplicationChat';
+import { useChat } from '../../store/chat';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { APP_STATUSES, type AppStatus } from '../../data/types';
 import { INTAKES } from '../../data/seed';
@@ -25,18 +27,22 @@ export default function Applications() {
   const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState<string | undefined>(params.get('open') ?? undefined);
   const [dragId, setDragId] = useState<string>();
+  const { openChat } = useChat();
 
   useEffect(() => {
     const o = params.get('open');
     const n = params.get('new');
+    const c = params.get('chat');
     if (o) setOpenId(o);
     if (n) setFormOpen(true);
-    if (o || n) {
+    if (c) openChat(c);
+    if (o || n || c) {
       params.delete('open');
       params.delete('new');
+      params.delete('chat');
       setParams(params, { replace: true });
     }
-  }, [params, setParams]);
+  }, [params, setParams, openChat]);
 
   const rows = useMemo(
     () =>
@@ -106,7 +112,7 @@ export default function Applications() {
           />
         ) : view === 'list' ? (
           <>
-            <Table head={['Student', 'University / Course', 'Country', 'Intake', 'Applied', 'Progress', 'Status']}>
+            <Table head={['Student', 'University / Course', 'Country', 'Intake', 'Applied', 'Progress', 'Status', 'Messages']}>
               {paged.rows.map((a) => {
                 const s = lk.student.get(a.studentId);
                 const u = lk.university.get(a.universityId);
@@ -139,6 +145,10 @@ export default function Applications() {
                     </td>
                     <td className="px-5 py-3.5">
                       <StatusBadge status={a.status} />
+                    </td>
+                    {/* Stays in view when the table scrolls sideways on smaller screens. */}
+                    <td className="sticky right-0 bg-surface px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <ChatButton applicationId={a.id} />
                     </td>
                   </tr>
                 );
@@ -177,13 +187,13 @@ export default function Applications() {
                         const s = lk.student.get(a.studentId);
                         const u = lk.university.get(a.universityId);
                         return (
+                          <div key={a.id} className="relative">
                           <button
-                            key={a.id}
                             type="button"
                             draggable={scoped.isAdmin}
                             onDragStart={() => setDragId(a.id)}
                             onClick={() => setOpenId(a.id)}
-                            className={cn('rounded-xl border border-line bg-surface p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card', dragId === a.id && 'opacity-50')}
+                            className={cn('w-full rounded-xl border border-line bg-surface p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-card', dragId === a.id && 'opacity-50')}
                           >
                             <div className="flex items-center gap-2">
                               <Avatar name={fullName(s)} size={26} />
@@ -196,6 +206,8 @@ export default function Applications() {
                               {a.intake} · {a.ref}
                             </div>
                           </button>
+                          <ChatButton applicationId={a.id} className="absolute bottom-2 right-2 h-8 w-8" />
+                          </div>
                         );
                       })}
                       {items.length === 0 && <div className="rounded-xl border border-dashed border-line px-3 py-6 text-center text-xs text-ink-mute">No applications</div>}

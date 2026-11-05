@@ -17,6 +17,7 @@ const RealtimeDemo = import.meta.env.DEV ? lazy(() => import('./pages/RealtimeDe
 const ApplicationFormDemo = import.meta.env.DEV ? lazy(() => import('./pages/ApplicationFormDemo')) : null;
 const CatalogueDemo = import.meta.env.DEV ? lazy(() => import('./pages/CatalogueDemo')) : null;
 const HRDemo = import.meta.env.DEV ? lazy(() => import('./pages/HRDemo')) : null;
+const ChatSearchDemo = import.meta.env.DEV ? lazy(() => import('./pages/ChatSearchDemo')) : null;
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Partners from './pages/admin/Partners';
 import PartnerDetail from './pages/admin/PartnerDetail';
@@ -29,6 +30,7 @@ import Settings from './pages/admin/Settings';
 import UserManagement from './pages/admin/UserManagement';
 import StaffDashboard from './pages/staff/StaffDashboard';
 import { HRProvider } from './store/hr';
+import { ChatProvider } from './store/chat';
 import { isHR } from './auth/roles';
 import type { Session } from './data/types';
 import WorkDashboard from './pages/work/WorkDashboard';
@@ -48,6 +50,7 @@ import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
 import { HRReminders, HRReports, HRSettings } from './pages/hr/HRMisc';
 import ClientDashboard from './pages/client/ClientDashboard';
 import CourseFinder from './pages/client/CourseFinder';
+import CourseSearch from './pages/shared/CourseSearch';
 import UpdatesClient from './pages/client/UpdatesClient';
 import Profile from './pages/client/Profile';
 import Students from './pages/shared/Students';
@@ -100,6 +103,7 @@ const sharedRoutes = (
     <Route path="assessments" element={<Assessments />} />
     <Route path="documents" element={<Documents />} />
     <Route path="finance" element={<Finance />} />
+    <Route path="course-search" element={<CourseSearch />} />
   </>
 );
 
@@ -140,10 +144,21 @@ export default function App() {
         <AuthProvider>
           <StoreProvider>
           <HRProvider>
+          <ChatProvider>
           <HashRouter>
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+            {ChatSearchDemo && (
+              <Route
+                path="/ui/chat"
+                element={
+                  <Suspense fallback={null}>
+                    <ChatSearchDemo />
+                  </Suspense>
+                }
+              />
+            )}
             {HRDemo && (
               <Route
                 path="/ui/hr/*"
@@ -274,6 +289,7 @@ export default function App() {
               <Route path="*" element={<Home />} />
             </Routes>
           </HashRouter>
+          </ChatProvider>
           </HRProvider>
           </StoreProvider>
         </AuthProvider>

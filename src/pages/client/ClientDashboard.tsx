@@ -6,6 +6,7 @@ import { StatCard } from '../../components/StatCard';
 import { StatusDonut } from '../../components/charts';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { StatusBadge, stageProgress, ApplicationDetailsModal } from '../../components/ApplicationDetailsModal';
+import { ChatButton } from '../../components/ApplicationChat';
 import { categoryMeta, priorityTone } from '../../components/UpdateCard';
 import { Badge } from '../../components/ui';
 import { StudentForm } from '../../components/forms/StudentForm';
@@ -103,8 +104,8 @@ export default function ClientDashboard() {
                 const u = lk.university.get(a.universityId);
                 const last = a.timeline[a.timeline.length - 1];
                 return (
-                  <li key={a.id}>
-                    <button type="button" onClick={() => setOpenApp(a.id)} className="flex w-full flex-col gap-3 rounded-xl px-3 py-3.5 text-left transition hover:bg-canvas sm:flex-row sm:items-center">
+                  <li key={a.id} className="flex items-center gap-2">
+                    <button type="button" onClick={() => setOpenApp(a.id)} className="flex min-w-0 flex-1 flex-col gap-3 rounded-xl px-3 py-3.5 text-left transition hover:bg-canvas sm:flex-row sm:items-center">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <Avatar name={fullName(s)} size={38} />
                         <div className="min-w-0">
@@ -122,6 +123,7 @@ export default function ClientDashboard() {
                         <StatusBadge status={a.status} />
                       </div>
                     </button>
+                    <ChatButton applicationId={a.id} />
                   </li>
                 );
               })}

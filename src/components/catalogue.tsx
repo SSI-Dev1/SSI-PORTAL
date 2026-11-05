@@ -90,6 +90,7 @@ export function ExternalLink({ href, children, variant = 'button' }: { href?: st
 }
 
 const score = (v?: number | null) => (v == null ? null : String(v));
+const yesNo = (v?: boolean | null) => (v == null ? null : v ? 'Yes' : 'No');
 type DetailTab = 'overview' | 'intakes' | 'requirements' | 'fees' | 'source';
 
 /** Read-only course details (every imported field); `actions` adds Edit / Apply buttons. */
@@ -154,6 +155,11 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
                 <Fact label="Campus" value={course.campus ?? uni?.city} />
                 <Fact label="Country" value={uni?.country} />
                 <Fact label="Study level" value={course.level} />
+                <Detail label="Program level">{course.programLevel}</Detail>
+                <Detail label="Study mode">{course.studyMode}</Detail>
+                <Detail label="Discipline area">{course.disciplineArea}</Detail>
+                <Detail label="Province / state">{uni?.state}</Detail>
+                <Detail label="STEM program">{yesNo(course.stem)}</Detail>
                 <Fact label="Duration" value={course.duration} />
                 <Fact label="University ranking" value={uni?.rankingDetails} wide />
                 <Fact label="Course website" value={course.websiteUrl && <ExternalLink href={course.websiteUrl} variant="text">{course.websiteUrl}</ExternalLink>} wide />
@@ -230,6 +236,16 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
                 <Fact label="PTE minimum band" value={score(course.pteBand)} />
                 <Fact label="DET score" value={score(course.detScore)} />
                 <Fact label="English proficiency exam waiver" value={course.englishWaiver} />
+                <Detail label="English proficiency exam required">{yesNo(course.englishRequired)}</Detail>
+                <Detail label="ESL / ELP pathway available">{yesNo(course.eslAvailable)}</Detail>
+                <Detail label="SAT score">{score(course.satMin)}</Detail>
+                <Detail label="ACT score">{score(course.actMin)}</Detail>
+                <Detail label="GRE score">{score(course.greMin)}</Detail>
+                <Detail label="GRE required">{yesNo(course.greRequired)}</Detail>
+                <Detail label="GMAT score">{score(course.gmatMin)}</Detail>
+                <Detail label="GMAT required">{yesNo(course.gmatRequired)}</Detail>
+                <Detail label="Mathematics required">{yesNo(course.mathsRequired)}</Detail>
+                <Detail label="Accepts 15 years of education">{yesNo(course.acceptsFifteenYears)}</Detail>
                 <Detail label="English requirement" wide>{course.englishRequirement}</Detail>
               </Section>
             </div>
@@ -238,6 +254,7 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
           {tab === 'fees' && (
             <Section title="Fees and scholarships" icon={Wallet}>
               <Fact label="Application fee" value={course.applicationFee} />
+              <Detail label="Application fee waiver">{yesNo(course.applicationFeeWaiver)}</Detail>
               <Fact label="Yearly tuition fee" value={course.tuitionText ?? money(course.tuition, course.currency)} />
               <Fact label="Scholarship available" value={course.scholarshipAvailable} />
               <Fact label="Average scholarship" value={course.averageScholarship} />
@@ -629,13 +646,13 @@ export function CatalogueImportDialog({ open, onClose }: { open: boolean; onClos
 export function UniversityForm({ open, university, onClose }: { open: boolean; university?: University; onClose: () => void }) {
   const { actions } = useStore();
   const toast = useToast();
-  const empty = { name: '', country: 'United Kingdom', city: '', website: '', type: 'Public' as University['type'], ranking: 0, partnerSince: String(new Date().getFullYear()), casDeposit: '', paymentPlan: '', moi: '', notes: '', rankingDetails: '', active: true };
+  const empty = { name: '', country: 'United Kingdom', city: '', website: '', type: 'Public' as University['type'], ranking: 0, partnerSince: String(new Date().getFullYear()), casDeposit: '', paymentPlan: '', moi: '', notes: '', rankingDetails: '', state: '', active: true };
   const [d, setD] = useState(empty);
   useEffect(() => {
     if (!open) return;
     setD(
       university
-        ? { ...empty, ...university, city: university.city ?? '', website: university.website ?? '', casDeposit: university.casDeposit ?? '', paymentPlan: university.paymentPlan ?? '', moi: (university.moiAccepted ?? []).join('\n'), notes: university.notes ?? '', rankingDetails: university.rankingDetails ?? '', active: university.active !== false }
+        ? { ...empty, ...university, city: university.city ?? '', website: university.website ?? '', casDeposit: university.casDeposit ?? '', paymentPlan: university.paymentPlan ?? '', moi: (university.moiAccepted ?? []).join('\n'), notes: university.notes ?? '', rankingDetails: university.rankingDetails ?? '', state: university.state ?? '', active: university.active !== false }
         : empty,
     );
   }, [open, university]);
@@ -644,7 +661,7 @@ export function UniversityForm({ open, university, onClose }: { open: boolean; u
     const patch = {
       name: d.name.trim(), country: d.country.trim(), city: d.city.trim(), website: d.website.trim(), type: d.type, ranking: Number(d.ranking) || 0,
       partnerSince: d.partnerSince, casDeposit: d.casDeposit.trim() || null, paymentPlan: d.paymentPlan.trim() || null,
-      moiAccepted: d.moi.split('\n').map((x) => x.trim()).filter(Boolean), notes: d.notes.trim() || null, rankingDetails: d.rankingDetails.trim() || null, active: d.active,
+      moiAccepted: d.moi.split('\n').map((x) => x.trim()).filter(Boolean), notes: d.notes.trim() || null, rankingDetails: d.rankingDetails.trim() || null, state: d.state.trim() || null, active: d.active,
     };
     if (university) actions.updateUniversity(university.id, patch);
     else actions.addUniversity(patch);
@@ -658,6 +675,7 @@ export function UniversityForm({ open, university, onClose }: { open: boolean; u
         <Field label="University name" required className="sm:col-span-2"><Input value={d.name} onChange={s('name')} autoFocus /></Field>
         <Field label="Country" required><Input value={d.country} onChange={s('country')} /></Field>
         <Field label="City / location"><Input icon={MapPin} value={d.city} onChange={s('city')} /></Field>
+        <Field label="Province / state"><Input value={d.state} onChange={s('state')} /></Field>
         <Field label="Website"><Input value={d.website} onChange={s('website')} /></Field>
         <Field label="Type">
           <Select value={d.type} onChange={(e) => setD({ ...d, type: e.target.value as University['type'] })}>

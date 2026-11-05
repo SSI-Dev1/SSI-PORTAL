@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2 } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
 import { useHR } from '../store/hr';
+import { useChat } from '../store/chat';
 import { AttendanceControl } from '../components/AttendanceControl';
 import { canOpen } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
@@ -44,6 +45,7 @@ export default function AppShell() {
 
   // Workspace from the URL (/staff/hr/…, /staff/work/…); designation workspace from the last choice.
   const hr = useHR();
+  const chat = useChat();
   const [, setWsTick] = useState(0);
   useEffect(() => {
     const h = () => setWsTick((n) => n + 1);
@@ -62,7 +64,7 @@ export default function AppShell() {
     base,
     portal: session?.role ?? 'client',
     orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,
-    badges: (session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}) as Record<string, number>,
+    badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread } : {}) } as Record<string, number>,
   };
 
   return (
@@ -288,17 +290,19 @@ function Notifications() {
   const unread = items.filter((n) => !n.readAt).length;
   const seen = useRef<Set<string> | null>(null);
   const toast = useToast();
+  const { openChat, openId } = useChat();
 
   // A subtle toast for notifications that arrive while the app is open (not on first load).
   useEffect(() => {
     const ids = new Set(items.map((n) => n.id));
     if (seen.current) {
-      const fresh = items.filter((n) => !seen.current!.has(n.id) && !n.readAt);
+      // No toast for the conversation already on screen.
+      const fresh = items.filter((n) => !seen.current!.has(n.id) && !n.readAt && !(openId && n.link === `applications?chat=${openId}`));
       if (fresh.length === 1) toast.info(fresh[0].title, fresh[0].body ?? undefined);
       else if (fresh.length > 1) toast.info(`${fresh.length} new notifications`);
     }
     seen.current = ids;
-  }, [items, toast]);
+  }, [items, toast, openId]);
 
   return (
     <div className="relative" ref={ref}>
@@ -347,7 +351,10 @@ function Notifications() {
                 onClick={() => {
                   setOpen(false);
                   actions.markNotificationRead(n.id);
-                  if (n.link) navigate(`${scoped.base}/${n.link}`);
+                  // A chat opens where the user is, without leaving the page or portal.
+                  const chatId = n.kind === 'chat' ? n.link?.match(/^applications\?chat=(.+)$/)?.[1] : undefined;
+                  if (chatId) openChat(chatId);
+                  else if (n.link) navigate(`${scoped.base}/${n.link}`);
                 }}
                 className="flex w-full animate-fade-in items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-canvas"
               >

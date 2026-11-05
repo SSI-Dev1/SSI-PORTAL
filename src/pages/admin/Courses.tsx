@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Moda
 import { useConfirm, useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
 import { CatalogueImportDialog, CourseDetails, IntakeManager, intakeLabel, intakeTone } from '../../components/catalogue';
-import { COURSE_DETAIL_FIELDS } from '../../lib/catalogueImport';
+import { COURSE_DETAIL_FIELDS, PROGRAM_LEVELS } from '../../lib/catalogueImport';
 import type { Course, StudyLevel } from '../../data/types';
 import { countryFlag, matches, money } from '../../lib/utils';
 
@@ -163,7 +163,7 @@ const DETAIL = Object.fromEntries(COURSE_DETAIL_FIELDS.map((f) => [f.prop, f])) 
 function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => void; course: Course | null }) {
   const { db, actions } = useStore();
   const toast = useToast();
-  const [tab, setTab] = useState<'details' | 'fees' | 'requirements' | 'source' | 'intakes'>('details');
+  const [tab, setTab] = useState<'details' | 'fees' | 'requirements' | 'search' | 'source' | 'intakes'>('details');
   const live = course ? db.courses.find((c) => c.id === course.id) ?? course : null;
   const init = (): CourseDraft => ({
     universityId: live?.universityId ?? db.universities[0]?.id ?? '', name: live?.name ?? '', level: (live?.level as StudyLevel) ?? 'Postgraduate',
@@ -198,7 +198,7 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
       const v = d.extra[f.prop].trim();
       if (f.kind === 'url' && v && !/^https?:\/\/\S+$/i.test(v)) return toast.error(`${f.label} must start with http:// or https://`);
       if (f.kind === 'number' && v && Number.isNaN(Number(v))) return toast.error(`${f.label} must be a number`);
-      (extra as Record<string, unknown>)[f.prop] = !v ? null : f.kind === 'number' ? Number(v) : v;
+      (extra as Record<string, unknown>)[f.prop] = !v ? null : f.kind === 'number' ? Number(v) : f.kind === 'boolean' ? v === 'true' : v;
     }
     const patch: Partial<Course> = {
       universityId: d.universityId, name: d.name.trim(), level: d.level, field: d.field.trim(), faculty: opt(d.faculty), duration: d.duration.trim(),
@@ -237,6 +237,16 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
       </Field>
     );
   };
+  // Yes / No / Not recorded: only a recorded answer can match a search filter.
+  const yn = (k: DetailProp) => (
+    <Field key={k} label={DETAIL[k].label}>
+      <Select value={d.extra[k]} onChange={(e) => setExtra(k, e.target.value)} aria-label={DETAIL[k].label}>
+        <option value="">Not recorded</option>
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </Select>
+    </Field>
+  );
   const area = (k: keyof CourseDraft, label: string, rows = 3) => (
     <Field label={label} className="sm:col-span-2">
       <textarea value={String(d[k] ?? '')} onChange={txt(k)} rows={rows} className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
@@ -261,6 +271,7 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
           { value: 'details', label: 'Details' },
           { value: 'fees', label: 'Fees & application' },
           { value: 'requirements', label: 'Requirements' },
+          { value: 'search', label: 'Search fields' },
           { value: 'source', label: 'Source & notes' },
           ...(live ? [{ value: 'intakes' as const, label: 'Intakes', count: db.courseIntakes.filter((i) => i.courseId === live.id).length }] : []),
         ]}
@@ -298,6 +309,32 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
           <Field label="Early bird discount"><Input value={d.earlyBird} onChange={txt('earlyBird')} /></Field>
           <Field label="Accommodation"><Input value={d.accommodation} onChange={txt('accommodation')} /></Field>
           <p className="text-xs text-ink-mute sm:col-span-2">Intake months and deadlines per intake are edited in the Intakes tab.</p>
+        </div>
+      )}
+      {tab === 'search' && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <p className="text-sm text-ink-soft sm:col-span-2">Advanced Course Search only matches what is recorded here. Leave a field empty when it is not confirmed. A filter appears in the search as soon as any course has data for it.</p>
+          <Field label="Program level" hint="Leave empty to use the study level">
+            <Select value={d.extra.programLevel} onChange={(e) => setExtra('programLevel', e.target.value)} aria-label="Program level">
+              <option value="">Same as study level</option>
+              {PROGRAM_LEVELS.map((l) => <option key={l}>{l}</option>)}
+            </Select>
+          </Field>
+          {ex('studyMode', { placeholder: 'e.g. On Campus, Online, Hybrid' })}
+          {ex('disciplineArea')}
+          {yn('stem')}
+          {yn('eslAvailable')}
+          {yn('acceptsFifteenYears')}
+          {yn('englishRequired')}
+          {yn('mathsRequired')}
+          {ex('satMin')}
+          {ex('actMin')}
+          {ex('greMin')}
+          {yn('greRequired')}
+          {ex('gmatMin')}
+          {yn('gmatRequired')}
+          {yn('applicationFeeWaiver')}
+          {ex('scholarshipAmount')}
         </div>
       )}
       {tab === 'source' && (

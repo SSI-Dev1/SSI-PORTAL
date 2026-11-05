@@ -73,7 +73,7 @@ function toRow(obj: object, omit: string[] = []): Row {
   if ('audience' in out) out.audience = out.audience === 'all' ? null : out.audience;
   return out;
 }
-function fromRow<T>(row: Row): T {
+export function fromRow<T>(row: Row): T {
   const out: Row = {};
   for (const [k, v] of Object.entries(row)) out[camel(k)] = v ?? (k === 'dob' || k === 'website' || k === 'notes' ? '' : v);
   if ('audience' in out && out.audience == null) out.audience = 'all';

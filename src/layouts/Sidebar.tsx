@@ -31,6 +31,7 @@ import {
   FileText,
   Landmark,
   LayoutDashboard,
+  ListFilter,
   ListTodo,
   Megaphone,
   Settings,
@@ -75,6 +76,7 @@ const adminNav: NavSection[] = [
   ] },
   { id: 'catalogue', title: 'Catalogue', items: [
     { to: 'providers', label: 'Education Providers', icon: Landmark },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
     { to: 'courses', label: 'Courses', icon: BookOpen },
   ] },
   { id: 'operations', title: 'Operations', items: [
@@ -103,6 +105,7 @@ const staffNav: NavSection[] = [
     { to: 'documents', label: 'Document Verification', icon: FileCheck2 },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
   ] },
   { id: 'operations', title: 'Operations', items: [
     { to: 'finance', label: 'Finance', icon: Wallet },
@@ -132,6 +135,7 @@ const employeeNav: NavSection[] = [
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
   ] },
   { id: 'w-account', title: 'Account', items: [{ to: 'work/profile', label: 'My Profile', icon: UserCircle2 }] },
@@ -160,7 +164,7 @@ const hrNav: NavSection[] = [
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
 /** Pages listed under "Work Tools" in the Employee Workspace (shared with the Staff Portal). */
-const WORK_TOOLS = ['applications', 'students', 'course-finder', 'tasks'];
+const WORK_TOOLS = ['applications', 'students', 'course-finder', 'course-search', 'tasks'];
 const WS_NOW = 'ssi-workspace-now';
 
 /**
@@ -227,6 +231,7 @@ const clientNav: NavSection[] = [
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
   ] },
   { id: 'workspace', title: 'Workspace', items: [
     { to: 'documents', label: 'Documents', icon: FileText },

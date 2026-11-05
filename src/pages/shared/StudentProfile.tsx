@@ -24,6 +24,7 @@ import { StudentForm } from '../../components/forms/StudentForm';
 import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { DocumentUpload } from '../../components/forms/DocumentUpload';
 import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
+import { ChatButton } from '../../components/ApplicationChat';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { countryFlag, fileSize, formatDate, fullName, timeAgo } from '../../lib/utils';
 import { studentTone } from './Students';
@@ -201,7 +202,8 @@ export default function StudentProfile() {
               {apps.map((a) => {
                 const uni = lk.university.get(a.universityId);
                 return (
-                  <button key={a.id} type="button" onClick={() => setOpenApp(a.id)} className="flex w-full flex-col gap-3 p-5 text-left transition hover:bg-brand-50/30 sm:flex-row sm:items-center">
+                  <div key={a.id} className="flex items-center gap-2 pr-4 transition hover:bg-brand-50/30">
+                  <button type="button" onClick={() => setOpenApp(a.id)} className="flex min-w-0 flex-1 flex-col gap-3 p-5 text-left sm:flex-row sm:items-center">
                     <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-canvas text-xl">{countryFlag[uni?.country ?? '']}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold text-heading">{lk.course.get(a.courseId)?.name}</span>
@@ -214,6 +216,8 @@ export default function StudentProfile() {
                     </span>
                     <StatusBadge status={a.status} />
                   </button>
+                  <ChatButton applicationId={a.id} />
+                  </div>
                 );
               })}
             </div>

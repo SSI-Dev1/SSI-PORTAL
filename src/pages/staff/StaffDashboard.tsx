@@ -1,5 +1,6 @@
 // Staff Portal home: the employee's own work (assigned applications and tasks) plus the
 // queues their permissions cover. Every number comes from live, RLS-filtered data.
+import { ChatButton } from '../../components/ApplicationChat';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, FileCheck2, FileStack, ListTodo, UserCheck } from 'lucide-react';
@@ -60,8 +61,8 @@ export default function StaffDashboard() {
               {myApps.slice(0, 8).map((a) => {
                 const s = lk.student.get(a.studentId);
                 return (
-                  <li key={a.id}>
-                    <button type="button" onClick={() => navigate(`/staff/applications?open=${a.id}`)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-canvas">
+                  <li key={a.id} className="flex items-center pr-3">
+                    <button type="button" onClick={() => navigate(`/staff/applications?open=${a.id}`)} className="flex min-w-0 flex-1 items-center gap-3 px-5 py-3 text-left transition hover:bg-canvas">
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-heading">{s ? `${s.firstName} ${s.lastName}` : a.ref}</span>
                         <span className="block truncate text-xs text-ink-mute">
@@ -71,6 +72,7 @@ export default function StaffDashboard() {
                       <Badge tone={appStatusTone[a.status]}>{a.status}</Badge>
                       <ChevronRight className="h-4 w-4 text-ink-mute" />
                     </button>
+                    <ChatButton applicationId={a.id} />
                   </li>
                 );
               })}

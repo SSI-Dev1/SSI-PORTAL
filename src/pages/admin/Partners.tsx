@@ -296,6 +296,12 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
         <Field label="Commission rate (%)">
           <Input type="number" min={0} max={40} value={d.commissionRate} onChange={(e) => set('commissionRate', Number(e.target.value))} />
         </Field>
+        <Field label="Partnership Officer" hint="Takes part in this partner's application chats">
+          <Select value={d.partnershipOfficerId ?? ''} onChange={(e) => set('partnershipOfficerId', e.target.value || null)} aria-label="Partnership Officer">
+            <option value="">Not assigned</option>
+            {db.staff.map((m) => <option key={m.id} value={m.id}>{m.fullName}{m.department ? ` · ${m.department}` : ''}</option>)}
+          </Select>
+        </Field>
       </div>
     </Modal>
   );

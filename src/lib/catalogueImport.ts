@@ -50,7 +50,7 @@ export interface CourseInput {
   course_requirement?: string | null;
   documents_required?: string | null;
   /** Extra course fields (see COURSE_DETAIL_FIELDS), applied by import_catalogue(). */
-  details?: Partial<Record<CourseDetailKey, string | number | null>>;
+  details?: Partial<Record<CourseDetailKey, string | number | boolean | null>>;
   /** The original spreadsheet row: every column header → cell text (null when blank). */
   source_data?: Record<string, string | null>;
   source_row?: number;
@@ -82,8 +82,32 @@ export const COURSE_DETAIL_FIELDS = [
   { key: 'pte_band', prop: 'pteBand', label: 'PTE no band less than', kind: 'number' },
   { key: 'det_score', prop: 'detScore', label: 'DET score', kind: 'number' },
   { key: 'source_serial', prop: 'sourceSerial', label: 'Source serial no.', kind: 'text' },
+  // Verified search fields. They stay empty until Admin enters or imports them; nothing is inferred.
+  { key: 'program_level', prop: 'programLevel', label: 'Program level', kind: 'text' },
+  { key: 'discipline_area', prop: 'disciplineArea', label: 'Discipline area', kind: 'text' },
+  { key: 'study_mode', prop: 'studyMode', label: 'Study mode', kind: 'text' },
+  { key: 'esl_available', prop: 'eslAvailable', label: 'ESL / ELP pathway available', kind: 'boolean' },
+  { key: 'sat_min', prop: 'satMin', label: 'SAT score', kind: 'number' },
+  { key: 'act_min', prop: 'actMin', label: 'ACT score', kind: 'number' },
+  { key: 'gre_min', prop: 'greMin', label: 'GRE score', kind: 'number' },
+  { key: 'gmat_min', prop: 'gmatMin', label: 'GMAT score', kind: 'number' },
+  { key: 'english_required', prop: 'englishRequired', label: 'English proficiency exam required', kind: 'boolean' },
+  { key: 'gre_required', prop: 'greRequired', label: 'GRE required', kind: 'boolean' },
+  { key: 'gmat_required', prop: 'gmatRequired', label: 'GMAT required', kind: 'boolean' },
+  { key: 'maths_required', prop: 'mathsRequired', label: 'Mathematics required', kind: 'boolean' },
+  { key: 'stem', prop: 'stem', label: 'STEM program', kind: 'boolean' },
+  { key: 'accepts_fifteen_years', prop: 'acceptsFifteenYears', label: 'Accepts 15 years of education', kind: 'boolean' },
+  { key: 'application_fee_waiver', prop: 'applicationFeeWaiver', label: 'Application fee waiver', kind: 'boolean' },
+  { key: 'scholarship_amount', prop: 'scholarshipAmount', label: 'Scholarship amount (number, course currency)', kind: 'number' },
 ] as const;
 export type CourseDetailKey = (typeof COURSE_DETAIL_FIELDS)[number]['key'];
+
+/** Program levels Admin can give a course (database check: courses_program_level_known). */
+export const PROGRAM_LEVELS: string[] = [
+  'High School (11th-12th)', 'UG Diploma / Certificate / Associate Degree', 'Undergraduate', 'PG Diploma / Certificate', 'Postgraduate', 'UG + PG Accelerated Degree', 'PhD',
+  'Short-Term / Summer Programs', 'Pathway Programs (UG)', 'Pathway Programs (PG)', 'Semester Study Abroad', 'Twinning Programs (UG)', 'Twinning Programs (PG)',
+  'English Language Programs', 'Online / Distance Learning', 'Hybrid Programs',
+];
 
 export interface UniversityInput {
   name: string;
@@ -94,6 +118,7 @@ export interface UniversityInput {
   moi_accepted?: string[];
   notes?: string | null;
   ranking_details?: string | null;
+  state?: string | null;
 }
 
 export interface CataloguePayload {
@@ -591,6 +616,11 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
     };
     // Specific headers first, so generic patterns ("fee", "intake") cannot claim them.
     const map = {
+      // Optional verified search fields; a file without these columns leaves them empty.
+      state: c(/^(state|province)\b|^province \| state/), discipline: c(/discipline/), programLevel: c(/^program(me)? (category|type)$/), mode: c(/study mode|mode of study/),
+      esl: c(/^(esl|elp)\b|english language (prep|pathway)/), sat: c(/^sat( score)?$/), act: c(/^act( score)?$/), gre: c(/^gre( score)?$/), gmat: c(/^gmat( score)?$/),
+      englishRequired: c(/^english (proficiency )?(exam )?required$/), greRequired: c(/^gre required$/), gmatRequired: c(/^gmat required$/), mathsRequired: c(/^(maths?|mathematics) required$/),
+      stem: c(/^stem\b/), fifteen: c(/15 years/), feeWaiver: c(/application fee waiver/), scholarshipAmount: c(/^scholarship amount \(number\)$/),
       serial: c(/^(serial|s\.?\s?no|sl\.?\s?no|#$)/), ranking: c(/ranking/), website: c(/website|course (url|link)|^url$/),
       appFee: c(/^application fee/), appMode: c(/application mode/), deadline: c(/deadline/),
       scholarship: c(/^scholarship( available)?$/), avgScholarship: c(/average scholarship|scholarship amount/),
@@ -627,7 +657,7 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
         invalid.push({ where: `${s.name} row ${r}`, reason: `Unknown study level "${get('level') ?? ''}"` });
         continue;
       }
-      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [], ranking_details: clean(get('ranking')) };
+      const u = unis.get(norm(uniName)) ?? { name: fixTypos(uniName), country: clean(get('country')) ?? '', city: clean(get('city')), moi_accepted: [], ranking_details: clean(get('ranking')), state: clean(get('state')) };
       if (!u.country && clean(get('country'))) u.country = clean(get('country'))!;
       unis.set(norm(uniName), u);
       const key = `${norm(uniName)}|${norm(name)}`;
@@ -655,6 +685,23 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
         }
         return v;
       };
+      // Yes / No columns: anything else is reported and stays empty rather than being guessed.
+      const yesNo = (k: keyof typeof map, label: string) => {
+        const v = raw(k);
+        if (v == null) return null;
+        if (/^(yes|y|true)$/i.test(v)) return true;
+        if (/^(no|n|false)$/i.test(v)) return false;
+        invalid.push({ where: `${s.name} row ${r}`, reason: `${label} "${v}" is not Yes or No (kept in the source record)` });
+        return null;
+      };
+      const programLevel = (() => {
+        const v = clean(get('programLevel'));
+        if (v && !PROGRAM_LEVELS.includes(v)) {
+          invalid.push({ where: `${s.name} row ${r}`, reason: `Program level "${v}" is not a known level (kept in the source record)` });
+          return null;
+        }
+        return v;
+      })();
       const money = parseMoney(get('tuition'));
       const scores = !!(map.ielts || map.toefl || map.pte || map.det);
       const details: CourseInput['details'] = {
@@ -664,6 +711,11 @@ function parseFlat(sheets: Sheet[], source: string): ParseResult | null {
         backlog_range: raw('backlog'), remarks: raw('remarks'), english_waiver: raw('waiver'), ielts_band: num('ieltsBand', 'IELTS band'),
         toefl_score: num('toefl', 'TOEFL score'), toefl_band: num('toeflBand', 'TOEFL band'), pte_score: num('pte', 'PTE score'),
         pte_band: num('pteBand', 'PTE band'), det_score: num('det', 'DET score'), source_serial: raw('serial'),
+        program_level: programLevel, discipline_area: clean(get('discipline')), study_mode: clean(get('mode')), esl_available: yesNo('esl', 'ESL / ELP'),
+        sat_min: num('sat', 'SAT score'), act_min: num('act', 'ACT score'), gre_min: num('gre', 'GRE score'), gmat_min: num('gmat', 'GMAT score'),
+        english_required: yesNo('englishRequired', 'English required'), gre_required: yesNo('greRequired', 'GRE required'), gmat_required: yesNo('gmatRequired', 'GMAT required'),
+        maths_required: yesNo('mathsRequired', 'Mathematics required'), stem: yesNo('stem', 'STEM'), accepts_fifteen_years: yesNo('fifteen', '15 years of education'),
+        application_fee_waiver: yesNo('feeWaiver', 'Application fee waiver'), scholarship_amount: num('scholarshipAmount', 'Scholarship amount'),
       };
       for (const k of Object.keys(details) as CourseDetailKey[]) if (details[k] == null) delete details[k];
       const sch = raw('scholarship');
@@ -729,7 +781,7 @@ export function parseCatalogue(sheets: Sheet[], source: string): ParseResult {
 // ------------------------------------------------------------------ preview
 
 export interface CurrentCatalogue {
-  universities: { id: string; name: string; country: string; city?: string | null; casDeposit?: string | null; paymentPlan?: string | null; moiAccepted?: string[] | null; notes?: string | null; rankingDetails?: string | null }[];
+  universities: { id: string; name: string; country: string; city?: string | null; casDeposit?: string | null; paymentPlan?: string | null; moiAccepted?: string[] | null; notes?: string | null; rankingDetails?: string | null; state?: string | null }[];
   courses: (Record<string, unknown> & { id: string; universityId: string; name: string })[];
   intakes: { id: string; courseId: string; intakeMonth: number; intakeYear: number; startDate?: string | null; applicationDeadline?: string | null; endDate?: string | null; inductionDate?: string | null; enrolmentDeadline?: string | null; notes?: string | null }[];
   blacklist: { name: string }[];
@@ -787,6 +839,7 @@ export function previewImport(parsed: ParseResult, current: CurrentCatalogue, ov
     cmp('Payment plan', cur.paymentPlan, u.payment_plan);
     cmp('MOI accepted list', cur.moiAccepted, u.moi_accepted);
     cmp('Ranking', cur.rankingDetails, u.ranking_details);
+    cmp('Province / state', cur.state, u.state);
     if (changes.length) p.updatedUniversities.push({ key: u.name, label: u.name, changes });
   }
 

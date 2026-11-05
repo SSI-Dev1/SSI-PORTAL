@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, CheckCircle2, Circle, ExternalLink, Save, Trash2 } from 'lucide-react';
 import { Badge, Button, Field, Input, Modal, Progress, Select } from './ui';
+import { ChatButton } from './ApplicationChat';
 import { useConfirm, useToast } from './feedback';
 import { useLookup, useScoped, useStore } from '../store/store';
 import { APP_STATUSES, type AppStatus, type Application } from '../data/types';
@@ -139,6 +140,7 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
               Delete
             </Button>
           )}
+          <ChatButton applicationId={app.id} label className={internal ? undefined : 'mr-auto'} />
           {/* On phones the header × closes; keep the footer to the main actions. */}
           <Button variant="secondary" onClick={onClose} className={internal ? 'hidden sm:inline-flex' : undefined}>
             {internal ? 'Cancel' : 'Close'}

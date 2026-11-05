@@ -88,6 +88,7 @@ export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
   students: 'students',
   applications: 'applications',
   'course-finder': 'course_finder',
+  'course-search': 'course_finder',
   assessments: 'assessments',
   documents: 'documents',
   finance: 'finance',

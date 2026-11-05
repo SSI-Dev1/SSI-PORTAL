@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, CalendarDays, ExternalLink, Globe, LogIn, Mail, M
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Progress, Table, Tabs } from '../../components/ui';
 import { StatusDonut, TrendChart } from '../../components/charts';
 import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
+import { ChatButton } from '../../components/ApplicationChat';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
@@ -176,7 +177,7 @@ export default function PartnerDetail() {
           {apps.length === 0 ? (
             <EmptyState icon={Users} title="No applications yet" />
           ) : (
-            <Table head={['Student', 'University', 'Intake', 'Progress', 'Status']}>
+            <Table head={['Student', 'University', 'Intake', 'Progress', 'Status', 'Messages']}>
               {apps.map((a) => (
                 <tr key={a.id} className="cursor-pointer hover:bg-brand-50/30" onClick={() => setOpenApp(a.id)}>
                   <td className="px-5 py-3.5">
@@ -190,6 +191,7 @@ export default function PartnerDetail() {
                   <td className="px-5 py-3.5 text-ink-soft">{a.intake}</td>
                   <td className="w-32 px-5 py-3.5"><Progress value={stageProgress(a.status)} /></td>
                   <td className="px-5 py-3.5"><StatusBadge status={a.status} /></td>
+                  <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}><ChatButton applicationId={a.id} /></td>
                 </tr>
               ))}
             </Table>

@@ -27,6 +27,8 @@ export interface Partner {
   modules?: string[];
   archivedAt?: string | null;
   address?: string | null;
+  /** Employee responsible for this partner; takes part in its application chats. */
+  partnershipOfficerId?: string | null;
 }
 
 export type StudentStatus = 'Lead' | 'Active' | 'Enrolled' | 'On Hold';
@@ -74,6 +76,8 @@ export interface University {
   notes?: string | null;
   /** Ranking text as supplied (may list several ranking systems, one per line). */
   rankingDetails?: string | null;
+  /** Province / state, when recorded. */
+  state?: string | null;
   source?: string | null;
   updatedAt?: string;
 }
@@ -123,6 +127,23 @@ export interface Course {
   pteBand?: number | null;
   detScore?: number | null;
   sourceSerial?: string | null;
+  // Verified search fields: empty means not recorded, never "no".
+  programLevel?: string | null;
+  disciplineArea?: string | null;
+  studyMode?: string | null;
+  eslAvailable?: boolean | null;
+  satMin?: number | null;
+  actMin?: number | null;
+  greMin?: number | null;
+  gmatMin?: number | null;
+  englishRequired?: boolean | null;
+  greRequired?: boolean | null;
+  gmatRequired?: boolean | null;
+  mathsRequired?: boolean | null;
+  stem?: boolean | null;
+  acceptsFifteenYears?: boolean | null;
+  applicationFeeWaiver?: boolean | null;
+  scholarshipAmount?: number | null;
   sourceRow?: number | null;
   /** The original spreadsheet row (column header → cell text). */
   sourceData?: Record<string, string | null> | null;

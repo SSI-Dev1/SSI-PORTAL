@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Palmtree, Settings2 } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Segmented, Table, Tabs } from '../../components/ui';
 import { ApprovalsPanel, ExportButtons, requestTone } from '../../components/hr';
+import { LeaveHistoryModal, leaveWhen } from '../../components/hrProfile';
 import { useHR, useHRLookup } from '../../store/hr';
-import { fmtDay, type LeaveType } from '../../data/hr';
+import { fmtDays, halfDayLabel, type LeaveRequest, type LeaveType } from '../../data/hr';
 
 export default function HRLeave() {
   const { data, call } = useHR();
@@ -14,6 +15,8 @@ export default function HRLeave() {
   const [status, setStatus] = useState('');
   const [adjust, setAdjust] = useState<{ emp: string; type: string; days: string; note: string } | null>(null);
   const [policy, setPolicy] = useState<LeaveType | null>(null);
+  const [historyOf, setHistoryOf] = useState<LeaveRequest | null>(null);
+  const paidTypes = data.leaveTypes.filter((t) => t.active && t.paid !== false);
   const emps = [...new Set(data.balances.map((b) => b.employeeId))];
   const history = data.leaveRequests.filter((r) => !status || r.status === status);
   return (
@@ -21,7 +24,7 @@ export default function HRLeave() {
       <PageHeader title="Leave Management" subtitle="Sick Leave lapses at year end; Paid Leave carries forward. Balances change only when leave is approved or cancelled."
         actions={<ExportButtons filename="ssi-leave" rows={() => tab === 'balances'
           ? data.balances.map((b) => ({ Employee: lk.name(b.employeeId), Type: b.name, Year: b.leaveYear, Entitled: b.accrued, Carried: b.carried, Adjusted: b.adjusted, Used: b.used, Pending: b.pending, Available: b.available }))
-          : history.map((r) => ({ Employee: lk.name(r.employeeId), Type: lk.leaveType.get(r.leaveType)?.name, From: r.startDate, To: r.endDate, Days: r.days, Status: r.status, 'Decided by': r.decidedBy ? lk.name(r.decidedBy) : '' }))} />} />
+          : history.map((r) => ({ Employee: lk.name(r.employeeId), Type: lk.leaveType.get(r.leaveType)?.name, From: r.startDate, To: r.endDate, Session: halfDayLabel(r.halfDaySession) ?? 'Full day', Days: r.days, Status: r.status, 'Decided by': r.decidedBy ? lk.name(r.decidedBy) : '' }))} />} />
       <Tabs className="mb-5" value={tab} onChange={setTab} tabs={[
         { value: 'approvals', label: 'Approvals', count: data.leaveRequests.filter((r) => r.status === 'Pending').length },
         { value: 'balances', label: 'Balances' }, { value: 'history', label: 'All requests' }, { value: 'policy', label: 'Policy' },
@@ -30,15 +33,15 @@ export default function HRLeave() {
       {tab === 'balances' && (
         <Card>
           {emps.length === 0 ? <EmptyState icon={Palmtree} title="No balances yet" /> : (
-            <Table className="hr-table" head={['Employee', ...data.leaveTypes.filter((t) => t.active).map((t) => `${t.name} (avail. / used / pending)`), '']}>
+            <Table className="hr-table" head={['Employee', ...paidTypes.map((t) => `${t.name} (avail. / used / pending)`), '']}>
               {emps.map((id) => (
                 <tr key={id}>
                   <td className="font-medium text-heading">{lk.name(id)}</td>
-                  {data.leaveTypes.filter((t) => t.active).map((t) => {
+                  {paidTypes.map((t) => {
                     const b = data.balances.find((x) => x.employeeId === id && x.leaveType === t.id);
-                    return <td key={t.id} className="tabular-nums">{b ? <><b className="text-heading">{b.available}</b> / {b.used} / {b.pending}{b.carried ? <span className="text-xs text-ink-mute"> · +{b.carried} carried</span> : null}</> : '—'}</td>;
+                    return <td key={t.id} className="tabular-nums">{b ? <><b className="text-heading">{fmtDays(b.available)}</b> / {fmtDays(b.used)} / {fmtDays(b.pending)}{b.carried ? <span className="text-xs text-ink-mute"> · +{fmtDays(b.carried)} carried</span> : null}</> : '—'}</td>;
                   })}
-                  <td className="text-right"><Button size="sm" variant="secondary" onClick={() => setAdjust({ emp: id, type: data.leaveTypes[0]?.id ?? '', days: '', note: '' })}>Adjust</Button></td>
+                  <td className="text-right"><Button size="sm" variant="secondary" onClick={() => setAdjust({ emp: id, type: paidTypes[0]?.id ?? '', days: '', note: '' })}>Adjust</Button></td>
                 </tr>
               ))}
             </Table>
@@ -54,11 +57,11 @@ export default function HRLeave() {
                 <tr key={r.id}>
                   <td className="font-medium text-heading">{lk.name(r.employeeId)}</td>
                   <td>{lk.leaveType.get(r.leaveType)?.name}</td>
-                  <td>{fmtDay(r.startDate)}{r.endDate !== r.startDate && ` – ${fmtDay(r.endDate)}`}</td>
-                  <td>{r.days}</td>
+                  <td>{leaveWhen(r)}</td>
+                  <td>{fmtDays(r.days)}</td>
                   <td><Badge tone={requestTone[r.status]}>{r.status}</Badge></td>
                   <td className="text-ink-soft">{r.decidedBy ? lk.name(r.decidedBy) : '—'}</td>
-                  <td className="text-right">{r.status === 'Approved' && <Button size="sm" variant="secondary" onClick={() => call('cancel_leave', { p_id: r.id }, { refresh: ['leaveRequests', 'balances'], success: 'Leave cancelled', successDetail: 'Days returned to the balance.' })}>Cancel</Button>}</td>
+                  <td className="whitespace-nowrap text-right"><Button size="sm" variant="secondary" className="mr-1.5" onClick={() => setHistoryOf(r)}>History</Button>{r.status === 'Approved' && <Button size="sm" variant="secondary" onClick={() => call('cancel_leave', { p_id: r.id }, { refresh: ['leaveRequests', 'balances'], success: 'Leave cancelled', successDetail: 'Days returned to the balance.' })}>Cancel</Button>}</td>
                 </tr>
               ))}
             </Table>
@@ -71,8 +74,8 @@ export default function HRLeave() {
             {data.leaveTypes.map((t) => (
               <tr key={t.id}>
                 <td className="font-medium text-heading">{t.name}{!t.active && <Badge tone="slate" className="ml-2">Inactive</Badge>}</td>
-                <td>{t.annualDays}</td>
-                <td>{t.carryForward ? `Carry forward${t.carryForwardMax != null ? ` (max ${t.carryForwardMax})` : ' (no limit)'}` : 'Lapse at year end'}</td>
+                <td>{t.paid === false ? 'Unpaid · no balance' : t.annualDays}</td>
+                <td>{t.paid === false ? '—' : t.carryForward ? `Carry forward${t.carryForwardMax != null ? ` (max ${t.carryForwardMax})` : ' (no limit)'}` : 'Lapse at year end'}</td>
                 <td>{t.accrual === 'monthly' ? 'Monthly' : 'Start of year'}</td>
                 <td>{t.prorateNewJoiners ? 'Prorated' : 'Full entitlement'}</td>
                 <td>{t.eligibleAfterDays ? `${t.eligibleAfterDays} days` : 'Immediately'}</td>
@@ -91,13 +94,14 @@ export default function HRLeave() {
         }}>Save adjustment</Button></>}>
         {adjust && (
           <div className="space-y-4">
-            <Field label="Leave type"><Segmented options={data.leaveTypes.map((t) => ({ value: t.id, label: t.name }))} value={adjust.type} onChange={(v) => setAdjust({ ...adjust, type: v })} /></Field>
+            <Field label="Leave type"><Segmented options={paidTypes.map((t) => ({ value: t.id, label: t.name }))} value={adjust.type} onChange={(v) => setAdjust({ ...adjust, type: v })} /></Field>
             <Field label="Days (+ to add, − to remove)"><Input inputMode="decimal" value={adjust.days} onChange={(e) => setAdjust({ ...adjust, days: e.target.value.replace(/[^\d.-]/g, '') })} /></Field>
             <Field label="Note" required><Input value={adjust.note} onChange={(e) => setAdjust({ ...adjust, note: e.target.value })} /></Field>
           </div>
         )}
       </Modal>
       <PolicyModal value={policy} onClose={() => setPolicy(null)} />
+      <LeaveHistoryModal request={historyOf} onClose={() => setHistoryOf(null)} />
     </>
   );
 }

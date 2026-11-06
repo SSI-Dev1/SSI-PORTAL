@@ -3,11 +3,12 @@
 // password set by the admin, no invitation). HR records are then edited directly (RLS +
 // triggers stop HR from touching Admin accounts or their own designation / manager / rights).
 import { useMemo, useState } from 'react';
-import { BadgeCheck, KeyRound, MoreHorizontal, Pencil, Power, ShieldCheck, UserPlus, Users, Wallet } from 'lucide-react';
+import { BadgeCheck, KeyRound, MoreHorizontal, Pencil, Power, ShieldCheck, UserPlus, Users, Wallet, Eye } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Select, Switch, Table, Tabs, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { ExportButtons } from '../../components/hr';
 import { useHR, useHRLookup } from '../../store/hr';
+import { EmployeeProfileModal } from '../../components/hrProfile';
 import { useStore } from '../../store/store';
 import { adminApi, AdminApiError } from '../../lib/adminApi';
 import { supabase } from '../../auth/auth';
@@ -20,6 +21,7 @@ const statusTone = { Active: 'green', Probation: 'amber', Resigned: 'slate' } as
 const accountTone = { active: 'green', suspended: 'amber', deactivated: 'red' } as const;
 
 export default function Employees() {
+  const [profile, setProfile] = useState<string | null>(null);
   const { data, load } = useHR();
   const lk = useHRLookup();
   const { session } = useStore();
@@ -96,7 +98,7 @@ export default function Employees() {
                 const sal = data.salaries.find((s) => s.employeeId === e.id);
                 return (
                   <tr key={e.id}>
-                    <td><div className="font-medium text-heading">{e.fullName}</div><div className="text-xs text-ink-mute">{e.employeeCode} · {emails.find((s) => s.id === e.id)?.role ? ROLE_LABEL[e.role as StaffRole] : e.role}</div></td>
+                    <td><button type="button" onClick={() => setProfile(e.id)} className="text-left font-medium text-heading hover:text-rust hover:underline">{e.fullName}</button><div className="text-xs text-ink-mute">{e.employeeCode} · {emails.find((s) => s.id === e.id)?.role ? ROLE_LABEL[e.role as StaffRole] : e.role}</div></td>
                     <td>{lk.designation.get(e.designationId)?.name}{(emp?.additionalDesignations.length ?? 0) > 0 && <div className="text-xs text-ink-mute">+ {emp!.additionalDesignations.map((d) => lk.designation.get(d)?.name).join(', ')}</div>}</td>
                     <td>{lk.department.get(e.departmentId ?? '')?.name ?? '—'}</td>
                     <td>{e.reportingManagerId ? lk.name(e.reportingManagerId) : '—'}</td>
@@ -104,21 +106,20 @@ export default function Employees() {
                     <td><Badge tone={accountTone[e.accountStatus as keyof typeof accountTone] ?? 'slate'}>{e.accountStatus}</Badge></td>
                     {canSalary && <td className="tabular-nums">{sal ? money(sal.amount, sal.currency) : '—'}</td>}
                     <td className="text-right">
-                      {manageable(e.role, e.id) || canSalary ? (
-                        <Menu
-                          trigger={() => <Button size="sm" variant="secondary" icon={MoreHorizontal} aria-label={`Actions for ${e.fullName}`} />}
-                          items={[
-                            ...(manageable(e.role, e.id) && emp ? [{ label: 'Edit employee', icon: Pencil, onClick: () => setEditing(emp) }] : []),
-                            ...(canSalary ? [{ label: 'Salary', icon: Wallet, onClick: () => setSalaryFor(e.id) }] : []),
-                            ...(manageable(e.role, e.id) ? [
-                              { label: 'Reset password', icon: KeyRound, onClick: () => setResetFor(e.id) },
-                              e.accountStatus === 'active'
-                                ? { label: 'Deactivate account', icon: Power, danger: true, onClick: () => setAccount(e.id, 'deactivated') }
-                                : { label: 'Activate account', icon: BadgeCheck, onClick: () => setAccount(e.id, 'active') },
-                            ] : []),
-                          ]}
-                        />
-                      ) : null}
+                      <Menu
+                        trigger={() => <Button size="sm" variant="secondary" icon={MoreHorizontal} aria-label={`Actions for ${e.fullName}`} />}
+                        items={[
+                          { label: 'View profile', icon: Eye, onClick: () => setProfile(e.id) },
+                          ...(manageable(e.role, e.id) && emp ? [{ label: 'Edit employee', icon: Pencil, onClick: () => setEditing(emp) }] : []),
+                          ...(canSalary ? [{ label: 'Salary', icon: Wallet, onClick: () => setSalaryFor(e.id) }] : []),
+                          ...(manageable(e.role, e.id) ? [
+                            { label: 'Reset password', icon: KeyRound, onClick: () => setResetFor(e.id) },
+                            e.accountStatus === 'active'
+                              ? { label: 'Deactivate account', icon: Power, danger: true, onClick: () => setAccount(e.id, 'deactivated') }
+                              : { label: 'Activate account', icon: BadgeCheck, onClick: () => setAccount(e.id, 'active') },
+                          ] : []),
+                        ]}
+                      />
                     </td>
                   </tr>
                 );
@@ -130,6 +131,7 @@ export default function Employees() {
       </Card>
       {canAccounts && <AddEmployeeModal open={adding} onClose={() => setAdding(false)} onCreated={(c) => { setCreds(c); void load(); }} />}
       <EditEmployeeModal employee={editing} onClose={() => setEditing(null)} />
+      <EmployeeProfileModal employeeId={profile} onClose={() => setProfile(null)} />
       {canSalary && <SalaryModal employeeId={salaryFor} onClose={() => setSalaryFor(null)} />}
       <ResetPasswordModal userId={resetFor} onClose={() => setResetFor(null)} onDone={setCreds} />
       <CredentialsOnce data={creds} onClose={() => setCreds(null)} />

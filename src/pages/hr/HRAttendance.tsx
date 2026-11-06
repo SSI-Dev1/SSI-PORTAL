@@ -4,10 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Clock, MapPin } from 'lucide-react';
 import { Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Table, Tabs } from '../../components/ui';
 import { AttendanceTable, ExportButtons, ReviewAutoCloseModal, stateTone } from '../../components/hr';
+import { EmployeeProfileModal, useMonthSummaries } from '../../components/hrProfile';
 import { useHR, useHRLookup } from '../../store/hr';
 import { supabase } from '../../auth/auth';
-import { MONTHS_SHORT, addDays, companyDate, companyTime, fmtDay, hm, isoDow, type AttendanceDay } from '../../data/hr';
+import { MONTHS_SHORT, addDays, companyDate, companyTime, fmtDay, fmtDays, hm, isoDow, type AttendanceDay } from '../../data/hr';
 
+// Server-resolved day counts for exports (Present can be fractional, e.g. 21.5).
+const dayCounts = (s?: { presentDays: number; paidLeaveDays: number; sickLeaveDays: number; lopDays: number; absentDays: number; halfDays: number }) =>
+  s ? { 'Present days': s.presentDays, 'Paid leave days': s.paidLeaveDays, 'Sick leave days': s.sickLeaveDays, 'LOP days': s.lopDays, 'Absent (unapproved) days': s.absentDays, 'Half days': s.halfDays } : {};
 const camel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
 export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day' | 'hours' | 'review' }) {
@@ -15,6 +19,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
   const lk = useHRLookup();
   const [tab, setTab] = useState<'day' | 'hours' | 'review'>(initialTab);
   const [reviewing, setReviewing] = useState<AttendanceDay | null>(null);
+  const [profile, setProfile] = useState<string | null>(null);
   const [date, setDate] = useState(companyDate(now()));
   const [month, setMonth] = useState(companyDate(now()).slice(0, 7));
   const [dept, setDept] = useState('');
@@ -67,6 +72,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
     return d.toISOString().slice(0, 7);
   });
   const [reopen, setReopen] = useState<{ day: AttendanceDay; reason: string } | null>(null);
+  const summaries = useMonthSummaries(month);
   const reviewRows = data.attendance.filter((a) => a.reviewStatus === 'pending_review' && ids.has(a.employeeId));
   const verify = (id: string) => void call('verify_attendance_location', { p_session: id }, { refresh: ['attendance'], success: 'Punch verified' });
 
@@ -75,7 +81,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
       <PageHeader title="Attendance" subtitle="Server-recorded punches, breaks and working hours. Corrections are shown next to the original times."
         actions={<ExportButtons filename={tab === 'day' ? `ssi-attendance-${date}` : `ssi-working-hours-${month}`} rows={() => tab === 'day'
           ? dayRows.map((a) => ({ Employee: lk.name(a.employeeId), Date: a.workDate, In: companyTime(a.effIn), Out: companyTime(a.effOut), 'Gross (min)': a.grossMinutes, 'Break (min)': a.breakMinutes, 'Net (min)': a.netMinutes, Status: a.state, 'Clock-out': a.outKind ?? '', Review: a.reviewStatus ?? '', 'Unverified (min)': a.unverifiedMinutes || '', Late: a.late ? 'Yes' : '', 'Early checkout': a.earlyCheckout ? 'Yes' : '' }))
-          : sheet.map((r) => ({ Employee: r.p.fullName, 'Employee ID': r.p.employeeCode, Month: month, 'Days attended': r.days, 'Working days': r.expected, 'Gross hours': (r.gross / 60).toFixed(2), 'Break hours': (r.brk / 60).toFixed(2), 'Net hours': (r.net / 60).toFixed(2), 'Required hours': (r.required / 60).toFixed(2), 'Below required (hours)': (r.shortage / 60).toFixed(2), 'Extra hours': (r.extra / 60).toFixed(2), Late: r.late, 'Early checkouts': r.early, 'Missing punch-outs': r.missing }))} />} />
+          : sheet.map((r) => ({ Employee: r.p.fullName, 'Employee ID': r.p.employeeCode, Month: month, 'Days attended': r.days, 'Working days': r.expected, 'Gross hours': (r.gross / 60).toFixed(2), 'Break hours': (r.brk / 60).toFixed(2), 'Net hours': (r.net / 60).toFixed(2), 'Required hours': (r.required / 60).toFixed(2), 'Below required (hours)': (r.shortage / 60).toFixed(2), 'Extra hours': (r.extra / 60).toFixed(2), Late: r.late, 'Early checkouts': r.early, 'Missing punch-outs': r.missing, ...dayCounts(summaries.get(r.p.id)) }))} />} />
       <Card className="mb-5 flex flex-wrap items-end gap-3 p-4">
         <Tabs value={tab} onChange={setTab} tabs={[{ value: 'day', label: 'Daily attendance' }, { value: 'hours', label: 'Working hours' },
           { value: 'review', label: 'Pending review', count: reviewRows.length }]} />
@@ -107,11 +113,16 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
       ) : (
         <Card>
           {sheet.length === 0 ? <EmptyState icon={Clock} title="No employees" /> : (
-            <Table className="hr-table" head={['Employee', 'Days', 'Working days', 'Gross', 'Break', 'Net', 'Required', 'Below', 'Extra', 'Late', 'Early', 'Missing out']}>
+            <Table className="hr-table" head={['Employee', 'Present', 'Paid / Sick', 'LOP', 'Working days', 'Gross', 'Break', 'Net', 'Required', 'Below', 'Extra', 'Late', 'Early', 'Missing out']}>
               {sheet.map((r) => (
                 <tr key={r.p.id}>
-                  <td><div className="font-medium text-heading">{r.p.fullName}</div><div className="text-xs text-ink-mute">{lk.shift.get(lk.employee.get(r.p.id)?.shiftId ?? '')?.name}</div></td>
-                  <td>{r.days}</td><td>{r.expected}</td>
+                  <td><button type="button" className="text-left font-medium text-heading hover:text-rust hover:underline" onClick={() => setProfile(r.p.id)}>{r.p.fullName}</button><div className="text-xs text-ink-mute">{lk.shift.get(lk.employee.get(r.p.id)?.shiftId ?? '')?.name}</div></td>
+                  {(() => { const s = summaries.get(r.p.id); return (<>
+                    <td className="font-semibold tabular-nums text-heading">{s ? fmtDays(s.presentDays) : r.days}{s && s.halfDays > 0 && <span className="block text-[10px] font-normal text-ink-mute">{s.halfDays} half day(s)</span>}</td>
+                    <td className="tabular-nums">{s ? `${fmtDays(s.paidLeaveDays)} / ${fmtDays(s.sickLeaveDays)}` : '—'}</td>
+                    <td className="tabular-nums">{s && s.lopDays ? <span className="text-red-600">{fmtDays(s.lopDays)}{s.absentDays ? <span className="block text-[10px]">{fmtDays(s.absentDays)} absent</span> : null}</span> : '—'}</td>
+                  </>); })()}
+                  <td>{r.expected}</td>
                   <td className="tabular-nums">{hm(r.gross)}</td><td className="tabular-nums">{hm(r.brk)}</td>
                   <td className="font-semibold tabular-nums text-heading">{hm(r.net)}</td><td className="tabular-nums">{hm(r.required)}</td>
                   <td className="tabular-nums">{r.shortage ? <span className="text-red-600">{hm(r.shortage)}</span> : '—'}</td>
@@ -124,6 +135,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
         </Card>
       )}
       <ReviewAutoCloseModal day={reviewing} onClose={() => setReviewing(null)} />
+      <EmployeeProfileModal employeeId={profile} onClose={() => setProfile(null)} />
       <Modal open={!!reopen} onClose={() => setReopen(null)} size="sm" title="Re-open attendance"
         subtitle={reopen ? `${lk.name(reopen.day.employeeId)} · ${fmtDay(reopen.day.workDate)} · clocked out ${companyTime(reopen.day.effOut)}` : undefined}
         footer={<><Button variant="secondary" onClick={() => setReopen(null)}>Cancel</Button>

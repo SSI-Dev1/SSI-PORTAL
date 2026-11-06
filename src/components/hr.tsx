@@ -444,8 +444,14 @@ export function ApprovalsPanel({ kinds = ['leave', 'early', 'corrections', 'repo
       ) : (
         <ul className="divide-y divide-line">
           {tab === 'leave' && leave.map((r) => (
-            <Row key={r.id} who={r.employeeId} title={`${lk.leaveType.get(r.leaveType)?.name ?? r.leaveType} · ${fmtDay(r.startDate)}${r.endDate !== r.startDate ? ` – ${fmtDay(r.endDate)}` : ''} · ${r.days} day(s)`}
-              sub={<>{r.reason ? `Reason: ${r.reason}` : 'No reason given'}{r.managerApprovedAt ? ` · approved by manager ${lk.name(r.managerApprovedBy)}, waiting for HR` : ''}</>}>
+            <Row key={r.id} who={r.employeeId}
+              title={`${lk.leaveType.get(r.leaveType)?.name ?? r.leaveType} · ${fmtDay(r.startDate)}${r.endDate !== r.startDate ? ` – ${fmtDay(r.endDate)}` : ''}${r.halfDaySession ? ` · ${r.halfDaySession === 'morning' ? 'Morning Leave' : 'Afternoon Leave'}` : ''} · ${String(Number(r.days))} day(s)`}
+              sub={<>
+                {lk.department.get(lk.employee.get(r.employeeId)?.departmentId ?? '')?.name ?? 'No department'}
+                {(() => { const b = data.balances.find((x) => x.employeeId === r.employeeId && x.leaveType === r.leaveType); return b ? ` · ${b.available + b.pending} ${b.name} left before this request` : lk.leaveType.get(r.leaveType)?.paid === false ? ' · unpaid (Loss of Pay)' : ''; })()}
+                {` · ${r.reason ? `Reason: ${r.reason}` : 'No reason given'}`}
+                {r.managerApprovedAt ? ` · approved by manager ${lk.name(r.managerApprovedBy)}, waiting for HR` : ''}
+              </>}>
               <Button size="sm" variant="secondary" onClick={() => decide('decide_leave', r.id, false, ['leaveRequests', 'balances'])}>Reject</Button>
               <Button size="sm" disabled={!!r.managerApprovedAt && !hr} onClick={() => decide('decide_leave', r.id, true, ['leaveRequests', 'balances'])}>Approve</Button>
             </Row>

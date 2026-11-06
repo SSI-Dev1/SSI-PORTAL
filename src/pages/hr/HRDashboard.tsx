@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Cake, CalendarClock, ClipboardCheck, ClipboardList, Clock, Coffee, FilePen, LogOut, Palmtree, PartyPopper, Timer, UserCheck, UserMinus, Users, UserX } from 'lucide-react';
-import { Card, CardHeader, DatePicker, EmptyState, Field, FilterSelect, PageHeader, Table } from '../../components/ui';
-import { KPI } from '../../components/hr';
+import { Avatar, Badge, Card, CardHeader, DatePicker, EmptyState, Field, FilterSelect, PageHeader, Table } from '../../components/ui';
+import { KPI, stateTone } from '../../components/hr';
+import { EmployeeProfileModal, useMonthSummaries } from '../../components/hrProfile';
 import { useHR, useHRLookup } from '../../store/hr';
 import { supabase } from '../../auth/auth';
-import { addDays, companyDate, fmtDay, hm, type Reminder } from '../../data/hr';
+import { addDays, companyDate, fmtDay, fmtDays, hm, type Reminder } from '../../data/hr';
 
 const reminderIcon = { birthday: Cake, anniversary: PartyPopper, probation: CalendarClock, leave: Palmtree, holiday: PartyPopper };
 
@@ -21,6 +22,7 @@ export default function HRDashboard() {
   const [desig, setDesig] = useState('');
   const [mgr, setMgr] = useState('');
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [profile, setProfile] = useState<string | null>(null);
   useEffect(() => {
     if (!supabase) return;
     let alive = true;
@@ -66,6 +68,21 @@ export default function HRDashboard() {
   })).filter((x) => x.Employees > 0);
   const go = (p: string) => navigate(p);
   const balances = data.balances.filter((b) => ids.has(b.employeeId));
+  const paidTypes = data.leaveTypes.filter((t) => t.active && t.paid !== false);
+  const summaries = useMonthSummaries(month);
+  const monthPresent = current.reduce((s, e) => s + (summaries.get(e.id)?.presentDays ?? 0), 0);
+  const monthLop = current.reduce((s, e) => s + (summaries.get(e.id)?.lopDays ?? 0), 0);
+  // Today's status per person: attendance state, Morning / Afternoon / full-day leave, or absent.
+  const leaveToday = (id: string) => data.leaveRequests.filter((r) => r.status === 'Approved' && r.employeeId === id && date >= r.startDate && date <= r.endDate);
+  const statusOf = (id: string) => {
+    const a = att.find((x) => x.employeeId === id);
+    const lv = leaveToday(id);
+    const half = lv.find((r) => r.halfDaySession);
+    const leaveLabel = lv.length ? (half && lv.length === 1 ? (half.halfDaySession === 'morning' ? 'Morning Leave' : 'Afternoon Leave') : 'On leave') : null;
+    if (a) return { label: leaveLabel ? `${a.state} · ${leaveLabel}` : a.state, tone: stateTone[a.state] };
+    if (leaveLabel) return { label: leaveLabel, tone: 'blue' as const };
+    return { label: date === companyDate(now()) ? 'Not checked in' : 'Absent', tone: 'red' as const };
+  };
 
   return (
     <>
@@ -83,11 +100,13 @@ export default function HRDashboard() {
         <KPI icon={Timer} tone="amber" label="On probation" value={staff.filter((s) => s.employmentStatus === 'Probation').length} />
         <KPI icon={Clock} tone="green" label="Present" value={att.length} hint={`${onLeave.size} on leave`} onClick={() => go('../hr/attendance')} />
         <KPI icon={UserX} tone="red" label="Absent (no punch, not on leave)" value={absent.length} />
+        <KPI icon={Palmtree} tone="navy" label="On leave today" value={current.filter((s) => onLeave.has(s.id)).length} hint={`${current.filter((s) => leaveToday(s.id).some((r) => r.halfDaySession)).length} on a half day`} />
         <KPI icon={UserCheck} tone="green" label="Checked in now" value={att.filter((a) => a.state === 'Checked In').length} />
         <KPI icon={Coffee} tone="amber" label="On break" value={att.filter((a) => a.state === 'On Break').length} />
         <KPI icon={Timer} tone="orange" label="Late arrivals" value={att.filter((a) => a.late).length} />
         <KPI icon={LogOut} tone="orange" label="Early checkouts" value={att.filter((a) => a.earlyCheckout).length} />
         <KPI icon={Clock} label={`Net hours · ${month}`} value={hm(monthMinutes)} />
+        <KPI icon={UserCheck} tone="green" label={`Present days · ${month}`} value={fmtDays(monthPresent)} hint={`LOP ${fmtDays(monthLop)} day(s) · server-calculated, half days count 0.5`} />
         <KPI icon={Palmtree} tone="amber" label="Leave approvals pending" value={pendingLeave} onClick={() => go('../hr/leave')} />
         <KPI icon={FilePen} tone="amber" label="Corrections pending" value={pendingCorr} hint={`${pendingEarly} early checkout(s)`} onClick={() => go('../hr/corrections')} />
         <KPI icon={ClipboardCheck} tone="green" label="Daily reports submitted" value={reportsToday.length} onClick={() => go('../hr/work-reports')} />
@@ -129,6 +148,29 @@ export default function HRDashboard() {
         </Card>
       </div>
 
+      <Card className="mt-6">
+        <CardHeader title="Today's workforce" subtitle={`${fmtDay(date)} · click an employee to open their profile`} />
+        {current.length === 0 ? <EmptyState icon={Users} title="No employees" /> : (
+          <ul className="grid gap-2 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-3">
+            {current.map((s) => {
+              const st = statusOf(s.id);
+              return (
+                <li key={s.id}>
+                  <button type="button" onClick={() => setProfile(s.id)} className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface p-3 text-left transition hover:border-brand-300 hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                    <Avatar name={s.fullName} size={36} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-heading">{s.fullName}</span>
+                      <span className="block truncate text-xs text-ink-mute">{lk.designation.get(s.designationId)?.name ?? ''}</span>
+                    </span>
+                    <Badge tone={st.tone}>{st.label}</Badge>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader title="By department" subtitle={fmtDay(date)} />
@@ -141,13 +183,13 @@ export default function HRDashboard() {
         <Card>
           <CardHeader title="Leave balances" subtitle="Available this leave year" action={<button type="button" className="text-xs font-semibold text-rust hover:underline" onClick={() => go('../hr/leave')}>Manage</button>} />
           {balances.length === 0 ? <EmptyState icon={Palmtree} title="No balances yet" /> : (
-            <Table className="hr-table" head={['Employee', ...data.leaveTypes.filter((t) => t.active).map((t) => t.name)]}>
+            <Table className="hr-table" head={['Employee', ...paidTypes.map((t) => t.name)]}>
               {[...new Set(balances.map((b) => b.employeeId))].slice(0, 10).map((id) => (
                 <tr key={id}>
-                  <td className="font-medium text-heading">{lk.name(id)}</td>
-                  {data.leaveTypes.filter((t) => t.active).map((t) => {
+                  <td><button type="button" className="font-medium text-heading hover:text-rust hover:underline" onClick={() => setProfile(id)}>{lk.name(id)}</button></td>
+                  {paidTypes.map((t) => {
                     const b = balances.find((x) => x.employeeId === id && x.leaveType === t.id);
-                    return <td key={t.id}>{b ? `${b.available}${b.pending ? ` (${b.pending} pending)` : ''}` : '—'}</td>;
+                    return <td key={t.id}>{b ? `${fmtDays(b.available)}${b.pending ? ` (${fmtDays(b.pending)} pending)` : ''}` : '—'}</td>;
                   })}
                 </tr>
               ))}
@@ -155,6 +197,7 @@ export default function HRDashboard() {
           )}
         </Card>
       </div>
+      <EmployeeProfileModal employeeId={profile} onClose={() => setProfile(null)} />
     </>
   );
 }

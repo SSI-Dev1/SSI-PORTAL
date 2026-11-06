@@ -157,6 +157,8 @@ export interface LeaveType {
   eligibleAfterDays: number;
   requiresReason: boolean;
   active: boolean;
+  /** false for Loss of Pay: never limited by or deducted from a balance. */
+  paid?: boolean;
 }
 export interface LeaveRequest {
   id: string;
@@ -173,7 +175,40 @@ export interface LeaveRequest {
   decidedAt: string | null;
   decisionComment: string | null;
   createdAt: string;
+  /** Half-day leave: which half of the date (0.5 day). */
+  halfDaySession?: 'morning' | 'afternoon' | null;
 }
+export const halfDayLabel = (s?: string | null) => (s === 'morning' ? 'Morning Leave' : s === 'afternoon' ? 'Afternoon Leave' : null);
+/** 22 → "22", 21.5 → "21.5" (never rounded to a whole day). */
+export const fmtDays = (n: number | null | undefined) => String(Math.round(Number(n ?? 0) * 100) / 100);
+
+/** One day as the server resolves it (public.attendance_calendar): the same values HR, payroll and the employee see. */
+export interface DayStatus {
+  day: string;
+  code: 'P' | 'HD' | 'SL' | 'PL' | 'LOP' | 'A' | 'H' | 'WO' | 'UP' | 'OPEN' | null;
+  label: string | null;
+  halfSession: 'morning' | 'afternoon' | 'both' | null;
+  working: boolean;
+  attended: boolean;
+  present: number;
+  paidLeave: number;
+  sickLeave: number;
+  lop: number;
+  absent: number;
+  counted: boolean;
+}
+export interface MonthSummary {
+  employeeId: string;
+  workingDays: number;
+  presentDays: number;
+  paidLeaveDays: number;
+  sickLeaveDays: number;
+  lopDays: number;
+  absentDays: number;
+  halfDays: number;
+  holidays: number;
+}
+export interface LeaveEvent { id: number; requestId: string; employeeId: string; action: 'requested' | 'manager_approved' | 'approved' | 'rejected' | 'cancelled'; actorId: string | null; comment: string | null; at: string }
 export interface LeaveBalance {
   employeeId: string;
   leaveType: string;

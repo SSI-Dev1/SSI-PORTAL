@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Clock, FilePen, LogOut, Timer, TrendingDown, TrendingUp } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, PageHeader, Table, Tabs } from '../../components/ui';
 import { AttendanceTable, CorrectionRequestModal, EarlyCheckoutModal, KPI, PunchCard, requestTone } from '../../components/hr';
+import { AttendanceCalendar } from '../../components/hrProfile';
 import { useHR } from '../../store/hr';
 import { useStore } from '../../store/store';
 import { CORRECTION_LABEL, MONTHS_SHORT, companyDate, companyTime, fmtDay, hm } from '../../data/hr';
@@ -13,7 +14,7 @@ export default function MyAttendance() {
   const me = session?.userId;
   const today = companyDate(now());
   const [month, setMonth] = useState(today.slice(0, 7));
-  const [tab, setTab] = useState<'days' | 'corrections' | 'early'>('days');
+  const [tab, setTab] = useState<'calendar' | 'days' | 'corrections' | 'early'>('calendar');
   const [corrOpen, setCorrOpen] = useState(false);
   const [corrDate, setCorrDate] = useState<string | undefined>();
   const [earlyOpen, setEarlyOpen] = useState(false);
@@ -52,6 +53,7 @@ export default function MyAttendance() {
       <Card className="mt-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 pt-3">
           <Tabs value={tab} onChange={setTab} tabs={[
+            { value: 'calendar', label: 'Calendar' },
             { value: 'days', label: 'Daily attendance' },
             { value: 'corrections', label: 'Corrections', count: corr.filter((c) => c.status === 'Pending').length },
             { value: 'early', label: 'Early checkouts', count: early.filter((c) => c.status === 'Pending').length },
@@ -65,6 +67,7 @@ export default function MyAttendance() {
           )}
         </div>
         <div className="p-5">
+          {tab === 'calendar' && me && <AttendanceCalendar employeeId={me} />}
           {tab === 'days' && <AttendanceTable rows={rows} onCorrect={(a) => { setCorrDate(a.workDate); setCorrOpen(true); }} />}
           {tab === 'corrections' && (corr.length === 0 ? <EmptyState icon={FilePen} title="No correction requests" /> : (
             <Table className="hr-table" head={['Date', 'Type', 'Requested', 'Reason', 'Status', '']}>

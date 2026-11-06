@@ -83,10 +83,57 @@ export const ADMIN_ROUTE_MODULE: Record<string, StaffModule | 'users'> = {
   users: 'users',
 };
 
+// ------------------------------------------------------------------ partner employees
+/** What a Partner Company Employee may do (same catalogue as public.partner_permission_keys()). */
+export type PartnerPermission =
+  | 'students.view' | 'students.add' | 'students.edit'
+  | 'applications.view' | 'applications.create' | 'applications.update'
+  | 'chat' | 'documents.view' | 'documents.upload' | 'course_finder' | 'updates' | 'assessments' | 'team.manage';
+export const PARTNER_PERMISSIONS: { id: PartnerPermission; label: string; module: PartnerModule | null; group: string; hint?: string }[] = [
+  { id: 'students.view', label: 'View Students', module: 'students', group: 'Students' },
+  { id: 'students.add', label: 'Add Students', module: 'students', group: 'Students' },
+  { id: 'students.edit', label: 'Edit Students', module: 'students', group: 'Students' },
+  { id: 'applications.view', label: 'View Applications', module: 'applications', group: 'Applications', hint: 'Track application progress' },
+  { id: 'applications.create', label: 'Create Applications', module: 'applications', group: 'Applications' },
+  { id: 'applications.update', label: 'Update Authorized Applications', module: 'applications', group: 'Applications' },
+  { id: 'chat', label: 'Access Application Chat', module: 'applications', group: 'Applications' },
+  { id: 'documents.view', label: 'View Documents', module: 'documents', group: 'Documents' },
+  { id: 'documents.upload', label: 'Upload Documents', module: 'documents', group: 'Documents' },
+  { id: 'course_finder', label: 'Access Course Finder', module: 'course_finder', group: 'Tools' },
+  { id: 'updates', label: 'View Important Updates', module: 'updates', group: 'Tools' },
+  { id: 'assessments', label: 'Assessments', module: 'assessments', group: 'Tools' },
+  { id: 'team.manage', label: 'Manage Team (team manager)', module: null, group: 'Management', hint: 'Partner Admin only can grant this' },
+];
+/** Permission presets for the Add Employee form (never commission or finance). */
+export const PARTNER_PRESETS: { id: string; label: string; permissions: PartnerPermission[] }[] = [
+  { id: 'counsellor', label: 'Counsellor', permissions: ['students.view', 'students.add', 'students.edit', 'applications.view', 'applications.create', 'applications.update', 'chat', 'documents.view', 'documents.upload', 'course_finder', 'updates'] },
+  { id: 'documentation', label: 'Documentation', permissions: ['students.view', 'applications.view', 'chat', 'documents.view', 'documents.upload', 'updates'] },
+  { id: 'viewer', label: 'Read only', permissions: ['students.view', 'applications.view', 'documents.view', 'course_finder', 'updates'] },
+];
+/** Every permission the organisation's modules allow (what a Partner Admin holds). */
+export const partnerKeysFor = (modules: string[]): PartnerPermission[] =>
+  PARTNER_PERMISSIONS.filter((p) => !p.module || modules.includes(p.module)).map((p) => p.id);
+/** Client route segment → permission it needs. */
+export const CLIENT_ROUTE_PERMISSION: Record<string, PartnerPermission> = {
+  students: 'students.view',
+  applications: 'applications.view',
+  messages: 'chat',
+  'course-finder': 'course_finder',
+  'course-search': 'course_finder',
+  assessments: 'assessments',
+  documents: 'documents.view',
+  updates: 'updates',
+  'team-management': 'team.manage',
+};
+/** May this partner session do this? Internal users: always (their access is RLS-checked separately). */
+export const partnerCan = (session: { role: string; partnerPermissions?: string[] } | null, p: PartnerPermission) =>
+  !!session && (session.role !== 'client' || (session.partnerPermissions ?? []).includes(p));
+
 /** Client route segment → partner module (finance also needs the Partner Admin role). */
 export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
   students: 'students',
   applications: 'applications',
+  messages: 'applications',
   'course-finder': 'course_finder',
   'course-search': 'course_finder',
   assessments: 'assessments',
@@ -116,7 +163,11 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     return session.permissions.includes(m);
   }
   const m = CLIENT_ROUTE_MODULE[segment];
+  // Finance (and commission) is for the Partner Admin only, never for partner employees.
+  if (m === 'finance') return (session.userRole === 'partner_admin' || !!session.previewOf) && session.partnerModules.includes(m);
+  const perms = (session as { partnerPermissions?: string[] }).partnerPermissions;
+  const need = CLIENT_ROUTE_PERMISSION[segment];
+  if (need) return perms ? perms.includes(need) : !!m && session.partnerModules.includes(m);
   if (!m) return true;
-  if (m === 'finance' && session.userRole !== 'partner_admin' && !session.previewOf) return false;
   return session.partnerModules.includes(m);
 }

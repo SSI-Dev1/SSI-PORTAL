@@ -47,7 +47,10 @@ export default function Profile() {
             <dl className="mt-6 space-y-3 text-left text-sm">
               <div className="flex justify-between"><dt className="text-ink-mute">Partner since</dt><dd className="font-medium text-heading">{formatDate(p.joinedAt)}</dd></div>
               <div className="flex justify-between"><dt className="text-ink-mute">Branches</dt><dd className="font-medium text-heading">{p.branches.join(', ')}</dd></div>
-              <div className="flex justify-between"><dt className="text-ink-mute">Commission</dt><dd className="font-medium text-heading">{p.commissionRate}%</dd></div>
+              {/* Commission: Partner Admin only, and only while SSI GLOBAL shows it (server-filtered). */}
+              {session?.commission && p.commissionRate != null && (
+                <div className="flex justify-between"><dt className="text-ink-mute">Commission</dt><dd className="font-medium text-heading">{p.commissionRate}%</dd></div>
+              )}
               <div className="flex justify-between"><dt className="text-ink-mute">Students</dt><dd className="font-medium text-heading">{scoped.students.length}</dd></div>
             </dl>
           </div>

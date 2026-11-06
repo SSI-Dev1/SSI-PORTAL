@@ -51,8 +51,10 @@ import { HRReminders, HRReports, HRSettings } from './pages/hr/HRMisc';
 import ClientDashboard from './pages/client/ClientDashboard';
 import CourseFinder from './pages/client/CourseFinder';
 import CourseSearch from './pages/shared/CourseSearch';
+import Messages from './pages/shared/Messages';
 import UpdatesClient from './pages/client/UpdatesClient';
 import Profile from './pages/client/Profile';
+import TeamManagement from './pages/client/TeamManagement';
 import Students from './pages/shared/Students';
 import StudentProfile from './pages/shared/StudentProfile';
 import Applications from './pages/shared/Applications';
@@ -104,6 +106,7 @@ const sharedRoutes = (
     <Route path="documents" element={<Documents />} />
     <Route path="finance" element={<Finance />} />
     <Route path="course-search" element={<CourseSearch />} />
+    <Route path="messages" element={<Messages />} />
   </>
 );
 
@@ -284,6 +287,7 @@ export default function App() {
                 {sharedRoutes}
                 <Route path="course-finder" element={<CourseFinder />} />
                 <Route path="updates" element={<UpdatesClient />} />
+                <Route path="team-management" element={<TeamManagement />} />
                 <Route path="profile" element={<Profile />} />
               </Route>
               <Route path="*" element={<Home />} />

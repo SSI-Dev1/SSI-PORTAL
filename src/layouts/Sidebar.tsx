@@ -33,6 +33,7 @@ import {
   LayoutDashboard,
   ListFilter,
   ListTodo,
+  MessagesSquare,
   Megaphone,
   Settings,
   Sparkles,
@@ -72,6 +73,7 @@ const adminNav: NavSection[] = [
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
   ] },
   { id: 'catalogue', title: 'Catalogue', items: [
@@ -101,6 +103,7 @@ const staffNav: NavSection[] = [
   { id: 'work', title: 'My Work', items: [
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
     { to: 'documents', label: 'Document Verification', icon: FileCheck2 },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
@@ -133,6 +136,7 @@ const employeeNav: NavSection[] = [
   { id: 'w-team', title: 'Team', items: [{ to: 'work/team', label: 'Team & Approvals', icon: UsersRound }] },
   { id: 'w-tools', title: 'Work Tools', items: [
     { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
     { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
@@ -164,7 +168,7 @@ const hrNav: NavSection[] = [
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
 /** Pages listed under "Work Tools" in the Employee Workspace (shared with the Staff Portal). */
-const WORK_TOOLS = ['applications', 'students', 'course-finder', 'course-search', 'tasks'];
+const WORK_TOOLS = ['applications', 'messages', 'students', 'course-finder', 'course-search', 'tasks'];
 const WS_NOW = 'ssi-workspace-now';
 
 /**
@@ -229,6 +233,7 @@ const clientNav: NavSection[] = [
   { id: 'students', title: 'Students', items: [
     { to: 'students', label: 'My Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'assessments', label: 'Assessments', icon: ClipboardCheck },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
     { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
@@ -238,6 +243,8 @@ const clientNav: NavSection[] = [
     { to: 'finance', label: 'Finance', icon: Wallet },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
+  // Partner Admin (and team managers they appoint) only; canOpen checks team.manage.
+  { id: 'team', title: 'Organisation', items: [{ to: 'team-management', label: 'Team Management', icon: UsersRound }] },
   { id: 'account', title: 'Account', items: [{ to: 'profile', label: 'My Profile', icon: UserCircle2 }] },
 ];
 

@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Clock, MapPin } from 'lucide-react';
 import { Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Table, Tabs } from '../../components/ui';
-import { AttendanceTable, ExportButtons, stateTone } from '../../components/hr';
+import { AttendanceTable, ExportButtons, ReviewAutoCloseModal, stateTone } from '../../components/hr';
 import { useHR, useHRLookup } from '../../store/hr';
 import { supabase } from '../../auth/auth';
 import { MONTHS_SHORT, addDays, companyDate, companyTime, fmtDay, hm, isoDow, type AttendanceDay } from '../../data/hr';
 
 const camel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
-export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day' | 'hours' }) {
+export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day' | 'hours' | 'review' }) {
   const { data, call, now } = useHR();
   const lk = useHRLookup();
-  const [tab, setTab] = useState<'day' | 'hours'>(initialTab);
+  const [tab, setTab] = useState<'day' | 'hours' | 'review'>(initialTab);
+  const [reviewing, setReviewing] = useState<AttendanceDay | null>(null);
   const [date, setDate] = useState(companyDate(now()));
   const [month, setMonth] = useState(companyDate(now()).slice(0, 7));
   const [dept, setDept] = useState('');
@@ -57,7 +58,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
     const brk = rs.reduce((s, a) => s + a.breakMinutes, 0);
     const shortage = done.reduce((s, a) => s + (a.shortMinutes ?? Math.max(0, a.requiredMinutes - (a.netMinutes ?? 0))), 0);
     const extra = done.reduce((s, a) => s + (a.extraMinutes ?? 0), 0);
-    return { p, days: rs.length, expected, gross, brk, net, shortage, extra, late: rs.filter((a) => a.late).length, early: rs.filter((a) => a.earlyCheckout).length, missing: rs.filter((a) => a.state === 'Missing Punch-out').length, required: expected * (shift?.requiredMinutes ?? 480) };
+    return { p, days: rs.length, expected, gross, brk, net, shortage, extra, late: rs.filter((a) => a.late).length, early: rs.filter((a) => a.earlyCheckout).length, missing: rs.filter((a) => a.state === 'Missing Punch-out' || a.state === 'Auto Clock-Out').length, required: expected * (shift?.requiredMinutes ?? 480) };
   }), [people, all, month, data.holidays, data.calendar, lk]);
 
   const months = Array.from({ length: 12 }, (_, i) => {
@@ -66,26 +67,33 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
     return d.toISOString().slice(0, 7);
   });
   const [reopen, setReopen] = useState<{ day: AttendanceDay; reason: string } | null>(null);
+  const reviewRows = data.attendance.filter((a) => a.reviewStatus === 'pending_review' && ids.has(a.employeeId));
   const verify = (id: string) => void call('verify_attendance_location', { p_session: id }, { refresh: ['attendance'], success: 'Punch verified' });
 
   return (
     <>
       <PageHeader title="Attendance" subtitle="Server-recorded punches, breaks and working hours. Corrections are shown next to the original times."
         actions={<ExportButtons filename={tab === 'day' ? `ssi-attendance-${date}` : `ssi-working-hours-${month}`} rows={() => tab === 'day'
-          ? dayRows.map((a) => ({ Employee: lk.name(a.employeeId), Date: a.workDate, In: companyTime(a.effIn), Out: companyTime(a.effOut), 'Gross (min)': a.grossMinutes, 'Break (min)': a.breakMinutes, 'Net (min)': a.netMinutes, Status: a.state, Late: a.late ? 'Yes' : '', 'Early checkout': a.earlyCheckout ? 'Yes' : '' }))
+          ? dayRows.map((a) => ({ Employee: lk.name(a.employeeId), Date: a.workDate, In: companyTime(a.effIn), Out: companyTime(a.effOut), 'Gross (min)': a.grossMinutes, 'Break (min)': a.breakMinutes, 'Net (min)': a.netMinutes, Status: a.state, 'Clock-out': a.outKind ?? '', Review: a.reviewStatus ?? '', 'Unverified (min)': a.unverifiedMinutes || '', Late: a.late ? 'Yes' : '', 'Early checkout': a.earlyCheckout ? 'Yes' : '' }))
           : sheet.map((r) => ({ Employee: r.p.fullName, 'Employee ID': r.p.employeeCode, Month: month, 'Days attended': r.days, 'Working days': r.expected, 'Gross hours': (r.gross / 60).toFixed(2), 'Break hours': (r.brk / 60).toFixed(2), 'Net hours': (r.net / 60).toFixed(2), 'Required hours': (r.required / 60).toFixed(2), 'Below required (hours)': (r.shortage / 60).toFixed(2), 'Extra hours': (r.extra / 60).toFixed(2), Late: r.late, 'Early checkouts': r.early, 'Missing punch-outs': r.missing }))} />} />
       <Card className="mb-5 flex flex-wrap items-end gap-3 p-4">
-        <Tabs value={tab} onChange={setTab} tabs={[{ value: 'day', label: 'Daily attendance' }, { value: 'hours', label: 'Working hours' }]} />
+        <Tabs value={tab} onChange={setTab} tabs={[{ value: 'day', label: 'Daily attendance' }, { value: 'hours', label: 'Working hours' },
+          { value: 'review', label: 'Pending review', count: reviewRows.length }]} />
         <div className="ml-auto flex flex-wrap items-end gap-2">
-          {tab === 'day' ? <Field label="Date"><DatePicker value={date} clearable={false} onChange={(v) => v && setDate(v)} /></Field>
+          {tab === 'review' ? null : tab === 'day' ? <Field label="Date"><DatePicker value={date} clearable={false} onChange={(v) => v && setDate(v)} /></Field>
             : <FilterSelect label="Month" value={month} onChange={setMonth} options={months.map((m) => ({ value: m, label: `${MONTHS_SHORT[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}` }))} />}
           <FilterSelect label="Department" value={dept} onChange={setDept} options={[{ value: '', label: 'All departments' }, ...data.departments.map((d) => ({ value: d.id, label: d.name }))]} />
           <FilterSelect label="Employee" value={emp} onChange={setEmp} options={[{ value: '', label: 'Everyone' }, ...data.directory.map((d) => ({ value: d.id, label: d.fullName }))]} />
         </div>
       </Card>
-      {tab === 'day' ? (
+      {tab === 'review' ? (
+        <Card className="p-5">
+          <p className="mb-4 text-sm text-ink-soft">Days closed automatically at the cutoff because nobody clocked out. They count no working hours until the finish time is confirmed — by an approved correction request or here.</p>
+          <AttendanceTable rows={reviewRows} showName onReview={setReviewing} />
+        </Card>
+      ) : tab === 'day' ? (
         <>
-          <Card className="p-5"><AttendanceTable rows={dayRows} showName onVerify={verify} onReopen={(a) => setReopen({ day: a, reason: '' })} /></Card>
+          <Card className="p-5"><AttendanceTable rows={dayRows} showName onVerify={verify} onReopen={(a) => setReopen({ day: a, reason: '' })} onReview={setReviewing} /></Card>
           <Card className="mt-5 p-5">
             <h3 className="mb-3 font-display text-[15px] font-semibold text-heading">Not punched in · {fmtDay(date)}</h3>
             {notIn.length === 0 ? <p className="text-sm text-ink-soft">Everyone is accounted for.</p> : (
@@ -115,6 +123,7 @@ export default function HRAttendance({ initialTab = 'day' }: { initialTab?: 'day
           )}
         </Card>
       )}
+      <ReviewAutoCloseModal day={reviewing} onClose={() => setReviewing(null)} />
       <Modal open={!!reopen} onClose={() => setReopen(null)} size="sm" title="Re-open attendance"
         subtitle={reopen ? `${lk.name(reopen.day.employeeId)} · ${fmtDay(reopen.day.workDate)} · clocked out ${companyTime(reopen.day.effOut)}` : undefined}
         footer={<><Button variant="secondary" onClick={() => setReopen(null)}>Cancel</Button>

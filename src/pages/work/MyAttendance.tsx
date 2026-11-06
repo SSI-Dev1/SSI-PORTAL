@@ -15,6 +15,7 @@ export default function MyAttendance() {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [tab, setTab] = useState<'days' | 'corrections' | 'early'>('days');
   const [corrOpen, setCorrOpen] = useState(false);
+  const [corrDate, setCorrDate] = useState<string | undefined>();
   const [earlyOpen, setEarlyOpen] = useState(false);
   const rows = data.attendance.filter((a) => a.employeeId === me && a.workDate.slice(0, 7) === month);
   const net = rows.reduce((s, a) => s + (a.netMinutes ?? 0), 0);
@@ -35,7 +36,7 @@ export default function MyAttendance() {
       <PageHeader title="My Attendance" subtitle="Punch in and out, breaks and working hours. Times are recorded by the server."
         actions={<>
           <Button variant="secondary" icon={LogOut} onClick={() => setEarlyOpen(true)}>Request early checkout</Button>
-          <Button variant="secondary" icon={FilePen} onClick={() => setCorrOpen(true)}>Request correction</Button>
+          <Button variant="secondary" icon={FilePen} onClick={() => { setCorrDate(undefined); setCorrOpen(true); }}>Request correction</Button>
         </>} />
       <div className="grid gap-6 xl:grid-cols-3">
         <PunchCard />
@@ -64,7 +65,7 @@ export default function MyAttendance() {
           )}
         </div>
         <div className="p-5">
-          {tab === 'days' && <AttendanceTable rows={rows} />}
+          {tab === 'days' && <AttendanceTable rows={rows} onCorrect={(a) => { setCorrDate(a.workDate); setCorrOpen(true); }} />}
           {tab === 'corrections' && (corr.length === 0 ? <EmptyState icon={FilePen} title="No correction requests" /> : (
             <Table className="hr-table" head={['Date', 'Type', 'Requested', 'Reason', 'Status', '']}>
               {corr.map((c) => (
@@ -95,7 +96,7 @@ export default function MyAttendance() {
           ))}
         </div>
       </Card>
-      <CorrectionRequestModal open={corrOpen} onClose={() => setCorrOpen(false)} />
+      <CorrectionRequestModal open={corrOpen} onClose={() => setCorrOpen(false)} date={corrDate} />
       <EarlyCheckoutModal open={earlyOpen} onClose={() => setEarlyOpen(false)} />
     </>
   );

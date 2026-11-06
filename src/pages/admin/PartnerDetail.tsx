@@ -126,7 +126,7 @@ export default function PartnerDetail() {
             <dl className="space-y-3.5 p-5 text-sm">
               <Row icon={CalendarDays} label="Partner since" value={formatDate(p.joinedAt)} />
               <Row icon={Building2} label="Branches" value={p.branches.join(', ')} />
-              <Row icon={Percent} label="Commission rate" value={`${p.commissionRate}%`} />
+              {p.commissionRate != null && <Row icon={Percent} label="Commission rate" value={`${p.commissionRate}%${p.commissionVisible === false ? ' · hidden from the partner' : ''}`} />}
               <Row icon={Globe} label="Website" value={p.website ? <a className="inline-flex items-center gap-1 text-rust hover:underline" href={`https://${p.website}`} target="_blank" rel="noreferrer">{p.website}<ExternalLink className="h-3 w-3" /></a> : '—'} />
             </dl>
           </Card>

@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import { ClipboardList, Users } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Table } from '../../components/ui';
-import { ApprovalsPanel, AttendanceTable, KPI, ReportDetailModal, reportTone } from '../../components/hr';
+import { ApprovalsPanel, AttendanceTable, KPI, ReportDetailModal, ReviewAutoCloseModal, reportTone } from '../../components/hr';
 import { useHR, useHRLookup } from '../../store/hr';
 import { useStore } from '../../store/store';
-import { companyDate, fmtDay, type DailyReport } from '../../data/hr';
+import { companyDate, fmtDay, type AttendanceDay, type DailyReport } from '../../data/hr';
 
 export default function Team() {
   const { data, now } = useHR();
@@ -15,6 +15,7 @@ export default function Team() {
   const me = session?.userId;
   const [date, setDate] = useState(companyDate(now()));
   const [viewing, setViewing] = useState<DailyReport>();
+  const [reviewing, setReviewing] = useState<AttendanceDay | null>(null);
   const team = useMemo(() => {
     const ids = new Set<string>();
     const walk = (m: string) => data.employees.filter((e) => e.reportingManagerId === m && !ids.has(e.id)).forEach((e) => { ids.add(e.id); walk(e.id); });
@@ -53,9 +54,10 @@ export default function Team() {
       </Card>
       <Card className="mt-6 p-5">
         <h3 className="mb-3 font-display text-[15px] font-semibold text-heading">Team attendance · {fmtDay(date)}</h3>
-        <AttendanceTable rows={att} showName />
+        <AttendanceTable rows={att} showName onReview={setReviewing} />
       </Card>
       <ReportDetailModal report={viewing} onClose={() => setViewing(undefined)} canReview />
+      <ReviewAutoCloseModal day={reviewing} onClose={() => setReviewing(null)} />
     </>
   );
 }

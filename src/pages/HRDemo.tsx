@@ -52,7 +52,9 @@ function sample(): HRData {
       locationStatusIn: 'captured', locationStatusOut: outT ? 'denied' : null, locationVerifiedAt: null, earlyCheckoutId: null, state: (outT ? 'Checked Out' : 'Checked In') as 'Checked Out',
       grossMinutes: Math.round(gross), breakMinutes: brk, netMinutes: Math.round(gross - brk), requiredMinutes: 480, late, earlyCheckout: !!outT && gross - brk < 480, updatedAt: effIn,
       shortMinutes: outT ? Math.max(0, 480 - Math.round(gross - brk)) : null, extraMinutes: outT ? Math.max(0, Math.round(gross - brk) - 480) : null,
-      reopenedAt: null, reopenedBy: null, reopenReason: null, previousPunchOutAt: null };
+      reopenedAt: null, reopenedBy: null, reopenReason: null, previousPunchOutAt: null,
+      cutoffAt: new Date(new Date(`${d}T00:00:00+05:30`).getTime() + 86_400_000).toISOString(), autoClosedAt: null, closureNote: null,
+      reviewStatus: null, outKind: (outT ? 'manual' : null) as 'manual' | null, recordedMinutes: null, unverifiedMinutes: 0, correctionPending: false };
   };
   return {
     employees: directory.map((p) => ({ id: p.id, employeeCode: p.employeeCode, designationId: p.designationId, additionalDesignations: [], departmentId: p.departmentId, reportingManagerId: p.reportingManagerId, joiningDate: '2025-01-06', employmentStatus: p.employmentStatus, probationEndDate: null, dateOfBirth: null, shiftId: 'standard', workLocation: 'Kochi', updatedAt: T })),
@@ -66,7 +68,11 @@ function sample(): HRData {
     shifts: [{ id: 'standard', name: 'Standard (Mon–Sat, 8 hours)', flexible: false, startTime: '09:30:00', endTime: '18:30:00', graceMinutes: 15, requiredMinutes: 480, workingDays: [1, 2, 3, 4, 5, 6], unpaidBreaks: true, active: true }],
     salaries: [],
     settings: [{ key: 'location_policy', value: 'optional', label: null }, { key: 'early_checkout_monthly_limit', value: 2, label: null }, { key: 'leave_approval', value: 'manager_or_hr', label: null }, { key: 'saturday_offs_per_month', value: 1, label: null }, { key: 'leave_year_start_month', value: 1, label: null }, { key: 'location_retention_days', value: 180, label: null }, { key: 'leave_counts_non_working_days', value: false, label: null }],
-    attendance: [day('a1', ME, T, '09:20', null, 15), day('a2', 'demo-po', T, '09:52', null, 0, true), day('a3', ME, addDays(T, -1), '09:25', '18:40', 60), day('a4', 'demo-app', addDays(T, -1), '10:05', '17:10', 45, true)],
+    attendance: [day('a1', ME, T, '09:20', null, 15), day('a2', 'demo-po', T, '09:52', null, 0, true), day('a3', ME, addDays(T, -1), '09:25', '18:40', 60), day('a4', 'demo-app', addDays(T, -1), '10:05', '17:10', 45, true),
+      // Forgot to clock out: closed at midnight by the server, waiting for review.
+      { ...day('a5', 'demo-po', addDays(T, -2), '10:00', null, 0), state: 'Auto Clock-Out' as const, closedReason: 'auto_midnight', grossMinutes: null, netMinutes: 0,
+        autoClosedAt: at(addDays(T, -1), '00:00'), closureNote: 'Missed Manual Clock-Out — System Auto-Closed', reviewStatus: 'pending_review' as const,
+        outKind: 'auto' as const, recordedMinutes: 840, unverifiedMinutes: 840 }],
     breaks: [{ id: 'b1', sessionId: 'a1', startAt: at(T, '11:00'), endAt: at(T, '11:15') }],
     corrections: [{ id: 'c1', employeeId: 'demo-app', workDate: addDays(T, -2), correctionType: 'missed_punch_out', requestedInAt: null, requestedOutAt: at(addDays(T, -2), '18:35'), requestedBreakMinutes: null, reason: 'Forgot after client call (sample)', details: null, status: 'Pending', original: { punch_in_at: at(addDays(T, -2), '09:30'), punch_out_at: null }, applied: null, decidedBy: null, decidedAt: null, decisionComment: null, createdAt: T }],
     earlyCheckouts: [{ id: 'e1', employeeId: 'demo-po', workDate: T, requestedTime: at(T, '15:30'), reason: 'Family emergency (sample)', status: 'Pending', decidedBy: null, decidedAt: null, decisionComment: null, override: false, overrideReason: null, actualCheckoutAt: null, createdAt: T }],

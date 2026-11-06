@@ -48,10 +48,11 @@ $$;
 \set officer '''00000000-0000-0000-0000-00000000c0a3'''
 
 insert into auth.users (id, email) values (:assigned, 'chat-assigned@ssi.test'), (:manager, 'chat-manager@ssi.test'), (:officer, 'chat-officer@ssi.test');
-insert into public.profiles (id, role, full_name, email, status) values
-  (:assigned, 'application_manager', 'Assigned Staff', 'chat-assigned@ssi.test', 'active'),
-  (:manager, 'application_manager', 'Other Manager', 'chat-manager@ssi.test', 'active'),
-  (:officer, 'support_staff', 'Partnership Officer', 'chat-officer@ssi.test', 'active');
+-- The assigned employee has no Applications permission, so access comes from the assignment alone.
+insert into public.profiles (id, role, full_name, email, status, permissions) values
+  (:assigned, 'application_manager', 'Assigned Staff', 'chat-assigned@ssi.test', 'active', '{students,tasks}'),
+  (:manager, 'application_manager', 'Other Manager', 'chat-manager@ssi.test', 'active', null),
+  (:officer, 'support_staff', 'Partnership Officer', 'chat-officer@ssi.test', 'active', null);
 
 \echo '== who can open a conversation'
 begin;
@@ -76,8 +77,9 @@ select pg_temp.act_as(:assigned);
 select pg_temp.check(public.can_access_application_chat('a1'), 'assigned employee has access');
 select pg_temp.check(not public.can_access_application_chat('a2'), 'assigned employee has no access to unassigned application');
 select pg_temp.act_as(:manager);
-select pg_temp.check(not public.can_access_application_chat('a1'), 'employee who is not assigned is denied, even with Applications permission');
-select pg_temp.check((select count(*) from public.my_application_chats()) = 0, 'unassigned manager has no conversations');
+-- 0020: access follows the Applications permission (the same rows the employee can already read).
+select pg_temp.check(public.can_access_application_chat('a1'), 'employee with the Applications permission opens the chat without being assigned (0020)');
+select pg_temp.check((select count(*) from public.my_application_chats()) = (select count(*) from public.applications), 'Applications permission lists every application the employee can read (0020)');
 select pg_temp.act_as(:officer);
 select pg_temp.check(public.can_access_application_chat('a1'), 'partnership officer of the partner has access');
 select pg_temp.check(not public.can_access_application_chat('a2'), 'partnership officer has no access to other partners');
@@ -121,8 +123,8 @@ select pg_temp.check((select body from public.application_messages order by id d
 select pg_temp.act_as(:p2admin);
 select pg_temp.check((select count(*) from public.application_messages) = 0, 'other organisation reads no messages (RLS)');
 select pg_temp.check((select count(*) from public.application_chat_reads) = 0, 'other organisation reads no read receipts (RLS)');
-select pg_temp.act_as(:manager);
-select pg_temp.check((select count(*) from public.application_messages) = 0, 'unassigned employee reads no messages (RLS)');
+select pg_temp.act_as(:officer);
+select pg_temp.check((select count(*) from public.application_messages) = 0, 'employee without Applications permission who is not assigned or officer reads no messages (RLS)');
 select pg_temp.act_as(:assigned);
 select pg_temp.check((select count(*) from public.application_messages where application_id = 'a1') = 2, 'assigned employee sees the same conversation');
 select pg_temp.act_as(:super);

@@ -14,6 +14,7 @@ import { ApplicationForm } from '../../components/forms/ApplicationForm';
 import { DocumentUpload } from '../../components/forms/DocumentUpload';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { countryFlag, fullName, greeting, timeAgo, updateStatus } from '../../lib/utils';
+import { partnerCan } from '../../auth/roles';
 
 export default function ClientDashboard() {
   const { session } = useStore();
@@ -42,12 +43,13 @@ export default function ClientDashboard() {
     { label: 'Visa Processing', value: visa, icon: PlaneTakeoff, to: 'applications?status=Visa%20Lodged', tone: 'navy' as const },
   ];
 
+  // Only the actions this account may take (the database refuses the rest anyway).
   const quick = [
-    { label: 'Add Student', icon: UserPlus, onClick: () => setAddStudent(true) },
-    { label: 'New Application', icon: FilePlus2, onClick: () => setNewApp(true) },
-    { label: 'Find Courses', icon: Sparkles, onClick: () => navigate('/client/course-finder') },
-    { label: 'Upload Document', icon: FileUp, onClick: () => setUpload(true) },
-  ];
+    { label: 'Add Student', icon: UserPlus, onClick: () => setAddStudent(true), need: 'students.add' as const },
+    { label: 'New Application', icon: FilePlus2, onClick: () => setNewApp(true), need: 'applications.create' as const },
+    { label: 'Find Courses', icon: Sparkles, onClick: () => navigate('/client/course-finder'), need: 'course_finder' as const },
+    { label: 'Upload Document', icon: FileUp, onClick: () => setUpload(true), need: 'documents.upload' as const },
+  ].filter((q) => partnerCan(session, q.need));
 
   return (
     <>

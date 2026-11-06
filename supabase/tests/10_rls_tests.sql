@@ -105,7 +105,8 @@ select pg_temp.check((select count(*) from public.documents) = 1, 'p1 sees only 
 select pg_temp.check((select count(*) from public.payments) = 1 and (select partner_id from public.payments) = 'p1', 'p1 admin sees only its own invoices');
 select pg_temp.check((select count(*) from public.partners) = 1, 'p1 sees only its own partner record');
 select pg_temp.check((select array_agg(id order by id) from public.announcements) = '{n_all}', 'p1 sees only published, addressed announcements');
-select pg_temp.check((select count(*) from public.profiles) = 1, 'p1 sees only its own profile');
+-- 0022: a Partner Admin reads their own organisation's team accounts, never anyone else's.
+select pg_temp.check(not exists (select 1 from public.profiles where partner_id is distinct from 'p1'), 'p1 admin sees only its own organisation''s profiles');
 select pg_temp.check((select count(*) from public.tasks) = 0, 'partners cannot see staff tasks');
 select pg_temp.check((select count(*) from public.audit_log) = 0, 'partners cannot read the audit log');
 select pg_temp.check(not exists (select 1 from public.activities where partner_id = 'p2'), 'p1 sees no p2 activity');

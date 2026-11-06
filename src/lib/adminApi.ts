@@ -82,12 +82,13 @@ export const adminApi = {
 };
 
 /** Partner organisation access — Super Admin only (enforced by a database trigger). */
-export async function setPartnerAccess(partnerId: string, patch: { portalEnabled?: boolean; modules?: string[]; status?: string; archived?: boolean }) {
+export async function setPartnerAccess(partnerId: string, patch: { portalEnabled?: boolean; modules?: string[]; status?: string; archived?: boolean; commissionVisible?: boolean }) {
   const row: Record<string, unknown> = {};
   if (patch.portalEnabled !== undefined) row.portal_enabled = patch.portalEnabled;
   if (patch.modules) row.modules = patch.modules;
   if (patch.status) row.status = patch.status;
   if (patch.archived !== undefined) row.archived_at = patch.archived ? new Date().toISOString() : null;
+  if (patch.commissionVisible !== undefined) row.commission_visible = patch.commissionVisible;
   const { error } = await requireClient().from('partners').update(row).eq('id', partnerId);
   if (error) throw new AdminApiError('Partner access was not changed. Only a Super Admin can change it.');
 }

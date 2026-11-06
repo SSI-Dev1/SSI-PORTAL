@@ -81,6 +81,9 @@ export function fromRow<T>(row: Row): T {
   return out as T;
 }
 
+/** Readable partners columns (commission_rate is not; see partner_commissions()). */
+const PARTNER_COLUMNS: string = 'id, name, code, contact_name, email, phone, city, country, website, status, tier, branches, joined_at, portal_enabled, modules, archived_at, address, partnership_officer_id, commission_visible';
+
 const TABLES = {
   partners: 'partners',
   students: 'students',
@@ -118,8 +121,16 @@ function useStoreValue() {
     const sb = supabase;
     const f: Record<string, () => PromiseLike<{ data: unknown; error: unknown }>> = {};
     (Object.keys(TABLES) as TableKey[]).forEach((k) => {
-      f[k] = () => sb.from(TABLES[k]).select('*').limit(5000);
+      f[k] = () => sb.from(TABLES[k]).select(k === 'partners' ? PARTNER_COLUMNS : '*').limit(5000);
     });
+    // Commission is not a readable column: it comes from partner_commissions(), which returns
+    // only what this user may see (SSI staff with Partners/Finance, or their own Partner Admin).
+    f.partners = async () => {
+      const [res, com] = await Promise.all([sb.from('partners').select(PARTNER_COLUMNS).limit(5000), sb.rpc('partner_commissions')]);
+      if (res.error) return res;
+      const rates = new Map(((com.data ?? []) as { partner_id: string; commission_rate: number }[]).map((r) => [r.partner_id, Number(r.commission_rate)]));
+      return { data: ((res.data ?? []) as unknown as Row[]).map((r) => ({ ...r, commission_rate: rates.get(r.id as string) ?? null })), error: null };
+    };
     f.activities = () => sb.from('activities').select('*').order('at', { ascending: false }).limit(80);
     f.notifications = () => sb.from('notifications').select('id, created_at, kind, title, body, link, read_at').order('created_at', { ascending: false }).limit(50);
     f.staff = () => sb.rpc('staff_directory');
@@ -326,8 +337,8 @@ function useStoreValue() {
   /** Insert, then replace the optimistic row with the server's version (server-managed fields). */
   const insert = async <K extends TableKey>(key: K, local: DB[K][number], row: Row, failMsg?: string) => {
     upsertLocal(key, local);
-    const res = await sb().from(TABLES[key]).insert(row).select('*').single();
-    if (await commit(Promise.resolve(res), failMsg)) upsertLocal(key, fromRow<DB[K][number]>(res.data as Row));
+    const res = await sb().from(TABLES[key]).insert(row).select(key === 'partners' ? PARTNER_COLUMNS : '*').single();
+    if (await commit(Promise.resolve(res), failMsg)) upsertLocal(key, fromRow<DB[K][number]>(res.data as unknown as Row));
   };
   const update = async <K extends TableKey>(key: K, id: ID, patch: Partial<DB[K][number]>, failMsg?: string) => {
     // Optimistic concurrency: only apply if nobody changed the row since we loaded it.
@@ -335,7 +346,7 @@ function useStoreValue() {
     patchLocal(key, id, patch);
     let q = sb().from(TABLES[key]).update(toRow(patch, ['updatedAt'])).eq('id', id);
     if (version) q = q.eq('updated_at', version);
-    const res = await q.select('*');
+    const res = await q.select(key === 'partners' ? PARTNER_COLUMNS : '*');
     if (!res.error && (res.data?.length ?? 0) === 0) {
       if (version) {
         const { data: still } = await sb().from(TABLES[key]).select('id').eq('id', id).maybeSingle();
@@ -347,7 +358,7 @@ function useStoreValue() {
       }
       return void (await commit(Promise.resolve({ error: 'denied' }), failMsg));
     }
-    if (await commit(Promise.resolve(res), failMsg) && res.data?.[0]) upsertLocal(key, fromRow<DB[K][number]>(res.data[0] as Row));
+    if (await commit(Promise.resolve(res), failMsg) && res.data?.[0]) upsertLocal(key, fromRow<DB[K][number]>(res.data[0] as unknown as Row));
   };
   const remove = async (key: TableKey, id: ID, failMsg?: string) => {
     removeLocal(key, id);
@@ -378,11 +389,13 @@ function useStoreValue() {
     // ---------- partners
     addPartner(p: Without<Partner, 'id' | 'joinedAt'>) {
       const id = newId();
-      void insert('partners', { ...p, id, joinedAt: now() }, toRow({ ...p, id }));
+      void insert('partners', { ...p, id, joinedAt: now() }, toRow({ ...p, id })).then(() => load(['partners']));
       return id;
     },
     updatePartner(id: ID, patch: Partial<Partner>) {
-      void update('partners', id, patch);
+      // Never send a commission the user could not see (or one the server must keep).
+      const { commissionRate, ...rest } = patch;
+      void update('partners', id, commissionRate == null ? rest : patch).then(() => load(['partners']));
     },
     removePartner(id: ID) {
       void remove('partners', id, 'Only a Super Admin can remove partners.').then(() => load());

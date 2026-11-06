@@ -26,6 +26,10 @@ export interface Shift {
   workingDays: number[];
   unpaidBreaks: boolean;
   active: boolean;
+  /** Overnight shifts end at their own next-day cutoff instead of local midnight. */
+  overnight?: boolean;
+  /** Next-day local time an unfinished overnight session is closed (default: 4h after the end). */
+  autoCloseTime?: string | null;
 }
 export interface Employee {
   id: string;
@@ -57,7 +61,7 @@ export interface DirectoryEntry {
 export interface Salary { id: string; employeeId: string; amount: number; currency: string; payFrequency: string; effectiveFrom: string | null; updatedAt: string }
 export interface Setting { key: string; value: unknown; label: string | null }
 
-export type AttendanceState = 'Not Checked In' | 'Checked In' | 'On Break' | 'Checked Out' | 'Missing Punch-out';
+export type AttendanceState = 'Not Checked In' | 'Checked In' | 'On Break' | 'Checked Out' | 'Missing Punch-out' | 'Auto Clock-Out';
 export interface AttendanceDay {
   id: string;
   employeeId: string;
@@ -89,6 +93,17 @@ export interface AttendanceDay {
   reopenedBy: string | null;
   reopenReason: string | null;
   previousPunchOutAt: string | null;
+  /** When an unfinished session of this day is closed automatically (company timezone). */
+  cutoffAt: string | null;
+  autoClosedAt: string | null;
+  closureNote: string | null;
+  reviewStatus: 'pending_review' | 'corrected' | 'reviewed' | null;
+  /** How the day ended: manual clock-out, automatic clock-out, approved correction, or the older "missing" closure. */
+  outKind: 'manual' | 'auto' | 'corrected' | 'missing' | null;
+  /** Clock-in to the automatic cutoff: recorded only, never credited as work. */
+  recordedMinutes: number | null;
+  unverifiedMinutes: number;
+  correctionPending: boolean;
 }
 export interface BreakSession { id: string; sessionId: string; startAt: string; endAt: string | null }
 export type RequestStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';

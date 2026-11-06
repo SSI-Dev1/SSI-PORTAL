@@ -182,6 +182,9 @@ fields.
 8. Authentication → SMTP: your own SMTP (default is heavily rate-limited).
 9. Database → Settings: **Enforce SSL**; Network Restrictions to your backup host IP.
 10. Edge Function: `supabase functions deploy admin-users --project-ref goiyhrlhczygeweykwqq` and `supabase secrets set ALLOWED_ORIGINS=https://ssi-dev1.github.io` (your exact site origin).
+    Also `supabase functions deploy partner-team --project-ref goiyhrlhczygeweykwqq` (Partner Portal → Team Management; same `ALLOWED_ORIGINS`).
+10a. Migrations 0020–0022 go out **together with this frontend** (it reads `my_access().partner_permissions`, `partner_commissions()` and `partners.commission_visible`). Migration 0021 schedules the automatic clock-out with pg_cron: enable Database → Extensions → **pg_cron** first, or re-run 0021 after enabling it, and check `select * from cron.job where jobname = 'ssi-attendance-auto-close';`.
+10b. `partners.commission_rate` is not readable by app users (column grant). Any column added to `partners` later must be granted with `grant select (new_column) on public.partners to authenticated;`.
 11. First Super Admin: create the user in Authentication → Users, then
     `insert into public.profiles (id, role, full_name, email) select id, 'super_admin', 'Name', email from auth.users where email = '…';`
     Create everyone else from **User Management** (Add partner / Add employee / Add partner user).

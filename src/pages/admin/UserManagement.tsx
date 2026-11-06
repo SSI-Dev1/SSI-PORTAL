@@ -573,10 +573,12 @@ function PartnerAccessDialog({ partner, onClose, onSaved }: { partner: Partner |
   const [portal, setPortal] = useState(true);
   const [modules, setModules] = useState<string[]>([]);
   const [status, setStatus] = useState('Active');
+  const [commission, setCommission] = useState(true);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!partner) return;
     setPortal(partner.portalEnabled !== false);
+    setCommission(partner.commissionVisible !== false);
     setModules(partner.modules ?? PARTNER_MODULES.map((m) => m.id));
     setStatus(partner.status);
   }, [partner]);
@@ -584,7 +586,7 @@ function PartnerAccessDialog({ partner, onClose, onSaved }: { partner: Partner |
     if (!partner) return;
     setBusy(true);
     try {
-      await setPartnerAccess(partner.id, { portalEnabled: portal, modules, status });
+      await setPartnerAccess(partner.id, { portalEnabled: portal, modules, status, commissionVisible: commission });
       toast.success('Partner access updated', partner.name);
       await onSaved();
       onClose();
@@ -619,6 +621,13 @@ function PartnerAccessDialog({ partner, onClose, onSaved }: { partner: Partner |
         <div>
           <div className="mb-2 text-sm font-semibold text-heading">Modules this partner can use</div>
           <ModulePicker value={modules} onChange={setModules} />
+        </div>
+        <div className="flex items-center justify-between gap-4 rounded-xl bg-canvas p-4 ring-1 ring-line">
+          <div>
+            <div className="font-semibold text-heading">Show commission to the Partner Admin</div>
+            <div className="text-xs text-ink-mute">Partner employees never see commission. When off, the Partner Admin doesn't either.</div>
+          </div>
+          <Switch checked={commission} onCheckedChange={setCommission} label="Show commission to the Partner Admin" />
         </div>
         <p className="text-xs text-ink-mute">Partners cannot change these settings themselves. The database enforces them on every request.</p>
       </div>

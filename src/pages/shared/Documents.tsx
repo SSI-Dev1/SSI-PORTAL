@@ -7,13 +7,14 @@ import { DocumentUpload } from '../../components/forms/DocumentUpload';
 import { useLookup, useScoped, useStore } from '../../store/store';
 import { DOC_TYPES, type DocStatus, type DocumentRecord } from '../../data/types';
 import { cn, fileSize, formatDate, formatDateTime, fullName, matches, type Tone } from '../../lib/utils';
+import { partnerCan } from '../../auth/roles';
 
 export const docTone: Record<DocStatus, Tone> = { Verified: 'green', Pending: 'amber', Rejected: 'red' };
 
 export default function Documents() {
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions } = useStore();
+  const { actions, session } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
   const [q, setQ] = useState('');
@@ -73,7 +74,7 @@ export default function Documents() {
       <PageHeader
         title="Documents"
         subtitle={scoped.isAdmin ? 'Review and verify student documents from every partner.' : 'Upload and manage your students’ documents.'}
-        actions={<Button icon={FileUp} onClick={() => setUpload(true)}>Upload Documents</Button>}
+        actions={partnerCan(session, 'documents.upload') ? <Button icon={FileUp} onClick={() => setUpload(true)}>Upload Documents</Button> : undefined}
       />
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((s) => (
@@ -148,7 +149,7 @@ export default function Documents() {
                                 { label: 'Reject', icon: XCircle, onClick: () => setDocStatus(d, 'Rejected') },
                               ]
                             : []),
-                          { label: 'Delete', icon: Trash2, onClick: () => remove(d), danger: true },
+                          ...(session?.role !== 'client' || session.userRole === 'partner_admin' ? [{ label: 'Delete', icon: Trash2, onClick: () => remove(d), danger: true }] : []),
                         ]}
                       />
                     </td>

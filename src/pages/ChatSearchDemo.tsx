@@ -4,6 +4,7 @@
 // course_search_facets(); the small filter below is a stand-in, and the SQL tests cover the engine.
 import { useMemo, useRef, useState } from 'react';
 import Applications from './shared/Applications';
+import Messages from './shared/Messages';
 import CourseSearch from './shared/CourseSearch';
 import { Button, Card, Switch } from '../components/ui';
 import { StoreContext, type StoreValue } from '../store/store';
@@ -70,6 +71,15 @@ function useFakeChat() {
       }
       return out;
     },
+    async inbox({ all }) {
+      const sums = await api.summaries();
+      return APPS.filter((id) => all || sums[id].total > 0).map((id) => ({
+        applicationId: id, ref: id === 'app-1' ? 'APP-001' : 'APP-002', student: id === 'app-1' ? 'Sample Student One' : 'Sample Student Two',
+        university: 'University of East Anglia', course: 'MSc Business Management', partner: 'Horizon Edu', status: 'Offer Pending', intake: 'Sep 2027',
+        unread: sums[id].unread, total: sums[id].total, lastMessageAt: sums[id].lastMessageAt,
+        lastSender: [...msgs.current].reverse().find((m) => m.applicationId === id)?.senderName ?? null,
+      }));
+    },
     async context(id) {
       const info: ChatContextInfo = {
         id, ref: id === 'app-1' ? 'APP-001' : 'APP-002', status: 'Offer Pending', intake: 'Sep 2027', student: id === 'app-1' ? 'Sample Student One' : 'Sample Student Two',
@@ -111,7 +121,7 @@ function useFakeChat() {
 }
 
 export default function ChatSearchDemo() {
-  const [view, setView] = useState<'apps' | 'search'>('apps');
+  const [view, setView] = useState<'apps' | 'messages' | 'search'>('apps');
   const [failing, setFailing] = useState(false);
   const chat = useFakeChat();
   const api = useRef(chat.api).current;
@@ -141,11 +151,12 @@ export default function ChatSearchDemo() {
             <Card className="flex flex-wrap items-center gap-2 p-4 text-sm text-ink-soft">
               Dev harness
               <Button size="sm" variant={view === 'apps' ? 'primary' : 'secondary'} onClick={() => setView('apps')}>Applications</Button>
+              <Button size="sm" variant={view === 'messages' ? 'primary' : 'secondary'} onClick={() => setView('messages')}>Messages</Button>
               <Button size="sm" variant={view === 'search' ? 'primary' : 'secondary'} onClick={() => setView('search')}>Course search</Button>
               <Button size="sm" variant="secondary" onClick={chat.incoming}>Receive partner message</Button>
               <span className="inline-flex items-center gap-2"><Switch checked={failing} onCheckedChange={(v) => { setFailing(v); chat.setFail(v); }} label="Fail sends" /> Fail sends</span>
             </Card>
-            {view === 'apps' ? <Applications /> : <CourseSearch />}
+            {view === 'apps' ? <Applications /> : view === 'messages' ? <Messages /> : <CourseSearch />}
           </div>
         </ChatProvider>
       </CourseSearchApiContext.Provider>

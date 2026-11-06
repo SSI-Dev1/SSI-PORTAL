@@ -21,7 +21,10 @@ export interface Partner {
   tier: PartnerTier;
   branches: string[];
   joinedAt: string;
-  commissionRate: number;
+  /** Only for users allowed to see commission (server-filtered); null/undefined otherwise. */
+  commissionRate?: number | null;
+  /** Super Admin: whether the Partner Admin may see the organisation's commission. */
+  commissionVisible?: boolean;
   /** Super Admin controls (read-only for everyone else). */
   portalEnabled?: boolean;
   modules?: string[];
@@ -377,6 +380,10 @@ export interface Session {
   permissions: string[];
   /** Modules enabled for the partner organisation (server-computed). */
   partnerModules: string[];
+  /** Partner users: what this account may do (server-computed from the organisation and the account). */
+  partnerPermissions?: string[];
+  /** May see commission figures (server-computed). */
+  commission?: boolean;
   /** Set while staff preview a partner's portal (UI only); holds the staff session to return to. */
   previewOf?: Session;
   /** Internal employee with an HR record (attendance, leave, daily reports). */

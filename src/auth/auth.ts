@@ -62,6 +62,7 @@ export async function resolveStage(user: User): Promise<AuthStage> {
     role: UserRole; status: string; permissions: string[] | null; partner_id: string | null; partner_name: string | null;
     partner_modules: string[] | null; portal_open: boolean; must_change_password: boolean; department: string | null;
     employee: boolean | null; designations: string[] | null; has_team: boolean | null;
+    partner_permissions: string[] | null; commission: boolean | null;
   }>();
   if (error) throw new AuthError('Could not load your account. Please try again.');
   if (!data) throw new AuthError('Your account has not been set up yet. Please contact SSI GLOBAL.');
@@ -80,12 +81,14 @@ export async function resolveStage(user: User): Promise<AuthStage> {
       title: ((prof?.designation as string | null) || ROLE_LABEL[userRole]) + (data.department ? ` · ${data.department}` : ''),
       permissions: data.permissions ?? [], partnerModules: [],
       employee: data.employee === true, designations: data.designations ?? [], hasTeam: data.has_team === true,
+      commission: data.commission === true,
     };
   } else {
     if (!data.portal_open) throw new AuthError('Portal access for your organisation is currently disabled. Please contact SSI GLOBAL.');
     session = {
       role: 'client', userRole, userId: user.id, partnerId: data.partner_id ?? undefined, name, email,
       title: data.partner_name ?? 'Partner', permissions: [], partnerModules: data.partner_modules ?? [],
+      partnerPermissions: data.partner_permissions ?? [], commission: data.commission === true,
     };
   }
   if (data.must_change_password) return { kind: 'password-change', session };

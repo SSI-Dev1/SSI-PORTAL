@@ -11,11 +11,12 @@ import { useLookup, useScoped, useStore } from '../../store/store';
 import { APP_STATUSES, type AppStatus } from '../../data/types';
 import { INTAKES } from '../../data/seed';
 import { appStatusColor, cn, countryFlag, formatDate, fullName, matches } from '../../lib/utils';
+import { partnerCan } from '../../auth/roles';
 
 export default function Applications() {
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions } = useStore();
+  const { actions, session } = useStore();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
@@ -79,9 +80,11 @@ export default function Applications() {
                 { value: 'board', label: 'Board' },
               ]}
             />
-            <Button icon={FilePlus2} onClick={() => setFormOpen(true)}>
-              New Application
-            </Button>
+            {partnerCan(session, 'applications.create') && (
+              <Button icon={FilePlus2} onClick={() => setFormOpen(true)}>
+                New Application
+              </Button>
+            )}
           </>
         }
       />
@@ -108,7 +111,7 @@ export default function Applications() {
             icon={FileStack}
             title="No applications found"
             description={scoped.applications.length ? 'Adjust your filters to see more.' : 'Create your first application to start tracking.'}
-            action={<Button icon={FilePlus2} onClick={() => setFormOpen(true)}>New Application</Button>}
+            action={partnerCan(session, 'applications.create') ? <Button icon={FilePlus2} onClick={() => setFormOpen(true)}>New Application</Button> : undefined}
           />
         ) : view === 'list' ? (
           <>

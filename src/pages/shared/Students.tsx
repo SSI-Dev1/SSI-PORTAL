@@ -9,6 +9,7 @@ import { useLookup, useScoped, useStore } from '../../store/store';
 import { COUNTRIES } from '../../data/seed';
 import type { Student, StudentStatus } from '../../data/types';
 import { countryFlag, formatDate, fullName, matches, type Tone } from '../../lib/utils';
+import { partnerCan, type PartnerPermission } from '../../auth/roles';
 
 export const studentTone: Record<StudentStatus, Tone> = { Lead: 'blue', Active: 'green', Enrolled: 'navy', 'On Hold': 'amber' };
 
@@ -18,6 +19,9 @@ export default function Students() {
   const { actions } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
+  const { session } = useStore();
+  const can = (p: PartnerPermission) => partnerCan(session, p);
+  const canDelete = session?.role !== 'client' || session.userRole === 'partner_admin';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
@@ -75,11 +79,11 @@ export default function Students() {
       <PageHeader
         title={scoped.isAdmin ? 'Students' : 'My Students'}
         subtitle={scoped.isAdmin ? 'Every student across all partner workspaces.' : 'Manage your students and start new applications.'}
-        actions={
+        actions={can('students.add') && (
           <Button icon={UserPlus} onClick={() => { setEditing(undefined); setFormOpen(true); }}>
             Add Student
           </Button>
-        }
+        )}
       />
 
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -112,7 +116,7 @@ export default function Students() {
             icon={Users}
             title={scoped.students.length ? 'No students match your filters' : 'No students yet'}
             description={scoped.students.length ? 'Try a different search or clear the filters.' : 'Add your first student to start building applications.'}
-            action={<Button icon={Plus} onClick={() => setFormOpen(true)}>Add Student</Button>}
+            action={can('students.add') ? <Button icon={Plus} onClick={() => setFormOpen(true)}>Add Student</Button> : undefined}
           />
         ) : (
           <>
@@ -158,9 +162,9 @@ export default function Students() {
                       )}
                       items={[
                         { label: 'View profile', icon: Eye, onClick: () => navigate(`${scoped.base}/students/${s.id}`) },
-                        { label: 'Edit student', icon: Pencil, onClick: () => { setEditing(s); setFormOpen(true); } },
-                        { label: 'New application', icon: FilePlus2, onClick: () => setAppFor(s.id) },
-                        { label: 'Delete', icon: Trash2, onClick: () => remove(s), danger: true },
+                        ...(can('students.edit') ? [{ label: 'Edit student', icon: Pencil, onClick: () => { setEditing(s); setFormOpen(true); } }] : []),
+                        ...(can('applications.create') ? [{ label: 'New application', icon: FilePlus2, onClick: () => setAppFor(s.id) }] : []),
+                        ...(canDelete ? [{ label: 'Delete', icon: Trash2, onClick: () => remove(s), danger: true }] : []),
                       ]}
                     />
                   </td>

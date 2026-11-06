@@ -64,7 +64,7 @@ export default function AppShell() {
     base,
     portal: session?.role ?? 'client',
     orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,
-    badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread } : {}) } as Record<string, number>,
+    badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread, messages: chat.totalUnread } : {}) } as Record<string, number>,
   };
 
   return (

@@ -40,7 +40,7 @@ import {
 
 export const reportTone: Record<ReportStatus, Tone> = { Draft: 'slate', Submitted: 'blue', Reviewed: 'violet', 'Correction Requested': 'amber', Approved: 'green' };
 export const requestTone: Record<RequestStatus, Tone> = { Pending: 'amber', Approved: 'green', Rejected: 'red', Cancelled: 'slate' };
-export const stateTone: Record<string, Tone> = { 'Not Checked In': 'slate', 'Checked In': 'green', 'On Break': 'amber', 'Checked Out': 'navy', 'Missing Punch-out': 'red' };
+export const stateTone: Record<string, Tone> = { 'Not Checked In': 'slate', 'Checked In': 'green', 'On Break': 'amber', 'Checked Out': 'navy', 'Missing Punch-out': 'red', 'Auto Clock-Out': 'red' };
 
 // ------------------------------------------------------------------ export
 
@@ -555,6 +555,13 @@ export function useClockFlow() {
     const t = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => window.clearInterval(t);
   }, [open]);
+  // The day ends at its cutoff (midnight, or the overnight shift's cutoff): the server closes the
+  // session; re-read so the timer stops and Clock In comes back, even before the realtime event.
+  const cutoffMs = today?.cutoffAt ? new Date(today.cutoffAt).getTime() : null;
+  const pastCutoff = !!open && cutoffMs !== null && now().getTime() >= cutoffMs;
+  useEffect(() => {
+    if (pastCutoff) void load(['attendance', 'breaks']);
+  }, [pastCutoff, load]);
   // Live figures from server timestamps and the server clock offset.
   const live = useMemo(() => {
     if (!today?.effIn) return null;
@@ -673,7 +680,19 @@ export function PunchCard({ compact }: { compact?: boolean }) {
 
 // ------------------------------------------------------------------ attendance table
 
-export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: AttendanceDay[]; showName?: boolean; onVerify?: (id: string) => void; onReopen?: (a: AttendanceDay) => void }) {
+const REVIEW_LABEL: Record<NonNullable<AttendanceDay['reviewStatus']>, { label: string; tone: Tone }> = {
+  pending_review: { label: 'Pending review', tone: 'amber' },
+  corrected: { label: 'Correction approved', tone: 'green' },
+  reviewed: { label: 'Reviewed · not credited', tone: 'slate' },
+};
+
+export function AttendanceTable({ rows, showName, onVerify, onReopen, onReview, onCorrect }: {
+  rows: AttendanceDay[]; showName?: boolean; onVerify?: (id: string) => void; onReopen?: (a: AttendanceDay) => void;
+  /** HR / manager: settle an automatically closed day. */
+  onReview?: (a: AttendanceDay) => void;
+  /** Employee: request a correction for an automatically closed day. */
+  onCorrect?: (a: AttendanceDay) => void;
+}) {
   const lk = useHRLookup();
   if (!rows.length) return <EmptyState icon={Clock} title="No attendance in this period" />;
   return (
@@ -683,7 +702,7 @@ export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: 
           <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-ink-mute">
             {showName && <th className="py-2.5 pr-3">Employee</th>}
             <th className="py-2.5 pr-3">Date</th><th className="pr-3">In</th><th className="pr-3">Out</th><th className="pr-3 text-right">Gross</th>
-            <th className="pr-3 text-right">Break</th><th className="pr-3 text-right">Net</th><th className="pr-3 text-right">Below</th><th className="pr-3 text-right">Extra</th><th className="pr-3">Status</th><th>Location</th>{onReopen && <th />}
+            <th className="pr-3 text-right">Break</th><th className="pr-3 text-right">Net</th><th className="pr-3 text-right">Below</th><th className="pr-3 text-right">Extra</th><th className="pr-3">Status</th><th>Location</th>{(onReopen || onReview || onCorrect) && <th />}
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -692,10 +711,20 @@ export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: 
               {showName && <td className="py-2.5 pr-3 font-medium text-heading">{lk.name(a.employeeId)}</td>}
               <td className="py-2.5 pr-3 whitespace-nowrap">{fmtDay(a.workDate)}</td>
               <td className="pr-3 tabular-nums">{companyTime(a.effIn)}{a.correctedInAt && <span title={`Recorded ${companyTime(a.punchInAt)}`} className="ml-1 text-[10px] text-teal-600">corr.</span>}</td>
-              <td className="pr-3 tabular-nums">{companyTime(a.effOut)}{a.correctedOutAt && <span title={`Recorded ${companyTime(a.punchOutAt)}`} className="ml-1 text-[10px] text-teal-600">corr.</span>}</td>
+              <td className="pr-3 tabular-nums">
+                {a.outKind === 'auto'
+                  ? <span title={`${a.closureNote ?? 'Automatic clock-out'} · cutoff ${companyTime(a.autoClosedAt ?? a.cutoffAt)}`} className="text-red-600">{companyTime(a.autoClosedAt ?? a.cutoffAt)}<span className="ml-1 text-[10px]">auto</span></span>
+                  : companyTime(a.effOut)}
+                {a.correctedOutAt && <span title={a.punchOutAt ? `Recorded ${companyTime(a.punchOutAt)}` : a.autoClosedAt ? `Automatic clock-out at ${companyTime(a.autoClosedAt)}` : 'No clock-out recorded'} className="ml-1 text-[10px] text-teal-600">corr.</span>}
+                {a.outKind === 'manual' && <span className="ml-1 text-[10px] text-ink-mute">manual</span>}
+              </td>
               <td className="pr-3 text-right tabular-nums">{hm(a.grossMinutes)}</td>
               <td className="pr-3 text-right tabular-nums">{hm(a.breakMinutes)}</td>
-              <td className="pr-3 text-right font-semibold tabular-nums text-heading">{hm(a.netMinutes)}</td>
+              <td className="pr-3 text-right font-semibold tabular-nums text-heading">
+                {a.outKind === 'auto' && a.unverifiedMinutes > 0
+                  ? <span title={`Recorded ${hm(a.recordedMinutes)} until the automatic cutoff — unverified, not counted as work`}>{hm(0)}<span className="block text-[10px] font-normal text-amber-600">{hm(a.unverifiedMinutes)} unverified</span></span>
+                  : hm(a.netMinutes)}
+              </td>
               <td className="pr-3 text-right tabular-nums">{a.shortMinutes ? <span className="text-red-600" title={`Below the ${hm(a.requiredMinutes)} day`}>{hm(a.shortMinutes)}</span> : '—'}</td>
               <td className="pr-3 text-right tabular-nums">{a.extraMinutes ? <span className="text-emerald-600">+{hm(a.extraMinutes)}</span> : '—'}</td>
               <td className="pr-3">
@@ -704,6 +733,8 @@ export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: 
                   {a.late && <Badge tone="amber">Late</Badge>}
                   {a.earlyCheckout && <Badge tone={a.earlyCheckoutId ? 'blue' : 'red'}>{a.earlyCheckoutId ? 'Early ✓' : 'Early'}</Badge>}
                   {a.reopenedAt && <span title={`Re-opened by HR: ${a.reopenReason ?? ''}${a.previousPunchOutAt ? ` · earlier clock-out ${companyTime(a.previousPunchOutAt)}` : ''}`}><Badge tone="violet">Re-opened</Badge></span>}
+                  {a.reviewStatus && <span title={a.closureNote ?? undefined}><Badge tone={REVIEW_LABEL[a.reviewStatus].tone}>{REVIEW_LABEL[a.reviewStatus].label}</Badge></span>}
+                  {a.correctionPending && <Badge tone="blue">Correction requested</Badge>}
                 </span>
               </td>
               <td className="text-xs text-ink-soft">
@@ -713,11 +744,19 @@ export function AttendanceTable({ rows, showName, onVerify, onReopen }: { rows: 
                 )}
                 {a.locationVerifiedAt && <span className="ml-1 text-emerald-600">verified</span>}
               </td>
-              {onReopen && (
+              {(onReopen || onReview || onCorrect) && (
                 <td className="pl-3 text-right">
-                  {a.punchInAt && (a.state === 'Checked Out' || a.state === 'Missing Punch-out') && (
-                    <Button size="sm" variant="secondary" onClick={() => onReopen(a)}>Re-open</Button>
-                  )}
+                  <span className="inline-flex gap-1.5">
+                    {onReview && a.reviewStatus === 'pending_review' && a.closedReason === 'auto_midnight' && !a.correctionPending && (
+                      <Button size="sm" onClick={() => onReview(a)}>Review</Button>
+                    )}
+                    {onCorrect && a.outKind === 'auto' && a.reviewStatus === 'pending_review' && !a.correctionPending && (
+                      <Button size="sm" variant="secondary" onClick={() => onCorrect(a)}>Request correction</Button>
+                    )}
+                    {onReopen && a.punchInAt && (a.state === 'Checked Out' || a.state === 'Missing Punch-out') && (!a.cutoffAt || new Date(a.cutoffAt).getTime() > Date.now()) && (
+                      <Button size="sm" variant="secondary" onClick={() => onReopen(a)}>Re-open</Button>
+                    )}
+                  </span>
                 </td>
               )}
             </tr>
@@ -806,6 +845,58 @@ export function EarlyCheckoutModal({ open, onClose }: { open: boolean; onClose: 
           <Field label="Emergency reason" required><Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ review of an automatic clock-out
+
+/** HR / manager settle an automatically closed day: set the actual finish time (applied as an approved
+ *  correction, original kept) or confirm that no further time is credited. */
+export function ReviewAutoCloseModal({ day, onClose }: { day: AttendanceDay | null; onClose: () => void }) {
+  const { call } = useHR();
+  const lk = useHRLookup();
+  const [mode, setMode] = useState<'time' | 'none'>('time');
+  const [out, setOut] = useState('');
+  const [brk, setBrk] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (day) { setMode('time'); setOut(''); setBrk(''); setNote(''); }
+  }, [day]);
+  if (!day) return null;
+  const submit = async () => {
+    setBusy(true);
+    const r = await call('hr_resolve_auto_close', {
+      p_session: day.id,
+      p_out: mode === 'time' ? companyInstant(day.workDate, out) : null,
+      p_break_minutes: mode === 'time' && brk ? Number(brk) : null,
+      p_note: note,
+    }, { refresh: ['attendance', 'corrections'], success: mode === 'time' ? 'Finish time applied' : 'Review recorded', successDetail: 'The original record is kept in the history.' });
+    setBusy(false);
+    if (r.ok) onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title="Review automatic clock-out"
+      subtitle={`${lk.name(day.employeeId)} · ${fmtDay(day.workDate)} · in ${companyTime(day.effIn)} · auto-closed ${companyTime(day.autoClosedAt ?? day.cutoffAt)}`}
+      dirty={!!(note || out)}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button disabled={busy || note.trim().length < 3 || (mode === 'time' && !out)} onClick={submit}>{mode === 'time' ? 'Apply finish time' : 'Confirm — no time credited'}</Button></>}>
+      <Alert tone="warning" className="mb-4">{day.closureNote ?? 'Missed Manual Clock-Out — System Auto-Closed'}. Recorded {hm(day.recordedMinutes)} until the cutoff; none of it counts as work until you confirm the finish time.</Alert>
+      <div className="mb-4 grid grid-cols-2 gap-1.5">
+        {([['time', 'Set actual finish time'], ['none', 'No further time']] as const).map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setMode(k)} className={cn('rounded-lg border px-3 py-2 text-sm font-semibold transition', mode === k ? 'border-rust bg-brand-50 text-rust dark:bg-brand-500/10' : 'border-line text-ink-soft')}>{l}</button>
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {mode === 'time' && (
+          <>
+            <Field label="Actual finish time" required><TimePicker value={out} onChange={setOut} /></Field>
+            <Field label="Total break (minutes, optional)"><Input inputMode="numeric" value={brk} onChange={(e) => setBrk(e.target.value.replace(/\D/g, '').slice(0, 3))} placeholder={String(day.breakMinutes)} /></Field>
+          </>
+        )}
+        <Field label="Review note" required className="sm:col-span-2"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Confirmed with the team lead" /></Field>
+      </div>
     </Modal>
   );
 }

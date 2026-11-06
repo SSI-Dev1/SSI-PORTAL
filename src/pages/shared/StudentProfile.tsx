@@ -29,6 +29,7 @@ import { useLookup, useScoped, useStore } from '../../store/store';
 import { countryFlag, fileSize, formatDate, fullName, timeAgo } from '../../lib/utils';
 import { studentTone } from './Students';
 import { docTone } from './Documents';
+import { partnerCan } from '../../auth/roles';
 
 type Tab = 'overview' | 'applications' | 'documents';
 
@@ -36,7 +37,7 @@ export default function StudentProfile() {
   const { id } = useParams();
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions } = useStore();
+  const { actions, session } = useStore();
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -103,15 +104,21 @@ export default function StudentProfile() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" icon={Pencil} onClick={() => setEdit(true)}>
-              Edit
-            </Button>
-            <Button variant="secondary" icon={FileUp} onClick={() => setUpload(true)}>
-              Upload
-            </Button>
-            <Button icon={FilePlus2} onClick={() => setNewApp(true)}>
-              New Application
-            </Button>
+            {partnerCan(session, 'students.edit') && (
+              <Button variant="secondary" icon={Pencil} onClick={() => setEdit(true)}>
+                Edit
+              </Button>
+            )}
+            {partnerCan(session, 'documents.upload') && (
+              <Button variant="secondary" icon={FileUp} onClick={() => setUpload(true)}>
+                Upload
+              </Button>
+            )}
+            {partnerCan(session, 'applications.create') && (
+              <Button icon={FilePlus2} onClick={() => setNewApp(true)}>
+                New Application
+              </Button>
+            )}
           </div>
         </div>
       </Card>

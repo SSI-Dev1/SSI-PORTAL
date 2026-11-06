@@ -37,9 +37,27 @@ export interface ChatContextInfo {
   reads: { userId: string; name: string; lastReadId: number }[];
 }
 
+/** One row of the Messages page: application header and counts, never message text. */
+export interface ChatInboxRow {
+  applicationId: string;
+  ref: string;
+  student: string;
+  university: string | null;
+  course: string | null;
+  partner: string | null;
+  status: string;
+  intake: string;
+  unread: number;
+  total: number;
+  lastMessageAt: string | null;
+  lastSender: string | null;
+}
+
 /** Everything the chat needs from the backend (a development harness can supply its own). */
 export interface ChatApi {
   summaries(): Promise<Record<string, ChatSummary>>;
+  /** Conversations this user may open; `all` includes applications without messages yet. */
+  inbox(opts: { search?: string; all?: boolean; limit?: number }): Promise<ChatInboxRow[]>;
   context(applicationId: string): Promise<ChatContextInfo>;
   messages(applicationId: string, opts: { before?: number; limit: number }): Promise<ChatMessage[]>;
   send(applicationId: string, body: string, clientId: string): Promise<ChatMessage>;
@@ -61,6 +79,15 @@ const supabaseApi: ChatApi = {
     for (const r of (data ?? []) as { application_id: string; unread: number; total: number; last_message_at: string | null }[])
       out[r.application_id] = { unread: Number(r.unread), total: Number(r.total), lastMessageAt: r.last_message_at };
     return out;
+  },
+  async inbox({ search, all, limit }) {
+    const { data, error } = await supabase!.rpc('my_application_chat_inbox', { p_search: search?.trim() || null, p_all: !!all, p_limit: limit ?? 100 });
+    if (error) throw error;
+    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+      applicationId: r.application_id as string, ref: r.ref as string, student: r.student as string, university: (r.university as string) ?? null,
+      course: (r.course as string) ?? null, partner: (r.partner as string) ?? null, status: r.status as string, intake: (r.intake as string) ?? '',
+      unread: Number(r.unread), total: Number(r.total), lastMessageAt: (r.last_message_at as string) ?? null, lastSender: (r.last_sender as string) ?? null,
+    }));
   },
   async context(applicationId) {
     const { data, error } = await supabase!.rpc('application_chat_context', { p_application: applicationId });

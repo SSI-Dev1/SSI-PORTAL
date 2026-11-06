@@ -148,7 +148,7 @@ export function HRSettings() {
       {tab === 'shifts' && (
         <Card>
           <CardHeader title="Shifts" subtitle="Required hours, working days, start window and grace period. Assign shifts per employee." action={<Button size="sm" icon={Plus} onClick={() => setShift({ name: '', flexible: false, startTime: '09:30', endTime: '18:30', graceMinutes: 15, requiredMinutes: 480, workingDays: [1, 2, 3, 4, 5, 6], unpaidBreaks: true, active: true })}>Add shift</Button>} />
-          <Table className="hr-table" head={['Shift', 'Window', 'Grace', 'Required', 'Working days', 'Breaks', '']}>
+          <Table className="hr-table" head={['Shift', 'Window', 'Grace', 'Required', 'Working days', 'Breaks', 'Auto clock-out', '']}>
             {data.shifts.map((s) => (
               <tr key={s.id}>
                 <td className="font-medium text-heading">{s.name}{!s.active && <Badge tone="slate" className="ml-2">Inactive</Badge>}</td>
@@ -157,11 +157,12 @@ export function HRSettings() {
                 <td>{s.requiredMinutes / 60} h</td>
                 <td>{s.workingDays.map((d) => DAY_NAMES[d - 1]).join(', ')}</td>
                 <td>{s.unpaidBreaks ? 'Unpaid' : 'Paid'}</td>
+                <td>{s.overnight ? <Badge tone="violet">Overnight · next day {(s.autoCloseTime ?? '').slice(0, 5) || '+4h after end'}</Badge> : 'Midnight'}</td>
                 <td className="text-right"><Button size="sm" variant="secondary" icon={Settings2} onClick={() => setShift(s)}>Edit</Button></td>
               </tr>
             ))}
           </Table>
-          <p className="p-4 text-xs text-ink-mute">Flexible shifts are never marked late; an early checkout is a day below the required hours. The monthly Saturday off is chosen in the Holiday Calendar.</p>
+          <p className="p-4 text-xs text-ink-mute">Unfinished sessions close automatically at midnight (company time), or at the next-day cutoff for overnight shifts, and wait for review. Flexible shifts are never marked late; an early checkout is a day below the required hours. The monthly Saturday off is chosen in the Holiday Calendar.</p>
         </Card>
       )}
       {tab === 'departments' && (
@@ -197,6 +198,7 @@ function ShiftModal({ value, onClose }: { value: Partial<Shift> | null; onClose:
     const row = {
       name: s.name?.trim(), flexible: !!s.flexible, start_time: s.flexible ? null : s.startTime, end_time: s.flexible ? null : s.endTime,
       grace_minutes: s.graceMinutes ?? 0, required_minutes: s.requiredMinutes ?? 480, working_days: s.workingDays ?? [], unpaid_breaks: s.unpaidBreaks !== false, active: s.active !== false,
+      overnight: !!s.overnight, auto_close_time: s.overnight && s.autoCloseTime ? s.autoCloseTime : null,
     };
     const ok = s.id ? await write('shifts', 'update', row, { id: s.id }, { refresh: ['shifts', 'attendance'], success: 'Shift saved' })
       : await write('shifts', 'insert', row, undefined, { refresh: ['shifts'], success: 'Shift added' });
@@ -225,6 +227,19 @@ function ShiftModal({ value, onClose }: { value: Partial<Shift> | null; onClose:
             })}
           </div>
         </Field>
+        <div className="space-y-2 rounded-xl border border-line p-3 sm:col-span-2">
+          <Checkbox checked={!!s.overnight} onCheckedChange={(v) => setS({ ...s, overnight: v })} label="Overnight shift (ends after midnight)" />
+          <p className="text-xs text-ink-mute">
+            {s.overnight
+              ? 'A forgotten clock-out is closed automatically at the cutoff below on the next day, not at midnight.'
+              : 'A forgotten clock-out is closed automatically at midnight (company time) and flagged for review. No hours are credited until the finish time is confirmed.'}
+          </p>
+          {s.overnight && (
+            <Field label="Automatic clock-out (next day)" hint="Leave empty for four hours after the shift end.">
+              <TimePicker value={(s.autoCloseTime ?? '').slice(0, 5)} onChange={(v) => setS({ ...s, autoCloseTime: v || null })} />
+            </Field>
+          )}
+        </div>
         <div className="space-y-2 sm:col-span-2">
           <Checkbox checked={s.unpaidBreaks !== false} onCheckedChange={(v) => setS({ ...s, unpaidBreaks: v })} label="Breaks are unpaid (not counted in working hours)" />
           <Checkbox checked={s.active !== false} onCheckedChange={(v) => setS({ ...s, active: v })} label="Active" />

@@ -80,7 +80,7 @@ export const adminApi = {
     call<{ ok: true; userId: string; delivery?: Delivery | null }>({ action: 'create_partner_user', ...b }),
   /** New temporary password emailed by the server; the old password stops working. */
   resendLoginAccess: (userId: string) => call<{ ok: true; delivery: Delivery }>({ action: 'resend_login_access', userId }),
-  updateUser: (b: { userId: string; fullName?: string; role?: UserRole; permissions?: string[] | null; mustChangePassword?: boolean; phone?: string; department?: string; designation?: string }) =>
+  updateUser: (b: { userId: string; fullName?: string; email?: string; role?: UserRole; permissions?: string[] | null; mustChangePassword?: boolean; phone?: string; department?: string; designation?: string }) =>
     call({ action: 'update_user', ...b }),
   setStatus: (userId: string, status: DirectoryUser['status']) => call({ action: 'set_status', userId, status }),
   resetPassword: (userId: string, password: string, mustChangePassword: boolean) => call({ action: 'reset_password', userId, password, mustChangePassword }),

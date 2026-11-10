@@ -35,7 +35,7 @@ import {
   STATUSES,
   UUID_RE,
 } from './lib.ts';
-import { generateTempPassword, issueAndSend, mailConfig, overLimit, ROLE_LABELS, type Delivery } from '../_shared/credentials.ts';
+import { escapeHtml, generateTempPassword, issueAndSend, mailConfig, overLimit, ROLE_LABELS, sendViaBrevo, type Delivery } from '../_shared/credentials.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -351,6 +351,22 @@ Deno.serve(async (req) => {
           }
           patch.permissions = (patch.role ?? t.role) === 'super_admin' ? null : p;
         }
+        // Login email: changed in Supabase Auth (the sign-in address) and on the profile together.
+        let emailChange: { from: string | null; to: string } | null = null;
+        if (body.email !== undefined) {
+          const e = cleanEmail(body.email);
+          if (!e) throw bad('Enter a valid email address.');
+          if (e !== (t.email ?? '').toLowerCase()) {
+            if (t.id === me) throw bad('You cannot change your own login email here.');
+            const { error: ae } = await admin.auth.admin.updateUserById(t.id, { email: e, email_confirm: true });
+            if (ae) {
+              const taken = /already|exists|registered|duplicate/i.test(ae.message);
+              throw new Fail(taken ? 409 : 500, taken ? 'Another account already uses this email.' : 'Could not change the login email.');
+            }
+            patch.email = e;
+            emailChange = { from: t.email, to: e };
+          }
+        }
         if (body.mustChangePassword !== undefined) patch.must_change_password = body.mustChangePassword === true;
         for (const k of ['phone', 'department', 'designation'] as const) {
           if (body[k] === undefined) continue;
@@ -360,12 +376,24 @@ Deno.serve(async (req) => {
         }
         if (!Object.keys(patch).length) return json(200, { ok: true }, origin);
         const { error } = await admin.from('profiles').update(patch).eq('id', t.id);
-        if (error) throw new Fail(500, 'Could not update the account.');
+        if (error) {
+          // Keep sign-in and profile in step: undo the Auth email change.
+          if (emailChange?.from) await admin.auth.admin.updateUserById(t.id, { email: emailChange.from, email_confirm: true });
+          throw new Fail(error.code === '23505' ? 409 : 500, error.code === '23505' ? 'Another account already uses this email.' : 'Could not update the account.');
+        }
         if (patch.full_name) await admin.auth.admin.updateUserById(t.id, { user_metadata: { full_name: patch.full_name } });
         await audit('account_updated', 'profiles', t.id, t.partner_id, {
           fields: Object.keys(patch),
           ...(patch.role ? { role: [t.role, patch.role] } : {}),
+          ...(emailChange ? { login_email_changed: true } : {}),
         });
+        // Security notice to the previous address (the new address is never shown in full).
+        if (emailChange?.from) {
+          const masked = emailChange.to.replace(/^(.)[^@]*(@.*)$/, '$1•••$2');
+          const text = `The login email for your SSI GLOBAL account was changed to ${masked} by an administrator. If you did not expect this, contact SSI GLOBAL HR straight away.`;
+          await sendViaBrevo(MAIL, { email: emailChange.from, name: String(patch.full_name ?? '') || emailChange.from },
+            { subject: 'Your SSI GLOBAL login email was changed', text, html: `<p>${escapeHtml(text)}</p><p>— SSI GLOBAL</p>` }).catch(() => undefined);
+        }
         if (patch.role || patch.permissions !== undefined) await activity(patch.role ? 'Role changed' : 'Permissions changed', null, t.id);
         return json(200, { ok: true }, origin);
       }

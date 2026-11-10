@@ -331,13 +331,16 @@ function PermissionChecks({ role, value, onChange }: { role: StaffRole; value: s
 // ------------------------------------------------------------------ edit HR record
 
 function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; onClose: () => void }) {
-  const { data, write } = useHR();
+  const { data, write, load } = useHR();
   const lk = useHRLookup();
   const { session } = useStore();
   const toast = useToast();
   const [d, setD] = useState<Employee | null>(null);
   const [perm, setPerm] = useState<{ role: StaffRole; permissions: string[] } | null>(null);
-  const [login, setLogin] = useState<{ email: string | null; status: string } | null>(null);
+  const [login, setLogin] = useState<{ email: string | null; status: string; fullName: string; phone: string } | null>(null);
+  const [acct, setAcct] = useState<{ fullName: string; email: string; phone: string } | null>(null);
+  const [savingAcct, setSavingAcct] = useState(false);
+  const confirmEmail = useConfirm();
   const [tab, setTab] = useState<'record' | 'access'>('record');
   const { deliveries } = useCredentialDeliveries(employee?.id);
   const resend = useResendLoginAccess((id) => adminApi.resendLoginAccess(id));
@@ -350,12 +353,15 @@ function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; o
     setTab('record');
     setPerm(null);
     setLogin(null);
+    setAcct(null);
     // Current permissions (null in the database = the role's defaults) and the login email.
     if (employee && supabase) {
-      void supabase.from('profiles').select('role, permissions, email, status').eq('id', employee.id).maybeSingle().then(({ data: p }) => {
+      void supabase.from('profiles').select('role, permissions, email, status, full_name, phone').eq('id', employee.id).maybeSingle().then(({ data: p }) => {
         if (p) {
           setPerm({ role: p.role as StaffRole, permissions: (p.permissions as string[] | null) ?? [...(ROLE_DEFAULTS[p.role as StaffRole] ?? [])] });
-          setLogin({ email: (p.email as string | null) ?? null, status: (p.status as string) ?? 'active' });
+          const l = { email: (p.email as string | null) ?? null, status: (p.status as string) ?? 'active', fullName: (p.full_name as string | null) ?? '', phone: (p.phone as string | null) ?? '' };
+          setLogin(l);
+          setAcct({ fullName: l.fullName, email: l.email ?? '', phone: l.phone });
         }
       });
     }
@@ -386,19 +392,63 @@ function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; o
       toast.error('Access not changed', e instanceof AdminApiError ? e.message : 'Please try again.');
     }
   };
+  const emailChanged = !!acct && !!login && acct.email.trim().toLowerCase() !== (login.email ?? '').toLowerCase();
+  const acctEmailErr = acct && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(acct.email.trim()) ? 'Enter a valid email address' : undefined;
+  const acctPhoneErr = acct && acct.phone.trim() && !/^[+0-9 ()-]{6,20}$/.test(acct.phone.trim()) ? 'Use digits, spaces, + ( ) - only' : undefined;
+  const acctDirty = !!acct && !!login && (acct.fullName.trim() !== login.fullName || emailChanged || acct.phone.trim() !== login.phone);
+  const saveAccount = async () => {
+    if (!acct || !login) return;
+    if (emailChanged && !(await confirmEmail({
+      title: 'Change the login email?',
+      message: `${login.fullName || 'This employee'} will sign in with ${acct.email.trim()} instead of ${login.email ?? 'the current address'}. Their password stays the same. A security notice is sent to the old address.`,
+      confirmLabel: 'Change login email',
+    }))) return;
+    setSavingAcct(true);
+    try {
+      await adminApi.updateUser({
+        userId: d.id,
+        ...(acct.fullName.trim() !== login.fullName ? { fullName: acct.fullName.trim() } : {}),
+        ...(emailChanged ? { email: acct.email.trim() } : {}),
+        ...(acct.phone.trim() !== login.phone ? { phone: acct.phone.trim() } : {}),
+      });
+      const next = { ...login, fullName: acct.fullName.trim(), email: acct.email.trim().toLowerCase(), phone: acct.phone.trim() };
+      setLogin(next);
+      setAcct({ fullName: next.fullName, email: next.email ?? '', phone: next.phone });
+      toast.success('Account details saved', emailChanged ? 'The new login email works straight away.' : undefined);
+      void load(['directory']);
+    } catch (e) {
+      toast.error('Not saved', e instanceof AdminApiError ? e.message : 'Please try again.');
+    } finally {
+      setSavingAcct(false);
+    }
+  };
   return (
     <Modal open={!!employee} onClose={onClose} size="xl" title={dir?.fullName ?? 'Employee'} subtitle="Designation changes apply to future reports; earlier reports keep their original designation."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button>{tab === 'record' ? <Button disabled={!d.employeeCode.trim()} onClick={save}>{isNew ? 'Create record' : 'Save employee'}</Button> : <Button icon={ShieldCheck} onClick={saveAccess} disabled={!perm?.permissions.length && perm?.role !== 'super_admin'}>Save access</Button>}</>}>
-      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-canvas px-4 py-3">
-        <Mail className="h-4 w-4 shrink-0 text-rust" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Login email</div>
-          <div className="truncate text-sm font-medium text-heading">{login?.email ?? '—'}</div>
+      <div className="mb-5 rounded-xl border border-line bg-canvas p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Mail className="h-4 w-4 shrink-0 text-rust" />
+          <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Account &amp; login</span>
+          <DeliveryBadge row={deliveries[d.id]} />
+          {login?.status === 'active' && !isNew && (
+            <Button size="sm" variant="secondary" icon={ResendIcon} onClick={() => void resend({ id: d.id, name: login.fullName || dir?.fullName || 'This employee', email: login.email ?? '' })}>Email login details</Button>
+          )}
         </div>
-        <DeliveryBadge row={deliveries[d.id]} />
-        {login?.status === 'active' && !isNew && (
-          <Button size="sm" variant="secondary" icon={ResendIcon} onClick={() => void resend({ id: d.id, name: dir?.fullName ?? 'This employee', email: login.email ?? '' })}>Email login details</Button>
-        )}
+        {acct ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Full name" error={acct.fullName.trim().length < 2 ? 'Enter the full name' : undefined}><Input value={acct.fullName} maxLength={120} onChange={(e) => setAcct({ ...acct, fullName: e.target.value })} /></Field>
+            <Field label="Login email" error={acctEmailErr} hint={acct.email.trim().toLowerCase() !== (login?.email ?? '').toLowerCase() && !acctEmailErr ? 'They will sign in with this address' : undefined}>
+              <Input type="email" value={acct.email} maxLength={254} disabled={d.id === session?.userId} onChange={(e) => setAcct({ ...acct, email: e.target.value })} />
+            </Field>
+            <Field label="Phone" error={acctPhoneErr}><Input type="tel" value={acct.phone} maxLength={20} onChange={(e) => setAcct({ ...acct, phone: e.target.value })} /></Field>
+            {acctDirty && (
+              <div className="flex items-center justify-end gap-2 sm:col-span-3">
+                <Button size="sm" variant="secondary" onClick={() => login && setAcct({ fullName: login.fullName, email: login.email ?? '', phone: login.phone })}>Undo</Button>
+                <Button size="sm" disabled={savingAcct || !!acctEmailErr || !!acctPhoneErr || acct.fullName.trim().length < 2} onClick={saveAccount}>{savingAcct ? 'Saving…' : 'Save account details'}</Button>
+              </div>
+            )}
+          </div>
+        ) : <p className="text-sm text-ink-soft">Loading…</p>}
       </div>
       <Tabs className="mb-5" value={tab} onChange={setTab} tabs={[{ value: 'record', label: 'HR record' }, { value: 'access', label: 'Role & permissions' }]} />
       {tab === 'record' ? (

@@ -130,3 +130,28 @@ These need a decision before they can be built:
 - **Aura Points:** what earns or loses points, and who may award them.
 - **Work From Home:** whether employees declare it at clock-in, and whether HR must approve it.
 - **Paid leave carry-forward:** the current setting is used. Confirm the maximum number of days carried forward.
+
+## Employee Portal (self service)
+
+Reference: `~/Production-Suite/my-workspace.js` (profile, attendance, leave, documents and team views). It was only read, never changed.
+
+| Area | Broken English | SSI GLOBAL now |
+|---|---|---|
+| Navigation | My Workspace with Announcements, Received Files, Content Calendar, Aura Points, My Payslips | My Workspace (Dashboard, Daily Work Report, Report History, My Assigned Tasks); Self Service (My Profile, My Attendance, My Leave, My Documents, My Team Members, Holidays); Team (managers); Work Tools. Announcements, Received Files, Content Calendar, Aura Points and My Payslips were never added to SSI GLOBAL |
+| My Profile | Employee record set by HR | Profile photo (private, visible to staff only), employment details maintained by HR, contact and emergency details the employee can edit (visible to the employee and HR only), assets held, account settings |
+| My Attendance | Clock actions, calendar, history | Unchanged and already complete: server times, top-bar clock control (status card only, no duplicate buttons), calendar with half days, daily history, late and early flags, corrections, early checkout, auto-close at the cutoff without invented hours |
+| My Leave | Apply, balances, history | Unchanged and already complete: apply with full day or morning/afternoon half day (0.5), Sick and Paid balances (pending is reserved, deducted once on approval), Loss of Pay, history with review trail, calendar, cancellation |
+| My Documents | Links HR added to the record (view only) | Documents HR shared plus the employee's own uploads (ID, address proof, qualification, experience letter, medical certificate, other). Uploads go to HR as Pending Review, and HR verifies or rejects with a note. History of the employee's own documents. Private storage, 60-second links |
+| My Team Members | Same-division colleagues and who is out today | Department colleagues, manager, peers and own team: photo, designation, department, work email, manager, and availability today (full day, morning or afternoon leave; never the type or reason). Managers also see their team's attendance state |
+
+**Database: migration `0028_employee_self_service.sql`** (run after 0027)
+- `profiles.photo_path` and a private `employee-photos` bucket (staff can read, owner or HR can write), plus `set_profile_photo`.
+- `employee_personal_details` table and `update_personal_details` (employee or HR only; phone is kept on the account).
+- `employee_documents` gains `source`, `review_status`, `review_note`, `reviewed_by` and `reviewed_at`. Employees can upload into their own folder, HR reviews with `review_employee_document`, and employees can read the history of their own shared documents.
+- `my_team_members()`.
+
+**Content Security Policy:** `img-src` now allows the Supabase project origin, so the signed photo links display.
+
+**Tests**
+- `supabase/tests/150_employee_self_service_tests.sql`.
+- Updated `scripts/roles.test.ts`.

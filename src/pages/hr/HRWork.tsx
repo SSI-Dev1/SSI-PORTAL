@@ -19,6 +19,7 @@ import {
   type Assignment, type AssignmentStatus, type CompanyAsset, type EmployeeDocument, type TaskEvent,
 } from '../../data/hr';
 import { cn, matches } from '../../lib/utils';
+import { ReviewDocumentModal } from '../work/SelfService';
 
 const HR_BUCKET = 'hr-documents';
 const statusTone: Record<AssignmentStatus, 'slate' | 'blue' | 'amber' | 'green' | 'red'> = {
@@ -579,7 +580,10 @@ export function EmployeeDocuments() {
   useEffect(() => { if (params.get('upload')) setParams((p) => { p.delete('upload'); return p; }, { replace: true }); }, [params, setParams]);
   const [archiving, setArchiving] = useState<{ d: EmployeeDocument; reason: string } | null>(null);
   const [historyOf, setHistoryOf] = useState<EmployeeDocument | null>(null);
-  const rows = data.documents.filter((d) => matches(q, d.title, d.fileName, lk.name(d.employeeId)) && (!emp || d.employeeId === emp) && (!cat || d.category === cat) && (!status || d.status === status));
+  const [reviewing, setReviewing] = useState<EmployeeDocument | null>(null);
+  const toReview = data.documents.filter((d) => d.status === 'Active' && d.reviewStatus === 'Pending Review');
+  const rows = data.documents.filter((d) => matches(q, d.title, d.fileName, lk.name(d.employeeId)) && (!emp || d.employeeId === emp) && (!cat || d.category === cat)
+    && (status === 'review' ? d.status === 'Active' && d.reviewStatus === 'Pending Review' : !status || d.status === status));
   const paged = usePaged(rows, 20, `${q}${emp}${cat}${status}`);
   const open = async (id: string) => {
     try { await openHRDocument(id); } catch (e) { toast.error('Could not open the document', e instanceof Error ? e.message : undefined); }
@@ -594,13 +598,14 @@ export function EmployeeDocuments() {
             Shared: d.visibleToEmployee ? 'Yes' : 'No', Status: d.status, Uploaded: d.uploadedAt.slice(0, 10), 'Uploaded by': d.uploadedBy ? lk.name(d.uploadedBy) : '', Expires: d.expiresOn ?? '' }))} />
           <Button icon={Upload} onClick={() => setUploading(true)}>Upload document</Button>
         </>} />
+      {toReview.length > 0 && status !== 'review' && <Alert tone="info" className="mb-4">{toReview.length} document(s) uploaded by employees are waiting for review. <button type="button" className="font-semibold underline" onClick={() => setStatus('review')}>Show them</button></Alert>}
       {expiring.length > 0 && <Alert tone="warning" className="mb-4">{expiring.length} document(s) expire within 30 days or have expired: {expiring.slice(0, 4).map((d) => `${d.title} (${lk.name(d.employeeId)})`).join(', ')}{expiring.length > 4 ? '…' : ''}</Alert>}
       <Card>
         <div className="flex flex-wrap gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search title, file or employee…" className="w-full sm:w-72" />
           <FilterSelect label="Employee" value={emp} onChange={setEmp} options={[{ value: '', label: 'Everyone' }, ...data.directory.map((d) => ({ value: d.id, label: d.fullName }))]} />
           <FilterSelect label="Category" value={cat} onChange={setCat} options={[{ value: '', label: 'All categories' }, ...HR_DOCUMENT_CATEGORIES]} />
-          <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: 'Active', label: 'Active' }, { value: 'Archived', label: 'Archived' }, { value: '', label: 'All' }]} />
+          <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: 'Active', label: 'Active' }, { value: 'review', label: `Waiting for review (${toReview.length})` }, { value: 'Archived', label: 'Archived' }, { value: '', label: 'All' }]} />
         </div>
         {rows.length === 0 ? <EmptyState icon={FileText} title="No documents" description="Upload contracts, offer letters, ID proofs and other HR files." /> : (
           <>
@@ -614,14 +619,17 @@ export function EmployeeDocuments() {
                   </td>
                   <td>{lk.name(d.employeeId)}</td>
                   <td>{d.category === 'Medical' ? <Badge tone="violet">Medical</Badge> : d.category}</td>
-                  <td>{d.visibleToEmployee ? <Badge tone="green">Shared</Badge> : <span className="text-ink-mute">HR only</span>}</td>
+                  <td>{d.source === 'employee'
+                    ? <><Badge tone={d.reviewStatus === 'Verified' ? 'green' : d.reviewStatus === 'Rejected' ? 'red' : 'amber'}>{d.reviewStatus ?? 'Pending Review'}</Badge><div className="mt-0.5 text-xs text-ink-mute">Uploaded by the employee</div></>
+                    : d.visibleToEmployee ? <Badge tone="green">Shared</Badge> : <span className="text-ink-mute">HR only</span>}</td>
                   <td className="whitespace-nowrap">{fmtDay(d.uploadedAt.slice(0, 10))}<div className="text-xs text-ink-mute">{d.uploadedBy ? lk.name(d.uploadedBy) : ''}</div></td>
                   <td className="whitespace-nowrap text-right">
                     <Button size="sm" variant="ghost" icon={Download} aria-label="View or download" onClick={() => void open(d.id)} />
                     <Button size="sm" variant="ghost" icon={History} aria-label="History" onClick={() => setHistoryOf(d)} />
+                    {d.status === 'Active' && d.source === 'employee' && <Button size="sm" variant={d.reviewStatus === 'Pending Review' ? 'primary' : 'secondary'} onClick={() => setReviewing(d)}>Review</Button>}
                     {d.status === 'Active' ? <>
-                      <Button size="sm" variant="ghost" icon={d.visibleToEmployee ? EyeOff : Eye} aria-label={d.visibleToEmployee ? 'Stop sharing with the employee' : 'Share with the employee'}
-                        onClick={() => void write('employee_documents', 'update', { visible_to_employee: !d.visibleToEmployee }, { id: d.id }, { refresh: ['documents'], success: d.visibleToEmployee ? 'No longer shared' : 'Shared with the employee' })} />
+                      {d.source !== 'employee' && <Button size="sm" variant="ghost" icon={d.visibleToEmployee ? EyeOff : Eye} aria-label={d.visibleToEmployee ? 'Stop sharing with the employee' : 'Share with the employee'}
+                        onClick={() => void write('employee_documents', 'update', { visible_to_employee: !d.visibleToEmployee }, { id: d.id }, { refresh: ['documents'], success: d.visibleToEmployee ? 'No longer shared' : 'Shared with the employee' })} />}
                       <Button size="sm" variant="ghost" icon={Archive} aria-label="Archive" onClick={() => setArchiving({ d, reason: '' })} />
                     </> : <Button size="sm" variant="ghost" icon={ArchiveRestore} aria-label="Restore" onClick={() => void write('employee_documents', 'update', { status: 'Active' }, { id: d.id }, { refresh: ['documents'], success: 'Document restored' })} />}
                   </td>
@@ -642,11 +650,12 @@ export function EmployeeDocuments() {
         <p className="mt-2 text-xs text-ink-mute">The file is kept and can be restored. Archived documents are hidden from the employee.</p>
       </Modal>
       <DocumentHistory value={historyOf} onClose={() => setHistoryOf(null)} />
+      <ReviewDocumentModal doc={reviewing} onClose={() => setReviewing(null)} />
     </>
   );
 }
 
-const DOC_EVENT: Record<string, string> = { uploaded: 'Uploaded', downloaded: 'Viewed / downloaded', shared: 'Shared with the employee', unshared: 'Sharing stopped', archived: 'Archived', restored: 'Restored', edited: 'Details edited' };
+const DOC_EVENT: Record<string, string> = { verified: 'Verified', rejected: 'Rejected', uploaded: 'Uploaded', downloaded: 'Viewed / downloaded', shared: 'Shared with the employee', unshared: 'Sharing stopped', archived: 'Archived', restored: 'Restored', edited: 'Details edited' };
 
 function DocumentHistory({ value, onClose }: { value: EmployeeDocument | null; onClose: () => void }) {
   const lk = useHRLookup();
@@ -750,29 +759,13 @@ export function UploadDocumentModal({ open, onClose, employeeId }: { open: boole
 
 // ------------------------------------------------------------------ self-service (My Profile)
 
-/** The signed-in employee's shared HR documents and the company assets they hold. */
+/** Company assets the signed-in employee holds (shown on My Profile). Documents are on My Documents. */
 export function MyDocumentsAndAssets() {
   const { data } = useHR();
   const { me } = useWho();
-  const toast = useToast();
-  const docs = data.documents.filter((d) => d.employeeId === me && d.visibleToEmployee && d.status === 'Active');
   const held = data.assetAssignments.filter((x) => x.employeeId === me && !x.returnedOn);
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="My HR documents" subtitle="Documents HR has shared with you" />
-        {docs.length === 0 ? <EmptyState icon={FileText} title="No documents shared yet" /> : (
-          <ul className="divide-y divide-line">
-            {docs.map((d) => (
-              <li key={d.id} className="flex items-center gap-3 px-5 py-3">
-                <FileText className="h-5 w-5 shrink-0 text-rust" />
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-heading">{d.title}</span><span className="block text-xs text-ink-soft">{d.category} · {fmtDay(d.uploadedAt.slice(0, 10))}</span></span>
-                <Button size="sm" variant="secondary" icon={Download} onClick={() => void openHRDocument(d.id).catch((e) => toast.error('Could not open the document', e instanceof Error ? e.message : undefined))}>Open</Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+    <div>
       <Card>
         <CardHeader title="Company assets with me" subtitle="Return them to HR when you leave" />
         {held.length === 0 ? <EmptyState icon={Laptop} title="No company assets" /> : (

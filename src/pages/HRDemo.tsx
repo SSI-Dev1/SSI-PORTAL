@@ -23,6 +23,7 @@ import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar, type WorkforceD
 import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, MyDocumentsAndAssets, WorkAssignments } from './hr/HRWork';
 import { HRReports } from './hr/HRMisc';
 import Management from './hr/Management';
+import { MyDocuments, MyTeamMembers } from './work/SelfService';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -115,7 +116,9 @@ function sample(): HRData {
       { id: 'as2', assetTag: 'MON-004', name: 'Monitor 24" (sample)', category: 'Monitor', serialNumber: null, status: 'Available', purchaseDate: null, warrantyUntil: null, notes: null, createdAt: T, updatedAt: T },
     ],
     assetAssignments: [{ id: 'aa1', assetId: 'as1', employeeId: 'demo-po', issuedOn: addDays(T, -40), expectedReturn: null, returnedOn: null, conditionOut: 'New', conditionIn: null, notes: null, issuedBy: ME, returnedBy: null }],
-    documents: [{ id: 'd1', employeeId: 'demo-po', category: 'Offer Letter', title: 'Offer letter (sample)', fileName: 'offer.pdf', size: 120400, mime: 'application/pdf', storagePath: 'demo-po/d1.pdf', visibleToEmployee: true, status: 'Active', expiresOn: null, uploadedBy: ME, uploadedAt: at(addDays(T, -30), '11:00'), archivedBy: null, archivedAt: null, archiveReason: null }],
+    documents: [{ id: 'd2', employeeId: ME, category: 'Qualification', title: 'MBA certificate (sample)', fileName: 'mba.pdf', size: 80400, mime: 'application/pdf', storagePath: `${ME}/d2.pdf`, visibleToEmployee: true, status: 'Active', expiresOn: null, uploadedBy: ME, uploadedAt: at(addDays(T, -2), '10:00'), archivedBy: null, archivedAt: null, archiveReason: null, source: 'employee', reviewStatus: 'Pending Review', reviewNote: null },
+      { id: 'd3', employeeId: ME, category: 'Offer Letter', title: 'Offer letter (sample)', fileName: 'offer.pdf', size: 90400, mime: 'application/pdf', storagePath: `${ME}/d3.pdf`, visibleToEmployee: true, status: 'Active', expiresOn: null, uploadedBy: 'demo-hr', uploadedAt: at(addDays(T, -60), '10:00'), archivedBy: null, archivedAt: null, archiveReason: null, source: 'hr', reviewStatus: null },
+      { id: 'd1', employeeId: 'demo-po', category: 'Offer Letter', title: 'Offer letter (sample)', fileName: 'offer.pdf', size: 120400, mime: 'application/pdf', storagePath: 'demo-po/d1.pdf', visibleToEmployee: true, status: 'Active', expiresOn: null, uploadedBy: ME, uploadedAt: at(addDays(T, -30), '11:00'), archivedBy: null, archivedAt: null, archiveReason: null }],
   } as HRData;
 }
 
@@ -124,7 +127,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 export default function HRDemo() {
@@ -159,6 +162,11 @@ export default function HRDemo() {
         return { employeeId: e.id, day, code, label: code === 'HD' ? 'Morning Leave (Sick Leave) · Afternoon present' : code, halfSession: code === 'HD' ? 'morning' : null, working: dow !== 0, attended: code === 'P' || code === 'HD' } as WorkforceDay;
       }));
     },
+    demoTeam: () => [
+      { id: ME, fullName: 'Manu Manager (sample)', employeeCode: 'DEMO-1', designationId: 'senior_international_recruitment_manager', departmentId: 'partnerships', reportingManagerId: null, managerName: null, workEmail: 'manager@example.test', photoPath: null, relation: 'you', availability: 'available', attendanceState: 'Checked In' },
+      { id: 'demo-po', fullName: 'Priya Partnerships (sample)', employeeCode: 'DEMO-2', designationId: 'partnership_officer', departmentId: 'partnerships', reportingManagerId: ME, managerName: 'Manu Manager (sample)', workEmail: 'priya@example.test', photoPath: null, relation: 'my team', availability: 'morning_leave', attendanceState: null },
+      { id: 'demo-app', fullName: 'Arun Applications (sample)', employeeCode: 'DEMO-3', designationId: 'application_team', departmentId: 'applications', reportingManagerId: ME, managerName: 'Manu Manager (sample)', workEmail: 'arun@example.test', photoPath: null, relation: 'my team', availability: 'available', attendanceState: 'On Break' },
+    ],
     write: async (table: string, op: string) => {
       setLog((l) => [`${op} ${table}`, ...l].slice(0, 8));
       return true;

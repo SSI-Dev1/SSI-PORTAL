@@ -4,9 +4,10 @@
 // values payroll uses: Morning / Afternoon Leave, 0.5 LOP, fractional Present), the rest from RLS-
 // filtered tables, so nobody sees another employee's records unless they may.
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock, History, Mail, MapPin, Palmtree, Phone, Wallet } from 'lucide-react';
-import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Modal, Table } from './ui';
+import { CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock, History, MapPin, Palmtree, Wallet } from 'lucide-react';
+import { Badge, Button, Card, CardHeader, EmptyState, Modal, Table } from './ui';
 import { requestTone, reportTone } from './hr';
+import { PersonalDetailsCard, ProfilePhoto, usePersonal } from './selfService';
 import { useHR, useHRLookup } from '../store/hr';
 import { useStore } from '../store/store';
 import { supabase } from '../auth/auth';
@@ -212,16 +213,8 @@ export function EmployeeProfile({ employeeId, self }: { employeeId: string; self
   const { session } = useStore();
   const e = data.employees.find((x) => x.id === employeeId);
   const dir = data.directory.find((x) => x.id === employeeId);
-  const [contact, setContact] = useState<{ email: string | null; phone: string | null } | null>(null);
+  const { contact, details, reload } = usePersonal(employeeId);
   const [historyOf, setHistoryOf] = useState<LeaveRequest | null>(null);
-  useEffect(() => {
-    if (!supabase) return;
-    let alive = true;
-    void supabase.from('profiles').select('email, phone').eq('id', employeeId).maybeSingle().then(({ data: p }) => alive && setContact((p as { email: string | null; phone: string | null } | null) ?? null));
-    return () => {
-      alive = false;
-    };
-  }, [employeeId]);
   const today = companyDate(now());
   const month = today.slice(0, 7);
   const monthRows = data.attendance.filter((a) => a.employeeId === employeeId && a.workDate.slice(0, 7) === month);
@@ -244,7 +237,7 @@ export function EmployeeProfile({ employeeId, self }: { employeeId: string; self
       <Card className="overflow-hidden">
         <div className="h-16 bg-gradient-to-r from-navy to-navy-500" />
         <div className="-mt-8 flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end">
-          <Avatar name={name} size={72} className="ring-4 ring-surface" />
+          <ProfilePhoto employeeId={employeeId} name={name} photoPath={contact?.photoPath ?? null} onChanged={reload} />
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-xl font-semibold text-heading">{name}</h2>
             <p className="text-sm text-ink-soft">{[e.designationId, ...e.additionalDesignations].map((d) => lk.designation.get(d)?.name ?? d).join(' · ')} · {lk.department.get(e.departmentId ?? '')?.name ?? 'No department'}</p>
@@ -257,22 +250,20 @@ export function EmployeeProfile({ employeeId, self }: { employeeId: string; self
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <PersonalDetailsCard employeeId={employeeId} self={self} contact={contact} details={details} onChanged={reload} />
         <Card>
-          <CardHeader title="Personal information" subtitle={self ? 'Ask HR to correct anything here.' : undefined} />
+          <CardHeader title="Employment details" subtitle={self ? 'Maintained by HR.' : undefined} />
           <dl className="grid gap-x-6 gap-y-4 px-5 pb-5 sm:grid-cols-2">
-            {field('Email', contact?.email ? <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-ink-mute" />{contact.email}</span> : null)}
-            {field('Phone', contact?.phone ? <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-ink-mute" />{contact.phone}</span> : null)}
-            {field('Birthday', e.dateOfBirth ? new Date(`${e.dateOfBirth}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) : null)}
-            {field('Work location', e.workLocation ? <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-mute" />{e.workLocation}</span> : null)}
-          </dl>
-        </Card>
-        <Card>
-          <CardHeader title="Employment details" />
-          <dl className="grid gap-x-6 gap-y-4 px-5 pb-5 sm:grid-cols-2">
+            {field('Employee ID', e.employeeCode)}
+            {field('Designation', lk.designation.get(e.designationId)?.name ?? e.designationId)}
+            {field('Department', lk.department.get(e.departmentId ?? '')?.name ?? null)}
+            {field('Employment status', e.employmentStatus)}
             {field('Joining date', fmtDay(e.joiningDate))}
             {field('Reporting manager', e.reportingManagerId ? lk.name(e.reportingManagerId) : null)}
             {field('Shift', shift ? `${shift.name}${shift.flexible ? '' : ` · ${shift.startTime?.slice(0, 5)}–${shift.endTime?.slice(0, 5)}`}` : null)}
             {field('Probation ends', e.employmentStatus === 'Probation' ? fmtDay(e.probationEndDate) : null)}
+            {field('Birthday', e.dateOfBirth ? new Date(`${e.dateOfBirth}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) : null)}
+            {field('Work location', e.workLocation ? <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-ink-mute" />{e.workLocation}</span> : null)}
             {canSalary && field('Salary', salary ? <span className="inline-flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5 text-ink-mute" />{salary.currency} {Number(salary.amount).toLocaleString('en-IN')} / {salary.payFrequency}</span> : 'Not recorded')}
           </dl>
         </Card>

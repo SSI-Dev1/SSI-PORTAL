@@ -129,9 +129,12 @@ const employeeNav: NavSection[] = [
     { to: 'work/reports', label: 'Report History', icon: History },
     { to: 'work/assigned', label: 'My Assigned Tasks', icon: ListChecks },
   ] },
-  { id: 'w-time', title: 'Attendance & Leave', items: [
+  { id: 'w-self', title: 'Self Service', items: [
+    { to: 'work/profile', label: 'My Profile', icon: UserCircle2 },
     { to: 'work/attendance', label: 'My Attendance', icon: Clock },
     { to: 'work/leave', label: 'My Leave', icon: Palmtree },
+    { to: 'work/documents', label: 'My Documents', icon: FolderLock },
+    { to: 'work/team-members', label: 'My Team Members', icon: Users },
     { to: 'work/holidays', label: 'Holidays', icon: CalendarDays },
   ] },
   { id: 'w-team', title: 'Team', items: [
@@ -146,7 +149,6 @@ const employeeNav: NavSection[] = [
     { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
   ] },
-  { id: 'w-account', title: 'Account', items: [{ to: 'work/profile', label: 'My Profile', icon: UserCircle2 }] },
 ];
 
 const hrNav: NavSection[] = [

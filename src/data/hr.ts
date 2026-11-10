@@ -402,4 +402,25 @@ export interface EmployeeDocument {
   archivedBy: string | null;
   archivedAt: string | null;
   archiveReason: string | null;
+  /** 'employee' = uploaded by the employee from My Documents (0028). */
+  source?: 'hr' | 'employee';
+  reviewStatus?: 'Pending Review' | 'Verified' | 'Rejected' | null;
+  reviewNote?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+}
+export const EMPLOYEE_UPLOAD_CATEGORIES = ['Identity', 'Address Proof', 'Qualification', 'Experience Letter', 'Medical', 'Other'] as const;
+export interface TeamMember {
+  id: string;
+  fullName: string;
+  employeeCode: string;
+  designationId: string;
+  departmentId: string | null;
+  reportingManagerId: string | null;
+  managerName: string | null;
+  workEmail: string | null;
+  photoPath: string | null;
+  relation: 'you' | 'manager' | 'my team' | 'peer' | 'department';
+  availability: 'available' | 'full_leave' | 'morning_leave' | 'afternoon_leave';
+  attendanceState: 'Checked In' | 'On Break' | 'Checked Out' | null;
 }

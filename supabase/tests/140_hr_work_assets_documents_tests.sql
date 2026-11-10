@@ -154,9 +154,9 @@ select pg_temp.act_as(:po);
 select pg_temp.check((select count(*) from public.employee_documents where id = 'doc1') = 1, 'a shared document is visible to the employee');
 select pg_temp.check(public.authorize_hr_document('doc1') = :po || '/doc1.pdf', 'the employee can download it');
 select pg_temp.check((select count(*) from storage.objects where bucket_id = 'hr-documents') = 1, 'storage allows only their shared file');
-select pg_temp.check((select count(*) from public.employee_document_events) = 0, 'employees cannot read the document history');
+select pg_temp.check((select count(*) from public.employee_document_events where employee_id <> auth.uid()) = 0, 'employees read only the history of their own shared documents (0028)');
 select pg_temp.denied(format($$insert into public.employee_documents (employee_id, category, title, file_name, size, mime, storage_path)
-  values (%L, 'Other', 'Self upload', 'x.pdf', 10, 'application/pdf', %L)$$, :po, :po || '/y.pdf'), 'employees cannot upload HR documents', '%row-level security%');
+  values (%L, 'Payslip', 'Self upload', 'x.pdf', 10, 'application/pdf', %L)$$, :po, :po || '/y.pdf'), 'employees cannot upload HR-only document types', '%row-level security%');
 update public.employee_documents set title = 'Hacked' where id = 'doc1';
 select pg_temp.check((select title from public.employee_documents where id = 'doc1') = 'Offer letter 2025', 'employees cannot edit HR documents');
 

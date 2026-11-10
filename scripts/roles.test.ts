@@ -31,11 +31,13 @@ test('managers get team pages, not HR', () => {
 test('employees: own workspace only', () => {
   assert.equal(canOpenPath(employee, 'work/assigned'), true);
   assert.equal(canOpenPath(employee, 'work/profile'), true);
+  assert.equal(canOpenPath(employee, 'work/documents'), true);
+  assert.equal(canOpenPath(employee, 'work/team-members'), true);
   assert.equal(canOpenPath(employee, 'work/assignments'), false);
   assert.equal(canOpenPath(employee, 'hr/dashboard'), false);
   assert.equal(canOpenPath(employee, 'hr/documents'), false);
 });
 
 test('partner users never open internal HR or workspace pages', () => {
-  for (const p of ['hr/dashboard', 'hr/documents', 'hr/employees']) assert.equal(canOpenPath(partner, p), false, p);
+  for (const p of ['hr/dashboard', 'hr/documents', 'hr/employees', 'work/documents', 'work/team-members', 'work/profile']) assert.equal(canOpenPath(partner, p), false, p);
 });

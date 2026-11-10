@@ -50,6 +50,7 @@ import { Departments, Designations } from './pages/hr/OrgStructure';
 import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar } from './pages/hr/HRCalendars';
 import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, WorkAssignments } from './pages/hr/HRWork';
 import Management from './pages/hr/Management';
+import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
 import { HRReminders, HRReports, HRSettings } from './pages/hr/HRMisc';
 import ClientDashboard from './pages/client/ClientDashboard';
@@ -126,6 +127,8 @@ const employeeRoutes = (
     <Route path="work/holidays" element={<Holidays />} />
     <Route path="work/team" element={<Team />} />
     <Route path="work/assigned" element={<MyAssignedTasks />} />
+    <Route path="work/documents" element={<MyDocuments />} />
+    <Route path="work/team-members" element={<MyTeamMembers />} />
     <Route path="work/assignments" element={<WorkAssignments />} />
     <Route path="work/profile" element={<MyProfile />} />
     <Route path="work-reports" element={<WorkReports />} />

@@ -18,9 +18,12 @@ function contentSecurityPolicy(supabaseUrl: string): Plugin {
           (m) => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`,
         );
         let api = '';
+        // Profile photos are short-lived signed links from Supabase Storage.
+        let storage = '';
         try {
           const u = new URL(supabaseUrl);
           api = ` ${u.origin} wss://${u.host}`;
+          storage = ` ${u.origin}`;
         } catch {
           /* no backend configured */
         }
@@ -32,7 +35,7 @@ function contentSecurityPolicy(supabaseUrl: string): Plugin {
           "default-src 'self'",
           `script-src 'self' ${analyticsScript} ${hashes.join(' ')}`.trim(),
           "style-src 'self'",
-          "img-src 'self' data: blob:",
+          `img-src 'self' data: blob:${storage}`,
           "font-src 'self'",
           `connect-src 'self'${api} ${analyticsReport}`,
           "object-src 'none'",

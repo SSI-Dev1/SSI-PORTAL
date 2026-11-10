@@ -163,8 +163,11 @@ export function Badge({ tone = 'slate', dot, children, className }: { tone?: Ton
 
 /* ------------------------------------------------------------------ Avatar */
 
-export function Avatar({ name, size = 36, className }: { name: string; size?: number; className?: string }) {
+export function Avatar({ name, size = 36, className, src }: { name: string; size?: number; className?: string; src?: string | null }) {
   const bg = avatarColor(name);
+  if (src) {
+    return <img src={src} alt="" width={size} height={size} className={cn('inline-block shrink-0 rounded-full object-cover', className)} style={{ width: size, height: size }} />;
+  }
   return (
     <span
       className={cn('inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white', className)}

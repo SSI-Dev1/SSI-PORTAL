@@ -1,17 +1,26 @@
 // HR leave management: approvals, every employee's balances (from the ledger), audited
 // adjustments and the leave policy (entitlement, carry forward, accrual, prorating).
-import { useState } from 'react';
-import { Palmtree, Settings2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { RecordLeaveModal } from './HRCalendars';
+import { CalendarPlus, Palmtree, Settings2 } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Segmented, Table, Tabs } from '../../components/ui';
 import { ApprovalsPanel, ExportButtons, requestTone } from '../../components/hr';
 import { LeaveHistoryModal, leaveWhen } from '../../components/hrProfile';
 import { useHR, useHRLookup } from '../../store/hr';
 import { fmtDays, halfDayLabel, type LeaveRequest, type LeaveType } from '../../data/hr';
 
-export default function HRLeave() {
+export default function HRLeave({ initialTab = 'approvals' }: { initialTab?: 'approvals' | 'balances' | 'history' | 'policy' }) {
   const { data, call } = useHR();
   const lk = useHRLookup();
-  const [tab, setTab] = useState<'approvals' | 'balances' | 'history' | 'policy'>('approvals');
+  const [tab, setTab] = useState<'approvals' | 'balances' | 'history' | 'policy'>(initialTab);
+  // ?record=1 (dashboard quick action) opens "Record leave".
+  const [params, setParams] = useSearchParams();
+  const [recording, setRecording] = useState(params.get('record') === '1');
+  useEffect(() => {
+    if (params.get('record') === '1') setParams((p) => { p.delete('record'); return p; }, { replace: true });
+  }, [params, setParams]);
+  useEffect(() => setTab(initialTab), [initialTab]);
   const [status, setStatus] = useState('');
   const [adjust, setAdjust] = useState<{ emp: string; type: string; days: string; note: string } | null>(null);
   const [policy, setPolicy] = useState<LeaveType | null>(null);
@@ -22,9 +31,9 @@ export default function HRLeave() {
   return (
     <>
       <PageHeader title="Leave Management" subtitle="Sick Leave lapses at year end; Paid Leave carries forward. Balances change only when leave is approved or cancelled."
-        actions={<ExportButtons filename="ssi-leave" rows={() => tab === 'balances'
+        actions={<><Button icon={CalendarPlus} onClick={() => setRecording(true)}>Record leave</Button><ExportButtons filename="ssi-leave" rows={() => tab === 'balances'
           ? data.balances.map((b) => ({ Employee: lk.name(b.employeeId), Type: b.name, Year: b.leaveYear, Entitled: b.accrued, Carried: b.carried, Adjusted: b.adjusted, Used: b.used, Pending: b.pending, Available: b.available }))
-          : history.map((r) => ({ Employee: lk.name(r.employeeId), Type: lk.leaveType.get(r.leaveType)?.name, From: r.startDate, To: r.endDate, Session: halfDayLabel(r.halfDaySession) ?? 'Full day', Days: r.days, Status: r.status, 'Decided by': r.decidedBy ? lk.name(r.decidedBy) : '' }))} />} />
+          : history.map((r) => ({ Employee: lk.name(r.employeeId), Type: lk.leaveType.get(r.leaveType)?.name, From: r.startDate, To: r.endDate, Session: halfDayLabel(r.halfDaySession) ?? 'Full day', Days: r.days, Status: r.status, 'Decided by': r.decidedBy ? lk.name(r.decidedBy) : '' }))} /></>} />
       <Tabs className="mb-5" value={tab} onChange={setTab} tabs={[
         { value: 'approvals', label: 'Approvals', count: data.leaveRequests.filter((r) => r.status === 'Pending').length },
         { value: 'balances', label: 'Balances' }, { value: 'history', label: 'All requests' }, { value: 'policy', label: 'Policy' },
@@ -102,6 +111,7 @@ export default function HRLeave() {
       </Modal>
       <PolicyModal value={policy} onClose={() => setPolicy(null)} />
       <LeaveHistoryModal request={historyOf} onClose={() => setHistoryOf(null)} />
+      <RecordLeaveModal open={recording} onClose={() => setRecording(false)} />
     </>
   );
 }

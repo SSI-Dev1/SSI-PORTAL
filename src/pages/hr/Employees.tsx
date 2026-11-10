@@ -2,7 +2,8 @@
 // New employees are created by the admin-users Edge Function (login + HR record in one step,
 // password set by the admin, no invitation). HR records are then edited directly (RLS +
 // triggers stop HR from touching Admin accounts or their own designation / manager / rights).
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { BadgeCheck, KeyRound, MoreHorizontal, Pencil, Power, ShieldCheck, UserPlus, Users, Wallet, Eye } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Select, Switch, Table, Tabs, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
@@ -31,11 +32,17 @@ export default function Employees() {
   const isSuper = session?.userRole === 'super_admin';
   const canAccounts = isSuper || (session?.permissions ?? []).includes('hr_accounts');
   const canSalary = isSuper || (session?.permissions ?? []).includes('hr_salary');
+  // Dashboard cards and quick actions open this page pre-filtered (?dept=…&status=…&joined=month, ?add=1).
+  const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
-  const [dept, setDept] = useState('');
-  const [desig, setDesig] = useState('');
-  const [status, setStatus] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [dept, setDept] = useState(params.get('dept') ?? '');
+  const [desig, setDesig] = useState(params.get('desig') ?? '');
+  const [status, setStatus] = useState(params.get('status') ?? '');
+  const [joined, setJoined] = useState(params.get('joined') === 'month' ? companyDate().slice(0, 7) : '');
+  const [adding, setAdding] = useState(params.get('add') === '1');
+  useEffect(() => {
+    if (params.get('add') === '1') setParams((p) => { p.delete('add'); return p; }, { replace: true });
+  }, [params, setParams]);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [salaryFor, setSalaryFor] = useState<string | null>(null);
   const [resetFor, setResetFor] = useState<string | null>(null);
@@ -45,9 +52,10 @@ export default function Employees() {
   const emails = useStore().db.staff;
   const rows = useMemo(() => data.directory.filter((e) =>
     matches(q, e.fullName, e.employeeCode, lk.designation.get(e.designationId)?.name) && (!dept || e.departmentId === dept)
-    && (!desig || e.designationId === desig || lk.employee.get(e.id)?.additionalDesignations.includes(desig)) && (!status || e.employmentStatus === status)),
-  [data.directory, q, dept, desig, status, lk]);
-  const paged = usePaged(rows, 15, `${q}${dept}${desig}${status}`);
+    && (!desig || e.designationId === desig || lk.employee.get(e.id)?.additionalDesignations.includes(desig)) && (!status || e.employmentStatus === status)
+    && (!joined || (lk.employee.get(e.id)?.joiningDate ?? '').startsWith(joined))),
+  [data.directory, q, dept, desig, status, joined, lk]);
+  const paged = usePaged(rows, 15, `${q}${dept}${desig}${status}${joined}`);
   // Staff accounts created before HR records existed (or in User Management) need one to get a workspace.
   const missing = emails.filter((s) => !data.directory.some((e) => e.id === s.id) && (isSuper || (HR_MANAGEABLE_ROLES as string[]).includes(s.role)));
   const manageable = (role: string, id: string) => isSuper || (canAccounts && id !== session?.userId && (HR_MANAGEABLE_ROLES as string[]).includes(role));
@@ -92,6 +100,7 @@ export default function Employees() {
           <FilterSelect label="Department" value={dept} onChange={setDept} options={[{ value: '', label: 'All departments' }, ...data.departments.map((d) => ({ value: d.id, label: d.name }))]} />
           <FilterSelect label="Designation" value={desig} onChange={setDesig} options={[{ value: '', label: 'All designations' }, ...data.designations.map((d) => ({ value: d.id, label: d.name }))]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: '', label: 'Any status' }, ...EMPLOYMENT_STATUSES]} />
+          {joined && <Button size="sm" variant="secondary" onClick={() => setJoined('')}>Joined {joined} ✕</Button>}
         </div>
         {rows.length === 0 ? <EmptyState icon={Users} title="No employees found" description={canAccounts ? 'Add an employee to create their login and HR record.' : undefined} /> : (
           <>

@@ -5,12 +5,14 @@ import { CardHeader, Card } from '../../components/ui';
 import { EmployeeProfile } from '../../components/hrProfile';
 import { useStore } from '../../store/store';
 import Settings from '../admin/Settings';
+import { MyDocumentsAndAssets } from '../hr/HRWork';
 
 export default function MyProfile() {
   const { session } = useStore();
   return (
     <>
       {session?.employee && <div className="mb-6"><EmployeeProfile employeeId={session.userId} self /></div>}
+      {session?.employee && <div className="mb-6"><MyDocumentsAndAssets /></div>}
       <Card className="mb-4"><CardHeader title="Account settings" subtitle="Password, sign-in security and appearance." /></Card>
       <Settings />
     </>

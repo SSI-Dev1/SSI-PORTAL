@@ -46,6 +46,10 @@ import Employees from './pages/hr/Employees';
 import HRAttendance from './pages/hr/HRAttendance';
 import HRLeave from './pages/hr/HRLeave';
 import WorkReports from './pages/hr/WorkReports';
+import { Departments, Designations } from './pages/hr/OrgStructure';
+import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar } from './pages/hr/HRCalendars';
+import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, WorkAssignments } from './pages/hr/HRWork';
+import Management from './pages/hr/Management';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
 import { HRReminders, HRReports, HRSettings } from './pages/hr/HRMisc';
 import ClientDashboard from './pages/client/ClientDashboard';
@@ -121,6 +125,8 @@ const employeeRoutes = (
     <Route path="work/leave" element={<MyLeave />} />
     <Route path="work/holidays" element={<Holidays />} />
     <Route path="work/team" element={<Team />} />
+    <Route path="work/assigned" element={<MyAssignedTasks />} />
+    <Route path="work/assignments" element={<WorkAssignments />} />
     <Route path="work/profile" element={<MyProfile />} />
     <Route path="work-reports" element={<WorkReports />} />
     <Route path="hr" element={<Navigate to="dashboard" replace />} />
@@ -128,7 +134,19 @@ const employeeRoutes = (
     <Route path="hr/employees" element={<Employees />} />
     <Route path="hr/attendance" element={<HRAttendance />} />
     <Route path="hr/hours" element={<HRAttendance initialTab="hours" />} />
+    <Route path="hr/attendance-review" element={<HRAttendance initialTab="review" />} />
+    <Route path="hr/departments" element={<Departments />} />
+    <Route path="hr/designations" element={<Designations />} />
     <Route path="hr/leave" element={<HRLeave />} />
+    <Route path="hr/leave-balance" element={<HRLeave initialTab="balances" />} />
+    <Route path="hr/leave-calendar" element={<LeaveCalendar />} />
+    <Route path="hr/exceptions" element={<AttendanceExceptions />} />
+    <Route path="hr/workforce-calendar" element={<WorkforceCalendar />} />
+    <Route path="hr/work" element={<WorkAssignments />} />
+    <Route path="hr/management" element={<Management />} />
+    <Route path="hr/my-tasks" element={<MyAssignedTasks />} />
+    <Route path="hr/assets" element={<CompanyAssets />} />
+    <Route path="hr/documents" element={<EmployeeDocuments />} />
     <Route path="hr/early-checkout" element={<HREarlyCheckout />} />
     <Route path="hr/corrections" element={<HRCorrections />} />
     <Route path="hr/holidays" element={<Holidays />} />

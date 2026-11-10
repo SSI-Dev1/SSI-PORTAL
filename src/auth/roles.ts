@@ -171,3 +171,19 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
   if (!m) return true;
   return session.partnerModules.includes(m);
 }
+
+/**
+ * Page-level check for HR Portal and Employee Workspace sub-pages (the menu and the route guard
+ * use the same rule). Employees / Departments / Designations are open to HR and to staff with
+ * "hr_accounts"; every other HR page needs HR access. Team pages need a team.
+ */
+export function canOpenPath(session: Parameters<typeof canOpen>[0], path: string): boolean {
+  const [seg, sub] = path.replace(/^\/+/, '').split('/');
+  // Internal HR and the employee workspace are never open to partner organisations.
+  if ((seg === 'hr' || seg === 'work' || seg === 'work-reports') && session?.role === 'client') return false;
+  if (!canOpen(session, seg ?? '')) return false;
+  if (seg === 'hr' && sub && !['employees', 'departments', 'designations'].includes(sub)) return isHR(session);
+  if (seg === 'work' && (sub === 'team' || sub === 'assignments')) return canOpen(session, 'team');
+  return true;
+}
+

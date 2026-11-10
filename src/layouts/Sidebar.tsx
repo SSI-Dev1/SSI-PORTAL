@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import {
+import { AlertTriangle, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -48,7 +48,7 @@ import { Logo, LogoMark } from '../components/brand';
 import { Menu, Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { Session } from '../data/types';
-import { canOpen, isHR } from '../auth/roles';
+import { canOpen, canOpenPath, isHR } from '../auth/roles';
 
 export const SIDEBAR_EXPANDED = 264;
 export const SIDEBAR_RAIL = 76;
@@ -127,13 +127,17 @@ const employeeNav: NavSection[] = [
     { to: 'work/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
     { to: 'work/reports', label: 'Report History', icon: History },
+    { to: 'work/assigned', label: 'My Assigned Tasks', icon: ListChecks },
   ] },
   { id: 'w-time', title: 'Attendance & Leave', items: [
     { to: 'work/attendance', label: 'My Attendance', icon: Clock },
     { to: 'work/leave', label: 'My Leave', icon: Palmtree },
     { to: 'work/holidays', label: 'Holidays', icon: CalendarDays },
   ] },
-  { id: 'w-team', title: 'Team', items: [{ to: 'work/team', label: 'Team & Approvals', icon: UsersRound }] },
+  { id: 'w-team', title: 'Team', items: [
+    { to: 'work/team', label: 'Team & Approvals', icon: UsersRound },
+    { to: 'work/assignments', label: 'Team Assignments', icon: Briefcase },
+  ] },
   { id: 'w-tools', title: 'Work Tools', items: [
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -146,24 +150,39 @@ const employeeNav: NavSection[] = [
 ];
 
 const hrNav: NavSection[] = [
-  { id: 'hr-overview', title: 'HR', items: [
-    { to: 'hr/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'hr-overview', title: 'HR Management', items: [{ to: 'hr/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
+  { id: 'hr-people', title: 'People', items: [
     { to: 'hr/employees', label: 'Employees', icon: UserCog },
+    { to: 'hr/departments', label: 'Departments', icon: Building2 },
+    { to: 'hr/designations', label: 'Designations', icon: Briefcase },
   ] },
-  { id: 'hr-time', title: 'Time', items: [
+  { id: 'hr-leadership', title: 'Leadership', items: [{ to: 'hr/management', label: 'Management', icon: Crown }] },
+  { id: 'hr-work', title: 'Work', items: [
+    { to: 'hr/work', label: 'Work Assignment', icon: Briefcase },
+    { to: 'hr/my-tasks', label: 'My Assigned Tasks', icon: ListChecks },
+    { to: 'hr/work-reports', label: 'Daily Work Reports', icon: ClipboardList },
+  ] },
+  { id: 'hr-time', title: 'Attendance', items: [
     { to: 'hr/attendance', label: 'Attendance', icon: Clock },
-    { to: 'hr/hours', label: 'Working Hours', icon: Timer },
-    { to: 'hr/leave', label: 'Leave Management', icon: Palmtree },
-    { to: 'hr/early-checkout', label: 'Early Checkout', icon: LogOut },
+    { to: 'hr/exceptions', label: 'Attendance Exceptions', icon: AlertTriangle },
     { to: 'hr/corrections', label: 'Attendance Corrections', icon: FilePen },
+    { to: 'hr/early-checkout', label: 'Early Checkout', icon: LogOut },
+    { to: 'hr/hours', label: 'Working Hours', icon: Timer },
+  ] },
+  { id: 'hr-leave', title: 'Leave', items: [
+    { to: 'hr/leave', label: 'Leave Requests', icon: Palmtree },
+    { to: 'hr/leave-balance', label: 'Leave Balance', icon: Scale },
+    { to: 'hr/leave-calendar', label: 'Leave Calendar', icon: CalendarRange },
+  ] },
+  { id: 'hr-schedule', title: 'Schedule', items: [
+    { to: 'hr/workforce-calendar', label: 'Workforce Calendar', icon: CalendarClock },
     { to: 'hr/holidays', label: 'Holiday Calendar', icon: CalendarDays },
   ] },
-  { id: 'hr-work', title: 'Work', items: [
-    { to: 'hr/work-reports', label: 'Daily Work Reports', icon: ClipboardList },
-    { to: 'hr/reminders', label: 'Employee Reminders', icon: Bell },
-    { to: 'hr/reports', label: 'HR Reports', icon: BarChart3 },
-    { to: 'hr/settings', label: 'Settings', icon: Settings },
-  ] },
+  { id: 'hr-company', title: 'Company', items: [{ to: 'hr/assets', label: 'Company Assets', icon: Laptop }] },
+  { id: 'hr-docs', title: 'Documents', items: [{ to: 'hr/documents', label: 'Employee Documents', icon: FolderLock }] },
+  { id: 'hr-reports', title: 'Reports', items: [{ to: 'hr/reports', label: 'HR Reports', icon: BarChart3 }] },
+  { id: 'hr-comms', title: 'Communication', items: [{ to: 'hr/reminders', label: 'Employee Reminders', icon: Bell }] },
+  { id: 'hr-settings', title: 'Settings', items: [{ to: 'hr/settings', label: 'HR Settings', icon: Settings }] },
 ];
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
@@ -256,10 +275,7 @@ export function navFor(session: Session | null, workspace: WorkspaceId = 'busine
     : workspace === 'work' ? employeeNav
     : session.role === 'admin' ? adminNav : staffNav;
   const allowed = (to: string) => {
-    if (to === 'work/team') return canOpen(session, 'team');
-    if (to.startsWith('hr/') && to !== 'hr/employees') return isHR(session);
-    if (to === 'hr/employees') return canOpen(session, 'hr');
-    return canOpen(session, to.split('/')[0]);
+    return canOpenPath(session, to);
   };
   return sets.map((s) => ({ ...s, items: s.items.filter((n) => allowed(n.to)) })).filter((s) => s.items.length);
 }

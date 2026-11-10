@@ -18,6 +18,11 @@ import Employees from './hr/Employees';
 import WorkReports from './hr/WorkReports';
 import HRLeave from './hr/HRLeave';
 import { HRSettings } from './hr/HRMisc';
+import { Departments, Designations } from './hr/OrgStructure';
+import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar, type WorkforceDay } from './hr/HRCalendars';
+import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, MyDocumentsAndAssets, WorkAssignments } from './hr/HRWork';
+import { HRReports } from './hr/HRMisc';
+import Management from './hr/Management';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -100,6 +105,17 @@ function sample(): HRData {
       { templateId: 'senior_recruitment_manager', fieldKey: 'pd_new_partners_contacted', kind: 'activity', activityTypes: ['partner_contact'], workload: null },
       { templateId: 'senior_recruitment_manager', fieldKey: 'pd_partners_onboarded', kind: 'activity', activityTypes: ['partner_onboarded'], workload: null },
     ],
+    assignments: [
+      { id: 't1', kind: 'assignment', title: 'Prepare partner pitch deck (sample)', description: 'For the roadshow', assignedTo: 'demo-po', assignedBy: ME, priority: 'High', due: at(addDays(T, 5), '18:00'), startDate: T, status: 'In Progress', progress: 40, completedAt: null, lastNote: 'Outline done', createdAt: T, updatedAt: T },
+      { id: 't2', kind: 'assignment', title: 'Chase pending CAS letters (sample)', description: null, assignedTo: 'demo-app', assignedBy: ME, priority: 'Medium', due: at(addDays(T, -1), '18:00'), startDate: null, status: 'Not Started', progress: 0, completedAt: null, lastNote: null, createdAt: T, updatedAt: T },
+      { id: 't3', kind: 'assignment', title: 'Weekly pipeline review (sample)', description: null, assignedTo: ME, assignedBy: 'demo-hr', priority: 'Normal', due: at(addDays(T, 2), '18:00'), startDate: null, status: 'Not Started', progress: 0, completedAt: null, lastNote: null, createdAt: T, updatedAt: T },
+    ],
+    assets: [
+      { id: 'as1', assetTag: 'LAP-001', name: 'Laptop 14" (sample)', category: 'Laptop', serialNumber: 'SAMPLE-123', status: 'Assigned', purchaseDate: '2025-04-01', warrantyUntil: '2027-04-01', notes: null, createdAt: T, updatedAt: T },
+      { id: 'as2', assetTag: 'MON-004', name: 'Monitor 24" (sample)', category: 'Monitor', serialNumber: null, status: 'Available', purchaseDate: null, warrantyUntil: null, notes: null, createdAt: T, updatedAt: T },
+    ],
+    assetAssignments: [{ id: 'aa1', assetId: 'as1', employeeId: 'demo-po', issuedOn: addDays(T, -40), expectedReturn: null, returnedOn: null, conditionOut: 'New', conditionIn: null, notes: null, issuedBy: ME, returnedBy: null }],
+    documents: [{ id: 'd1', employeeId: 'demo-po', category: 'Offer Letter', title: 'Offer letter (sample)', fileName: 'offer.pdf', size: 120400, mime: 'application/pdf', storagePath: 'demo-po/d1.pdf', visibleToEmployee: true, status: 'Active', expiresOn: null, uploadedBy: ME, uploadedAt: at(addDays(T, -30), '11:00'), archivedBy: null, archivedAt: null, archiveReason: null }],
   } as HRData;
 }
 
@@ -108,6 +124,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 export default function HRDemo() {
@@ -130,6 +147,17 @@ export default function HRDemo() {
       if (fn === 'break_start') setData((d) => ({ ...d, breaks: [...d.breaks, { id: 'b2', sessionId: 'a1', startAt: new Date().toISOString(), endAt: null }], attendance: d.attendance.map((a) => (a.id === 'a1' ? { ...a, state: 'On Break' } : a)) }));
       if (fn === 'break_end') setData((d) => ({ ...d, breaks: d.breaks.map((b) => (b.endAt ? b : { ...b, endAt: new Date().toISOString() })), attendance: d.attendance.map((a) => (a.id === 'a1' ? { ...a, state: 'Checked In' } : a)) }));
       return { ok: true as const, data: undefined as never };
+    },
+    // Sample day statuses for the Workforce Calendar / Exceptions (no server in the harness).
+    demoWorkforce: (m: string): WorkforceDay[] => {
+      const n = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
+      return data.directory.flatMap((e, ei) => Array.from({ length: n }, (_, i) => {
+        const day = `${m}-${String(i + 1).padStart(2, '0')}`;
+        const dow = new Date(`${day}T00:00:00Z`).getUTCDay();
+        const future = day > T;
+        const code = dow === 0 ? 'WO' : future ? 'UP' : day === T ? 'OPEN' : (i + ei) % 11 === 3 ? 'A' : (i + ei) % 13 === 5 ? 'HD' : (i + ei) % 17 === 2 ? 'PL' : 'P';
+        return { employeeId: e.id, day, code, label: code === 'HD' ? 'Morning Leave (Sick Leave) · Afternoon present' : code, halfSession: code === 'HD' ? 'morning' : null, working: dow !== 0, attended: code === 'P' || code === 'HD' } as WorkforceDay;
+      }));
     },
     write: async (table: string, op: string) => {
       setLog((l) => [`${op} ${table}`, ...l].slice(0, 8));

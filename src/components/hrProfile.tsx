@@ -14,24 +14,24 @@ import { MONTHS_SHORT, companyDate, fmtDay, fmtDays, halfDayLabel, hm, type DayS
 import { cn } from '../lib/utils';
 
 const camel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-const fromRows = <T,>(rows: unknown) => ((rows ?? []) as Record<string, unknown>[]).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [camel(k), typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && k !== 'day' ? Number(v) : v])) as T);
-const monthLabel = (m: string) => `${MONTHS_SHORT[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
-const shiftMonth = (m: string, n: number) => {
+export const fromRows = <T,>(rows: unknown) => ((rows ?? []) as Record<string, unknown>[]).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [camel(k), typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && k !== 'day' ? Number(v) : v])) as T);
+export const monthLabel = (m: string) => `${MONTHS_SHORT[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+export const shiftMonth = (m: string, n: number) => {
   const [y, mo] = m.split('-').map(Number);
   const d = new Date(Date.UTC(y, mo - 1 + n, 1));
   return d.toISOString().slice(0, 7);
 };
-const lastDay = (m: string) => {
+export const lastDay = (m: string) => {
   const [y, mo] = m.split('-').map(Number);
   return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
 };
 
 // Day colours (SSI tokens; the label always explains the cell).
-const TONE: Record<string, string> = {
+export const TONE: Record<string, string> = {
   P: 'bg-emerald-500', PL: 'bg-sky-500', SL: 'bg-violet-500', LOP: 'bg-red-500', A: 'bg-red-500',
   H: 'bg-brand', WO: 'bg-slate-300 dark:bg-slate-600', UP: 'bg-slate-200 dark:bg-slate-700', OPEN: 'bg-slate-200 dark:bg-slate-700',
 };
-const SHORT: Record<string, string> = { P: 'P', PL: 'PL', SL: 'SL', LOP: 'LOP', A: 'A', H: 'H', WO: 'WO', UP: '', OPEN: '—', HD: '½' };
+export const SHORT: Record<string, string> = { P: 'P', PL: 'PL', SL: 'SL', LOP: 'LOP', A: 'A', H: 'H', WO: 'WO', UP: '', OPEN: '—', HD: '½' };
 
 /** Re-reads whenever this employee's attendance or leave changes (realtime via the HR store). */
 function useChangeKey(employeeId: string) {

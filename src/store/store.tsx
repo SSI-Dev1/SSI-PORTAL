@@ -131,6 +131,13 @@ function useStoreValue() {
       const rates = new Map(((com.data ?? []) as { partner_id: string; commission_rate: number }[]).map((r) => [r.partner_id, Number(r.commission_rate)]));
       return { data: ((res.data ?? []) as unknown as Row[]).map((r) => ({ ...r, commission_rate: rates.get(r.id as string) ?? null })), error: null };
     };
+    // Work assignments (tasks.kind = 'assignment', 0027) live in the HR store with their own
+    // workflow; Tasks & Reminders lists plain tasks only.
+    f.tasks = async () => {
+      const res = await sb.from('tasks').select('*').limit(5000);
+      if (res.error) return res;
+      return { data: ((res.data ?? []) as Row[]).filter((r) => r.kind !== 'assignment'), error: null };
+    };
     f.activities = () => sb.from('activities').select('*').order('at', { ascending: false }).limit(80);
     f.notifications = () => sb.from('notifications').select('id, created_at, kind, title, body, link, read_at').order('created_at', { ascending: false }).limit(50);
     f.staff = () => sb.rpc('staff_directory');

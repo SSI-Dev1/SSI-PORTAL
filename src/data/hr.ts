@@ -4,7 +4,7 @@
 export type EmploymentStatus = 'Active' | 'Probation' | 'Resigned';
 export const EMPLOYMENT_STATUSES: EmploymentStatus[] = ['Active', 'Probation', 'Resigned'];
 
-export interface Department { id: string; name: string; active: boolean }
+export interface Department { id: string; name: string; active: boolean; description?: string | null; managerId?: string | null }
 export interface Designation {
   id: string;
   name: string;
@@ -14,6 +14,7 @@ export interface Designation {
   defaultRole: string;
   defaultPermissions: string[] | null;
   active: boolean;
+  description?: string | null;
 }
 export interface Shift {
   id: string;
@@ -328,4 +329,77 @@ export function serverMessage(e: unknown, fallback = 'Something went wrong. Plea
   if (!m) return fallback;
   if (/permission denied|violates row-level security|JWT|not allowed/i.test(m)) return 'You do not have permission to do this.';
   return m.replace(/^[A-Z_]+:\s*/, '');
+}
+
+// ------------------------------------------------------------------ Stage 4 (0027)
+
+export type AssignmentStatus = 'Not Started' | 'In Progress' | 'On Hold' | 'Completed' | 'Cancelled';
+export const ASSIGNMENT_STATUSES: AssignmentStatus[] = ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
+/** Work assigned to an employee (a "tasks" row with kind = 'assignment'). */
+export interface Assignment {
+  id: string;
+  kind: 'assignment';
+  title: string;
+  description: string | null;
+  assignedTo: string;
+  assignedBy: string | null;
+  priority: 'High' | 'Medium' | 'Normal';
+  due: string;
+  startDate: string | null;
+  status: AssignmentStatus;
+  progress: number;
+  completedAt: string | null;
+  lastNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface TaskEvent { id: string; taskId: string; at: string; actor: string | null; action: string; detail: Record<string, unknown> | null }
+
+export const ASSET_CATEGORIES = ['Laptop', 'Desktop', 'Monitor', 'Mobile Phone', 'Tablet', 'Accessory', 'Furniture', 'Vehicle', 'Software Licence', 'ID / Access Card', 'Other'] as const;
+export type AssetStatus = 'Available' | 'Assigned' | 'In Repair' | 'Retired' | 'Lost';
+export interface CompanyAsset {
+  id: string;
+  assetTag: string;
+  name: string;
+  category: (typeof ASSET_CATEGORIES)[number];
+  serialNumber: string | null;
+  status: AssetStatus;
+  purchaseDate: string | null;
+  warrantyUntil: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AssetAssignment {
+  id: string;
+  assetId: string;
+  employeeId: string;
+  issuedOn: string;
+  expectedReturn: string | null;
+  returnedOn: string | null;
+  conditionOut: string | null;
+  conditionIn: string | null;
+  notes: string | null;
+  issuedBy: string | null;
+  returnedBy: string | null;
+}
+
+export const HR_DOCUMENT_CATEGORIES = ['Identity', 'Address Proof', 'Offer Letter', 'Employment Contract', 'Qualification', 'Experience Letter', 'Payslip', 'Policy Acknowledgement', 'Medical', 'Other'] as const;
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  category: (typeof HR_DOCUMENT_CATEGORIES)[number];
+  title: string;
+  fileName: string;
+  size: number;
+  mime: string;
+  storagePath: string;
+  visibleToEmployee: boolean;
+  status: 'Active' | 'Archived';
+  expiresOn: string | null;
+  uploadedBy: string | null;
+  uploadedAt: string;
+  archivedBy: string | null;
+  archivedAt: string | null;
+  archiveReason: string | null;
 }

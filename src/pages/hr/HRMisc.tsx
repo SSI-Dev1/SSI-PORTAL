@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Bell, Cake, CalendarClock, Download, Palmtree, PartyPopper, Plus, Save, Settings2 } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardHeader, Checkbox, EmptyState, Field, Input, Modal, PageHeader, Segmented, Switch, Table, Tabs, TimePicker } from '../../components/ui';
 import { exportCsv } from '../../components/hr';
+import { useMonthSummaries } from '../../components/hrProfile';
 import { useToast } from '../../components/feedback';
 import { useHR, useHRLookup } from '../../store/hr';
 import { useStore } from '../../store/store';
@@ -66,6 +67,7 @@ export function HRReports() {
     const [y, m] = today.slice(0, 7).split('-').map(Number);
     return new Date(Date.UTC(y, m - 1 - i, 1)).toISOString().slice(0, 7);
   });
+  const summaries = useMonthSummaries(month);
   const run = (name: string, rows: Record<string, unknown>[]) => {
     if (!rows.length) return toast.info('Nothing to export', 'No records for this period.');
     exportCsv(name, rows);
@@ -77,6 +79,23 @@ export function HRReports() {
     { title: 'Leave balances', desc: 'Current leave-year balances per employee and type.', go: () => run('ssi-leave-balances', data.balances.map((b) => ({ Employee: lk.name(b.employeeId), Type: b.name, Year: b.leaveYear, Entitled: b.accrued, Carried: b.carried, Used: b.used, Pending: b.pending, Available: b.available }))) },
     { title: 'Daily report submissions', desc: 'Every report in the month with status and submission time.', go: () => run(`ssi-daily-reports-${month}`, data.reports.filter((r) => r.reportDate.slice(0, 7) === month).map((r) => ({ Date: r.reportDate, Employee: lk.name(r.employeeId), Designation: lk.designation.get(r.designationId)?.name, Status: r.status, Submitted: r.submittedAt ?? '' }))) },
     { title: 'Early checkouts', desc: 'Requests, approvals and exceptions in the month.', go: () => run(`ssi-early-checkouts-${month}`, data.earlyCheckouts.filter((r) => r.workDate.slice(0, 7) === month).map((r) => ({ Employee: lk.name(r.employeeId), Date: r.workDate, Status: r.status, Exception: r.override ? 'Yes' : '', Reason: r.reason }))) },
+    { title: 'Monthly attendance summary', desc: 'Per employee: present days (half days count 0.5), paid and sick leave, Loss of Pay, absences and net hours — server-calculated.', go: () => run(`ssi-attendance-summary-${month}`, data.directory.filter((e) => summaries.has(e.id)).map((e) => {
+      const s = summaries.get(e.id)!;
+      const net = data.attendance.filter((a) => a.employeeId === e.id && a.workDate.slice(0, 7) === month).reduce((t, a) => t + (a.netMinutes ?? 0), 0);
+      return { 'Employee ID': e.employeeCode, Employee: e.fullName, 'Working days': s.workingDays, Present: s.presentDays, 'Paid leave': s.paidLeaveDays, 'Sick leave': s.sickLeaveDays, LOP: s.lopDays, Absent: s.absentDays, 'Half days': s.halfDays, 'Net hours': Math.round(net / 6) / 10 };
+    })) },
+    { title: 'Late arrivals', desc: 'Every late clock-in in the month.', go: () => run(`ssi-late-arrivals-${month}`, data.attendance.filter((a) => a.late && a.workDate.slice(0, 7) === month).map((a) => ({ Employee: lk.name(a.employeeId), Date: a.workDate, 'Clock-in': a.effIn ?? '', Shift: lk.shift.get(lk.employee.get(a.employeeId)?.shiftId ?? '')?.name ?? '' }))) },
+    { title: 'Attendance exceptions', desc: 'Correction requests, missed clock-outs and automatic clock-outs in the month, with their status.', go: () => run(`ssi-attendance-exceptions-${month}`, [
+      ...data.corrections.filter((c) => c.workDate.slice(0, 7) === month).map((c) => ({ Employee: lk.name(c.employeeId), Date: c.workDate, Exception: 'Correction request', Detail: c.correctionType, Status: c.status })),
+      ...data.attendance.filter((a) => a.workDate.slice(0, 7) === month && (a.state === 'Missing Punch-out' || a.reviewStatus)).map((a) => ({ Employee: lk.name(a.employeeId), Date: a.workDate, Exception: a.state === 'Missing Punch-out' ? 'Missed clock-out' : 'Automatic clock-out', Detail: a.reviewStatus ?? '', Status: a.reviewStatus === 'pending_review' ? 'Pending review' : 'Resolved' })),
+    ]) },
+    { title: 'Leave utilisation', desc: 'Per employee and leave type: entitlement, carried forward, used, pending and available (half days as 0.5).', go: () => run('ssi-leave-utilisation', data.balances.map((b) => ({ Employee: lk.name(b.employeeId), Type: b.name, Year: b.leaveYear, Entitled: b.accrued, 'Carried forward': b.carried, Adjusted: b.adjusted, Used: b.used, Pending: b.pending, Available: b.available, 'Used %': b.accrued + b.carried > 0 ? Math.round((b.used / (b.accrued + b.carried)) * 100) : 0 }))) },
+    { title: 'Department distribution', desc: 'Current employees per department, with probation count.', go: () => run('ssi-department-distribution', [...data.departments.map((d) => ({ id: d.id, name: d.name })), { id: '', name: 'No department' }].map((d) => {
+      const m = data.directory.filter((e) => (e.departmentId ?? '') === d.id && e.employmentStatus !== 'Resigned' && e.accountStatus === 'active');
+      return { Department: d.name, Employees: m.length, 'On probation': m.filter((e) => e.employmentStatus === 'Probation').length };
+    }).filter((r) => r.Employees > 0)) },
+    { title: 'Work assignments', desc: 'Assignments due in the month with status, progress and completion.', go: () => run(`ssi-work-assignments-${month}`, data.assignments.filter((a) => a.due.slice(0, 7) === month || (a.completedAt ?? '').slice(0, 7) === month).map((a) => ({ Title: a.title, Employee: lk.name(a.assignedTo), 'Assigned by': a.assignedBy ? lk.name(a.assignedBy) : '', Priority: a.priority, Deadline: a.due.slice(0, 10), Status: a.status, 'Progress %': a.progress, Completed: a.completedAt?.slice(0, 10) ?? '' }))) },
+    { title: 'Company assets register', desc: 'Every asset with status and current holder.', go: () => run('ssi-asset-register', data.assets.map((a) => { const h = data.assetAssignments.find((x) => x.assetId === a.id && !x.returnedOn); return { Tag: a.assetTag, Name: a.name, Category: a.category, Serial: a.serialNumber ?? '', Status: a.status, 'Held by': h ? lk.name(h.employeeId) : '', 'Issued on': h?.issuedOn ?? '' }; })) },
     { title: 'Headcount', desc: 'Employees with designation, department, manager and status.', go: () => run('ssi-headcount', data.directory.map((e) => ({ 'Employee ID': e.employeeCode, Name: e.fullName, Designation: lk.designation.get(e.designationId)?.name, Department: lk.department.get(e.departmentId ?? '')?.name ?? '', Manager: e.reportingManagerId ? lk.name(e.reportingManagerId) : '', Status: e.employmentStatus, Account: e.accountStatus }))) },
   ];
   return (

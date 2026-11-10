@@ -5,7 +5,7 @@ import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPref
 import { useHR } from '../store/hr';
 import { useChat } from '../store/chat';
 import { AttendanceControl } from '../components/AttendanceControl';
-import { canOpen } from '../auth/roles';
+import { canOpenPath } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
@@ -57,6 +57,17 @@ export default function AppShell() {
   const workspaces = workspacesFor(session, designationName);
   const currentWorkspace = workspace === 'work' ? `work:${chosenDesignation(session)}` : workspace;
 
+  // HR Portal: items waiting for a decision (the lists are already limited by RLS to what this user may see).
+  const hrBadges: Record<string, number> = {};
+  if (workspace === 'hr') {
+    const me = session?.userId;
+    const exc = hr.data.corrections.filter((c) => c.status === 'Pending' && c.employeeId !== me).length
+      + hr.data.earlyCheckouts.filter((c) => c.status === 'Pending' && c.employeeId !== me).length
+      + hr.data.attendance.filter((a) => a.reviewStatus === 'pending_review').length;
+    const lv = hr.data.leaveRequests.filter((r) => r.status === 'Pending' && r.employeeId !== me).length;
+    if (exc) hrBadges['hr/exceptions'] = exc;
+    if (lv) hrBadges['hr/leave'] = lv;
+  }
   const sharedNav = {
     sections: navFor(session, workspace),
     workspaces,
@@ -64,7 +75,7 @@ export default function AppShell() {
     base,
     portal: session?.role ?? 'client',
     orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,
-    badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread, messages: chat.totalUnread } : {}) } as Record<string, number>,
+    badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread, messages: chat.totalUnread } : {}), ...hrBadges } as Record<string, number>,
   };
 
   return (
@@ -117,7 +128,7 @@ export default function AppShell() {
             <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading data">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-rust border-t-transparent" />
             </div>
-          ) : canOpen(session, location.pathname.split('/')[2] ?? '') ? (
+          ) : canOpenPath(session, location.pathname.split('/').slice(2).join('/')) ? (
             <Outlet />
           ) : (
             // Direct URLs to modules this account may not use (the database returns no data anyway).

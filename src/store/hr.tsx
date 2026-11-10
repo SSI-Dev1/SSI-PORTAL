@@ -31,6 +31,10 @@ import type {
   Shift,
   WorkActivity,
   WorkActivityType,
+  Assignment,
+  CompanyAsset,
+  AssetAssignment,
+  EmployeeDocument,
 } from '../data/hr';
 
 type Row = Record<string, unknown>;
@@ -65,11 +69,16 @@ export interface HRData {
   activities: WorkActivity[];
   activityTypes: WorkActivityType[];
   metricSources: MetricSource[];
+  assignments: Assignment[];
+  assets: CompanyAsset[];
+  assetAssignments: AssetAssignment[];
+  documents: EmployeeDocument[];
 }
 const empty = (): HRData => ({
   employees: [], directory: [], departments: [], designations: [], shifts: [], salaries: [], settings: [], attendance: [], breaks: [],
   corrections: [], earlyCheckouts: [], leaveTypes: [], leaveRequests: [], balances: [], holidays: [], calendar: [], reports: [],
   templates: [], myTemplates: [], activities: [], activityTypes: [], metricSources: [],
+  assignments: [], assets: [], assetAssignments: [], documents: [],
 });
 type Key = keyof HRData;
 
@@ -93,6 +102,10 @@ const TABLE_KEYS: Record<string, Key[]> = {
   daily_reports: ['reports'],
   report_templates: ['templates', 'myTemplates'],
   work_activities: ['activities'],
+  tasks: ['assignments'],
+  company_assets: ['assets'],
+  asset_assignments: ['assetAssignments', 'assets'],
+  employee_documents: ['documents'],
 };
 
 /** How far back attendance and reports are kept in memory (older periods are loaded on demand). */
@@ -137,6 +150,10 @@ function useHRValue() {
       activities: () => sb.from('work_activities').select('*').gte('report_date', addDays(companyDate(), -62)).order('occurred_at', { ascending: false }).limit(5000),
       activityTypes: () => sb.from('work_activity_types').select('*').order('sort'),
       metricSources: () => sb.from('report_metric_sources').select('*'),
+      assignments: () => sb.from('tasks').select('*').eq('kind', 'assignment').order('due').limit(3000),
+      assets: () => sb.from('company_assets').select('*').order('asset_tag'),
+      assetAssignments: () => sb.from('asset_assignments').select('*').order('issued_on', { ascending: false }).limit(5000),
+      documents: () => sb.from('employee_documents').select('*').order('uploaded_at', { ascending: false }).limit(5000),
     };
     return f;
   }, []);

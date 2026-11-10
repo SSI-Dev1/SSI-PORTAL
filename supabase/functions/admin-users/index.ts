@@ -358,10 +358,19 @@ Deno.serve(async (req) => {
           if (!e) throw bad('Enter a valid email address.');
           if (e !== (t.email ?? '').toLowerCase()) {
             if (t.id === me) throw bad('You cannot change your own login email here.');
+            // Another SSI GLOBAL or partner account already signs in with this address?
+            const { data: clash } = await admin.from('profiles').select('id').ilike('email', e).neq('id', t.id).limit(1);
+            if (clash?.length) throw new Fail(409, 'Another account already uses this email.');
             const { error: ae } = await admin.auth.admin.updateUserById(t.id, { email: e, email_confirm: true });
             if (ae) {
-              const taken = /already|exists|registered|duplicate/i.test(ae.message);
-              throw new Fail(taken ? 409 : 500, taken ? 'Another account already uses this email.' : 'Could not change the login email.');
+              const code = String((ae as { code?: string }).code ?? '');
+              const status = Number((ae as { status?: number }).status ?? 0);
+              // Logged without any address so the cause can be read from the function logs.
+              console.error('update_user email change failed', { code, status });
+              const taken = code === 'email_exists' || code === 'user_already_exists' || /already|exists|registered|duplicate/i.test(ae.message ?? '');
+              if (taken) throw new Fail(409, 'Another account already uses this email.');
+              if (code === 'email_address_invalid' || code === 'validation_failed') throw bad('This email address is not accepted. Check it and try again.');
+              throw new Fail(500, `Could not change the login email${code ? ` (${code})` : ''}.`);
             }
             patch.email = e;
             emailChange = { from: t.email, to: e };

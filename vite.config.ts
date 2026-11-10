@@ -24,13 +24,17 @@ function contentSecurityPolicy(supabaseUrl: string): Plugin {
         } catch {
           /* no backend configured */
         }
+        // Cloudflare Web Analytics: Cloudflare adds its beacon script to every page it serves
+        // and the beacon reports visits to cloudflareinsights.com.
+        const analyticsScript = 'https://static.cloudflareinsights.com';
+        const analyticsReport = 'https://cloudflareinsights.com';
         const csp = [
           "default-src 'self'",
-          `script-src 'self' ${hashes.join(' ')}`.trim(),
+          `script-src 'self' ${analyticsScript} ${hashes.join(' ')}`.trim(),
           "style-src 'self'",
           "img-src 'self' data: blob:",
           "font-src 'self'",
-          `connect-src 'self'${api}`,
+          `connect-src 'self'${api} ${analyticsReport}`,
           "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",

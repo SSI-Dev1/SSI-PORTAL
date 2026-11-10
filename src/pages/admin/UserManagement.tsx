@@ -72,6 +72,7 @@ import {
   type StaffRole,
 } from '../../auth/roles';
 import { adminApi, AdminApiError, generatePassword, loadDirectory, setPartnerAccess, type DirectoryUser } from '../../lib/adminApi';
+import { DeliveryBadge, ResendIcon, SendCredentialsOption, deliveryMessage, useCredentialDeliveries, useResendLoginAccess, type Delivery, type DeliveryRow } from '../../lib/credentialDeliveries';
 import type { Partner, UserRole } from '../../data/types';
 import { cn, formatDate, formatDateTime, timeAgo } from '../../lib/utils';
 
@@ -101,7 +102,9 @@ export default function UserManagement() {
     | null
   >(null);
   const [details, setDetails] = useState<DirectoryUser | null>(null);
-  const [created, setCreated] = useState<{ title: string; email: string; password: string } | null>(null);
+  const [created, setCreated] = useState<CreatedAccount | null>(null);
+  const { deliveries } = useCredentialDeliveries(profilesRev);
+  const resend = useResendLoginAccess((id) => adminApi.resendLoginAccess(id), () => void reload());
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -163,6 +166,7 @@ export default function UserManagement() {
             { label: 'Edit account', icon: Pencil, onClick: () => setDialog({ kind: 'edit', user: u }) },
             { label: 'Change role', icon: ShieldCheck, onClick: () => setDialog({ kind: 'edit', user: u }) },
             { label: 'Reset password', icon: KeyRound, onClick: () => setDialog({ kind: 'reset', user: u }) },
+            ...(u.status === 'active' ? [{ label: 'Resend login access', icon: ResendIcon, onClick: () => void resend({ id: u.id, name: u.fullName || u.email, email: u.email }) }] : []),
             ...(u.status !== 'active' ? [{ label: 'Activate', icon: PlayCircle, onClick: () => void changeStatus(u, 'active') }] : []),
             ...(u.status !== 'deactivated' ? [{ label: 'Deactivate', icon: PauseCircle, onClick: () => void changeStatus(u, 'deactivated') }] : []),
             ...(u.status !== 'suspended' ? [{ label: 'Suspend', icon: Ban, onClick: () => void changeStatus(u, 'suspended'), danger: true }] : []),
@@ -242,6 +246,7 @@ export default function UserManagement() {
           loading={loading}
           employeesOnly={tab === 'employees'}
           actionsFor={userActions}
+          deliveries={deliveries}
           onView={setDetails}
           onAdd={() => setDialog(tab === 'employees' ? { kind: 'employee' } : { kind: 'partner-user' })}
           addLabel={tab === 'employees' ? 'Add employee' : 'Add partner user'}
@@ -252,9 +257,9 @@ export default function UserManagement() {
       <EmployeeDialog
         open={dialog?.kind === 'employee'}
         onClose={() => setDialog(null)}
-        onCreated={async (email, password) => {
+        onCreated={async (email, password, delivery) => {
           setDialog(null);
-          setCreated({ title: 'Employee account created', email, password });
+          setCreated(createdAccount('Employee account created', email, password, delivery));
           await reload();
         }}
       />
@@ -263,9 +268,9 @@ export default function UserManagement() {
         partnerId={dialog?.kind === 'partner-user' ? dialog.partnerId : undefined}
         partners={partners.filter((p) => !p.archivedAt)}
         onClose={() => setDialog(null)}
-        onCreated={async (email, password) => {
+        onCreated={async (email, password, delivery) => {
           setDialog(null);
-          setCreated({ title: 'Partner user created', email, password });
+          setCreated(createdAccount('Partner user created', email, password, delivery));
           await reload();
         }}
       />
@@ -294,6 +299,7 @@ function DirectoryPanel({
   loading,
   employeesOnly,
   actionsFor,
+  deliveries = {},
   onView,
   onAdd,
   addLabel,
@@ -302,6 +308,7 @@ function DirectoryPanel({
   loading: boolean;
   employeesOnly: boolean;
   actionsFor: (u: DirectoryUser) => { label: string; icon: typeof Eye; onClick: () => void; danger?: boolean }[];
+  deliveries?: Record<string, DeliveryRow>;
   onView: (u: DirectoryUser) => void;
   onAdd: () => void;
   addLabel: string;
@@ -376,7 +383,10 @@ function DirectoryPanel({
                   {ROLE_LABEL[u.role]}
                   {u.department && <span className="block text-xs text-ink-mute">{u.department}{u.designation ? ` · ${u.designation}` : ''}</span>}
                 </td>
-                <td className="px-5 py-3"><Badge tone={STATUS_TONE[u.status]} dot>{STATUS_LABEL[u.status]}</Badge></td>
+                <td className="px-5 py-3">
+                  <Badge tone={STATUS_TONE[u.status]} dot>{STATUS_LABEL[u.status]}</Badge>
+                  {deliveries[u.id] && <div className="mt-1"><DeliveryBadge row={deliveries[u.id]} /></div>}
+                </td>
                 <td className="whitespace-nowrap px-5 py-3 text-xs text-ink-soft">{formatDate(u.createdAt)}</td>
                 <td className="whitespace-nowrap px-5 py-3 text-xs text-ink-soft">{u.lastSignInAt ? timeAgo(u.lastSignInAt) : 'Never'}</td>
                 <td className="px-5 py-3 text-right">
@@ -804,8 +814,8 @@ function useSubmit() {
   return { busy, error, setError, run };
 }
 
-function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (email: string, password: string) => Promise<void> }) {
-  const blank = { fullName: '', email: '', phone: '', department: '', designation: '', role: 'support_staff' as StaffRole, status: 'active', password: '', confirm: '', mustChange: false };
+function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: OnCreated }) {
+  const blank = { fullName: '', email: '', phone: '', department: '', designation: '', role: 'support_staff' as StaffRole, status: 'active', password: '', confirm: '', mustChange: false, send: true };
   const [f, setF] = useState(blank);
   const [perms, setPerms] = useState<string[] | null>(null);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
@@ -829,11 +839,12 @@ function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
     if (Object.values(e).some(Boolean)) return;
     void s.run(async () => {
       const email = f.email.trim().toLowerCase();
-      await adminApi.createEmployee({
+      const r = await adminApi.createEmployee({
         email, fullName: f.fullName.trim(), role: f.role, permissions: f.role === 'super_admin' ? null : perms, password: f.password,
-        mustChangePassword: f.mustChange, phone: f.phone, department: f.department, designation: f.designation, status: f.status as DirectoryUser['status'],
+        mustChangePassword: f.send || f.mustChange, phone: f.phone, department: f.department, designation: f.designation, status: f.status as DirectoryUser['status'],
+        sendCredentials: f.send && f.status === 'active',
       });
-      await onCreated(email, f.password);
+      await onCreated(email, f.password, r.delivery);
     });
   };
   return (
@@ -872,7 +883,8 @@ function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
         <section>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">2 · Login credentials</h3>
           <PasswordInput value={f.password} onChange={(v) => setF((x) => ({ ...x, password: v }))} confirm={f.confirm} onConfirm={(v) => setF((x) => ({ ...x, confirm: v }))} email={f.email} error={errors.password} confirmError={errors.confirm} />
-          <div className="mt-3"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" description="Off by default." /></div>
+          <div className="mt-3">{f.status === 'active' && <SendCredentialsOption checked={f.send} onChange={(v) => setF({ ...f, send: v })} />}</div>
+          {!(f.send && f.status === 'active') && <div className="mt-3"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" description="Off by default." /></div>}
         </section>
         <section>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">3 · Access permissions</h3>
@@ -886,17 +898,17 @@ function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
 const emptyOrg = { name: '', code: '', branch: '', contactName: '', email: '', phone: '', country: 'India', address: '', status: 'Active' };
 
 /** Clients & Branches → Add Partner: the organisation and its first login, in one step. */
-export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (email: string, password: string) => Promise<void> }) {
+export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: OnCreated }) {
   const { db } = useStore();
   const [org, setOrg] = useState(emptyOrg);
-  const [acct, setAcct] = useState({ email: '', password: '', confirm: '', mustChange: false });
+  const [acct, setAcct] = useState({ email: '', password: '', confirm: '', mustChange: false, send: true });
   const [modules, setModules] = useState<string[]>(PARTNER_MODULES.map((m) => m.id));
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
     setOrg(emptyOrg);
-    setAcct({ email: '', password: '', confirm: '', mustChange: false });
+    setAcct({ email: '', password: '', confirm: '', mustChange: false, send: true });
     setModules(PARTNER_MODULES.map((m) => m.id));
     setErrors({});
     s.setError('');
@@ -923,16 +935,18 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
     void s.run(async () => {
       const email = loginEmail.trim().toLowerCase();
       const active = org.status === 'Active';
-      await adminApi.createPartner({
+      const sendCredentials = acct.send && active;
+      const r = await adminApi.createPartner({
         partner: {
           name: org.name, code, contactName: org.contactName, email: org.email, phone: org.phone, country: org.country,
           city: org.branch, branches: [org.branch.trim()], address: org.address, tier: 'Silver',
         },
-        account: { email, fullName: org.contactName.trim(), password: acct.password, mustChangePassword: acct.mustChange },
+        account: { email, fullName: org.contactName.trim(), password: acct.password, mustChangePassword: sendCredentials || acct.mustChange },
         portalEnabled: active,
         modules,
+        sendCredentials,
       });
-      await onCreated(email, acct.password);
+      await onCreated(email, acct.password, r.delivery);
     });
   };
   const o = (k: keyof typeof emptyOrg) => (e: { target: { value: string } }) => setOrg({ ...org, [k]: e.target.value });
@@ -943,7 +957,7 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
       size="xl"
       dirty={!!(org.name || org.email || acct.password)}
       title="Add partner"
-      subtitle="Creates the partner organisation, its private workspace and its Partner Admin login. No invitation is sent."
+      subtitle="Creates the partner organisation, its private workspace and its Partner Admin login, and can email the login details."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Create Partner &amp; Account</Button></>}
     >
       <div className="space-y-6">
@@ -980,7 +994,8 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
               <Input icon={Mail} type="email" value={acct.email} placeholder={org.email} invalid={!!errors.loginEmail} onChange={(e) => setAcct({ ...acct, email: e.target.value })} autoComplete="off" />
             </Field>
             <PasswordInput value={acct.password} onChange={(v) => setAcct((x) => ({ ...x, password: v }))} confirm={acct.confirm} onConfirm={(v) => setAcct((x) => ({ ...x, confirm: v }))} email={loginEmail} error={errors.password} confirmError={errors.confirm} />
-            <Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" />
+            {org.status === 'Active' && <SendCredentialsOption checked={acct.send} onChange={(v) => setAcct({ ...acct, send: v })} />}
+            {!(acct.send && org.status === 'Active') && <Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" />}
           </div>
         </section>
         <section>
@@ -993,13 +1008,13 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
   );
 }
 
-function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { open: boolean; partnerId?: string; partners: Partner[]; onClose: () => void; onCreated: (email: string, password: string) => Promise<void> }) {
-  const [f, setF] = useState({ partnerId: '', fullName: '', email: '', role: 'partner_staff' as UserRole, password: '', mustChange: false });
+function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { open: boolean; partnerId?: string; partners: Partner[]; onClose: () => void; onCreated: OnCreated }) {
+  const [f, setF] = useState({ partnerId: '', fullName: '', email: '', role: 'partner_staff' as UserRole, password: '', mustChange: false, send: true });
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
-    setF({ partnerId: partnerId ?? '', fullName: '', email: '', role: 'partner_staff', password: '', mustChange: false });
+    setF({ partnerId: partnerId ?? '', fullName: '', email: '', role: 'partner_staff', password: '', mustChange: false, send: true });
     setErrors({});
     s.setError('');
   }, [open, partnerId]);
@@ -1014,8 +1029,8 @@ function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { 
     if (Object.values(e).some(Boolean)) return;
     void s.run(async () => {
       const email = f.email.trim().toLowerCase();
-      await adminApi.createPartnerUser({ partnerId: f.partnerId, email, fullName: f.fullName.trim(), role: f.role, password: f.password, mustChangePassword: f.mustChange });
-      await onCreated(email, f.password);
+      const r = await adminApi.createPartnerUser({ partnerId: f.partnerId, email, fullName: f.fullName.trim(), role: f.role, password: f.password, mustChangePassword: f.send || f.mustChange, sendCredentials: f.send });
+      await onCreated(email, f.password, r.delivery);
     });
   };
   return (
@@ -1043,7 +1058,8 @@ function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { 
           </Select>
         </Field>
         <div className="sm:col-span-2"><PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} email={f.email} error={errors.password} /></div>
-        <div className="sm:col-span-2"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" /></div>
+        <div className="sm:col-span-2"><SendCredentialsOption checked={f.send} onChange={(v) => setF({ ...f, send: v })} /></div>
+        {!f.send && <div className="sm:col-span-2"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" /></div>}
       </div>
     </Modal>
   );
@@ -1170,7 +1186,19 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: DirectoryUser | 
 }
 
 /** Shows a just-set password exactly once; it is cleared from memory when closed. */
-export function CredentialsOnce({ data, onClose }: { data: { title: string; email: string; password: string } | null; onClose: () => void }) {
+export type OnCreated = (email: string, password: string, delivery?: Delivery | null) => Promise<void>;
+export interface CreatedAccount {
+  title: string;
+  email: string;
+  password: string;
+  /** Set when the login details were emailed; the password is then not shown at all. */
+  delivery?: Delivery | null;
+}
+/** What to show after creating an account: the email outcome, or the password once (not emailed). */
+export const createdAccount = (title: string, email: string, password: string, delivery?: Delivery | null): CreatedAccount =>
+  delivery ? { title, email, password: '', delivery } : { title, email, password };
+
+export function CredentialsOnce({ data, onClose }: { data: CreatedAccount | null; onClose: () => void }) {
   const toast = useToast();
   const [show, setShow] = useState(false);
   useEffect(() => setShow(false), [data]);
@@ -1183,8 +1211,21 @@ export function CredentialsOnce({ data, onClose }: { data: { title: string; emai
     }
   };
   return (
-    <Modal open={!!data} onClose={onClose} size="sm" title={data?.title ?? ''} subtitle="The account is ready to sign in." footer={<Button onClick={onClose}>Done</Button>}>
-      {data && (
+    <Modal open={!!data} onClose={onClose} size="sm" title={data?.title ?? ''} subtitle={data?.delivery ? 'Account created.' : 'The account is ready to sign in.'} footer={<Button onClick={onClose}>Done</Button>}>
+      {data?.delivery && (
+        <div className="space-y-4">
+          {(() => {
+            const m = deliveryMessage(data.delivery);
+            return <Alert tone={m.tone === 'success' ? 'success' : 'warning'} title={m.title}>{m.detail}</Alert>;
+          })()}
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-canvas p-4 ring-1 ring-line">
+            <div className="min-w-0"><div className="text-xs text-ink-mute">Login email</div><div className="truncate font-semibold text-heading">{data.email}</div></div>
+            <DeliveryBadge row={data.delivery} />
+          </div>
+          <p className="text-xs text-ink-mute">The temporary password was emailed to the user and is not shown here. It expires and must be replaced at the first sign-in.</p>
+        </div>
+      )}
+      {data && !data.delivery && (
         <div className="space-y-4">
           <Alert tone="warning" title="Shown once">This password will not be displayed again. Share it with the user privately (not by email).</Alert>
           <div className="space-y-2 rounded-xl bg-canvas p-4 ring-1 ring-line">

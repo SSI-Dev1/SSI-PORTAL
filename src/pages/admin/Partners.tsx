@@ -6,7 +6,7 @@ import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
-import { CredentialsOnce, PartnerDialog } from './UserManagement';
+import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, formatDate, initials, matches, type Tone } from '../../lib/utils';
 
@@ -20,7 +20,7 @@ export default function Partners() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [accountOpen, setAccountOpen] = useState(false);
-  const [created, setCreated] = useState<{ title: string; email: string; password: string } | null>(null);
+  const [created, setCreated] = useState<CreatedAccount | null>(null);
   // Partners are created only here, by a Super Admin, together with their login account.
   const openAdd = () => {
     setEditing(undefined);
@@ -182,9 +182,9 @@ export default function Partners() {
       <PartnerDialog
         open={accountOpen}
         onClose={() => setAccountOpen(false)}
-        onCreated={async (email, password) => {
+        onCreated={async (email, password, delivery) => {
           setAccountOpen(false);
-          setCreated({ title: 'Partner and login account created', email, password });
+          setCreated(createdAccount('Partner and login account created', email, password, delivery));
           await actions.reload();
         }}
       />

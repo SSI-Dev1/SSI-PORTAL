@@ -3,6 +3,7 @@
 // functions; the browser only sends what the admin typed and never sees password hashes.
 import { requireClient } from '../auth/auth';
 import type { UserRole } from '../data/types';
+import type { Delivery } from './credentialDeliveries';
 
 export interface DirectoryUser {
   id: string;
@@ -59,21 +60,26 @@ async function call<T = { ok: true }>(body: Record<string, unknown>): Promise<T>
 export const adminApi = {
   createEmployee: (b: {
     email: string; fullName: string; role: UserRole; permissions: string[] | null; password: string; mustChangePassword: boolean;
+    /** Email the login details (temporary password) from the server. */
+    sendCredentials?: boolean;
     phone?: string; department?: string; designation?: string; status?: DirectoryUser['status'];
     /** HR record (employee ID, designation, manager…) created with the account. */
     employee?: Record<string, unknown>;
     /** Only stored when the caller may see salaries. */
     salary?: { amount: number; currency: string } | null;
   }) =>
-    call<{ ok: true; userId: string }>({ action: 'create_employee', ...b }),
+    call<{ ok: true; userId: string; delivery?: Delivery | null }>({ action: 'create_employee', ...b }),
   createPartner: (b: {
     partner: Record<string, unknown>;
     account: { email: string; fullName: string; password: string; mustChangePassword: boolean };
     portalEnabled: boolean;
     modules: string[];
-  }) => call<{ ok: true; partnerId: string; userId: string }>({ action: 'create_partner', ...b }),
-  createPartnerUser: (b: { partnerId: string; email: string; fullName: string; role: UserRole; password: string; mustChangePassword: boolean }) =>
-    call<{ ok: true; userId: string }>({ action: 'create_partner_user', ...b }),
+    sendCredentials?: boolean;
+  }) => call<{ ok: true; partnerId: string; userId: string; delivery?: Delivery | null }>({ action: 'create_partner', ...b }),
+  createPartnerUser: (b: { partnerId: string; email: string; fullName: string; role: UserRole; password: string; mustChangePassword: boolean; sendCredentials?: boolean }) =>
+    call<{ ok: true; userId: string; delivery?: Delivery | null }>({ action: 'create_partner_user', ...b }),
+  /** New temporary password emailed by the server; the old password stops working. */
+  resendLoginAccess: (userId: string) => call<{ ok: true; delivery: Delivery }>({ action: 'resend_login_access', userId }),
   updateUser: (b: { userId: string; fullName?: string; role?: UserRole; permissions?: string[] | null; mustChangePassword?: boolean; phone?: string; department?: string; designation?: string }) =>
     call({ action: 'update_user', ...b }),
   setStatus: (userId: string, status: DirectoryUser['status']) => call({ action: 'set_status', userId, status }),

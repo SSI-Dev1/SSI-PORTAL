@@ -91,7 +91,11 @@ export async function resolveStage(user: User): Promise<AuthStage> {
       partnerPermissions: data.partner_permissions ?? [], commission: data.commission === true,
     };
   }
-  if (data.must_change_password) return { kind: 'password-change', session };
+  if (data.must_change_password) {
+    const { data: temp } = await sb.rpc('my_temp_password_state');
+    if (temp === 'expired') throw new AuthError('Your temporary password has expired. Ask your administrator to resend your login access.');
+    return { kind: 'password-change', session };
+  }
   return { kind: 'signed-in', session };
 }
 
@@ -154,7 +158,13 @@ export async function updatePassword(password: string) {
   const { error } = await sb.auth.updateUser({ password });
   if (error) throw new AuthError(error.message.includes('different') ? 'Choose a password you have not used before.' : 'Could not update your password. Please try again.');
   logEvent('password_changed');
-  await sb.rpc('password_change_done');
+  // The server checks the password really changed and the temporary one has not expired.
+  const { error: doneErr } = await sb.rpc('password_change_done');
+  if (doneErr) {
+    if (doneErr.message.includes('TEMP_PASSWORD_EXPIRED')) throw new AuthError('Your temporary password has expired. Ask your administrator to resend your login access.');
+    if (doneErr.message.includes('PASSWORD_NOT_CHANGED')) throw new AuthError('Choose a new password that is different from the temporary one.');
+    throw new AuthError('Could not finish setting your password. Please try again.');
+  }
   // Revoke other sessions after a credential change.
   await sb.auth.signOut({ scope: 'others' });
 }

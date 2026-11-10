@@ -6,12 +6,17 @@
 // "hr_accounts" permission. HR account managers can only manage employee accounts below
 // Admin level, never their own account, and never grant HR or finance permissions.
 //
-// Accounts are created directly with an admin-chosen initial password (no invitations).
-// Passwords go straight to Supabase Auth (bcrypt) and are never stored, logged, emailed or
-// returned. Password resets and suspensions revoke the user's existing sessions.
+// Accounts are created with an admin-chosen initial password. With "sendCredentials" the new
+// user is emailed their login details through Brevo (_shared/credentials.ts): the password is
+// then temporary — it expires, must be replaced at first login and only its Auth hash is kept.
+// Passwords are never stored in plaintext, logged or returned. "resend_login_access" issues a
+// fresh temporary password (never the old one), signs the user out and emails it.
+// Password resets and suspensions revoke the user's existing sessions.
 //
 // Deploy:  supabase functions deploy admin-users --project-ref <ref>
 // Secrets: supabase secrets set ALLOWED_ORIGINS="https://crm.example.com"
+//          BREVO_API_KEY=… EMAIL_FROM_ADDRESS=… EMAIL_FROM_NAME="SSI GLOBAL"
+//          PORTAL_PUBLIC_URL=https://portal.ssiglobal.uk TEMP_PASSWORD_TTL_HOURS=72
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.117.3';
 import {
   cleanEmail,
@@ -30,12 +35,17 @@ import {
   STATUSES,
   UUID_RE,
 } from './lib.ts';
+import { generateTempPassword, issueAndSend, mailConfig, overLimit, ROLE_LABELS, type Delivery } from '../_shared/credentials.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const BAN_FOREVER = '876000h';
+const MAIL = mailConfig((k) => Deno.env.get(k));
+/** Credential emails one account manager may trigger per hour, and resends per account per hour. */
+const CREATE_EMAILS_PER_HOUR = 50;
+const RESENDS_PER_HOUR = 5;
 
 function cors(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : '';
@@ -139,8 +149,21 @@ Deno.serve(async (req) => {
     if (t.id === me) throw new Fail(403, 'You cannot manage your own account.');
     if (!(HR_MANAGEABLE_ROLES as readonly string[]).includes(t.role)) throw new Fail(403, 'Only a Super Admin can manage this account.');
   };
+  // Emails the new user's temporary credentials after the account exists. A failure here never
+  // undoes the account: the status is recorded and "Resend login access" issues new details.
+  const sendCredentials = body.sendCredentials === true;
+  const deliver = async (a: { userId: string; kind: 'initial' | 'resend'; email: string; fullName: string; organization: string; accountType: string; password: string }): Promise<Delivery> => {
+    try {
+      return await issueAndSend(admin, MAIL, { ...a, requestedBy: me });
+    } catch {
+      return { id: null, status: 'failed', detail: 'Could not prepare the temporary password', expiresAt: '' };
+    }
+  };
+  const emailBudget = async () => {
+    if (sendCredentials && (await overLimit(admin, { requestedBy: me }, CREATE_EMAILS_PER_HOUR))) throw new Fail(429, 'Too many accounts created in the last hour. Please wait and try again.');
+  };
   try {
-    if (hrMode && !['create_employee', 'update_user', 'set_status', 'reset_password'].includes(String(body.action))) {
+    if (hrMode && !['create_employee', 'update_user', 'set_status', 'reset_password', 'resend_login_access'].includes(String(body.action))) {
       throw new Fail(403, 'Only a Super Admin can do this.');
     }
     switch (body.action) {
@@ -169,6 +192,7 @@ Deno.serve(async (req) => {
         }
         const extra = contact(body);
         const password = checkPassword(body.password, email);
+        await emailBudget();
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
         const id = await createAuthUser(admin, email, password, fullName);
         const { error } = await admin.from('profiles').insert({
@@ -190,7 +214,14 @@ Deno.serve(async (req) => {
         }
         await audit('account_created', 'profiles', id, null, { role: [null, role], ...(employee ? { designation: employee.designation_id } : {}) });
         await activity('Employee account created', fullName, id);
-        return json(200, { ok: true, userId: id }, origin);
+        let delivery: Delivery | null = null;
+        if (sendCredentials) {
+          const { data: des } = employee ? await admin.from('designations').select('name').eq('id', employee.designation_id).maybeSingle() : { data: null };
+          const accountType = [(des?.name as string | undefined) ?? extra.designation, ROLE_LABELS[role]].filter(Boolean).join(' · ');
+          delivery = await deliver({ userId: id, kind: 'initial', email, fullName, organization: 'SSI GLOBAL', accountType, password });
+          await audit('credentials_emailed', 'profiles', id, null, { status: delivery.status });
+        }
+        return json(200, { ok: true, userId: id, delivery }, origin);
       }
 
       // ------------------------------------------------------------ partners
@@ -202,6 +233,7 @@ Deno.serve(async (req) => {
         const modules = cleanModules(body.modules);
         if (!partner || !email || !fullName || !modules) throw bad();
         const password = checkPassword(account.password, email);
+        await emailBudget();
         const { count: codeUsed } = await admin.from('partners').select('id', { count: 'exact', head: true }).eq('code', partner.code);
         if (codeUsed) throw new Fail(409, 'This partner code is already in use.');
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
@@ -231,7 +263,12 @@ Deno.serve(async (req) => {
         await audit('partner_created', 'partners', org.id, org.id);
         await audit('account_created', 'profiles', userId, org.id, { role: [null, 'partner_admin'] });
         await activity('Partner and login account created', partner.name, org.id);
-        return json(200, { ok: true, partnerId: org.id, userId }, origin);
+        let delivery: Delivery | null = null;
+        if (sendCredentials) {
+          delivery = await deliver({ userId, kind: 'initial', email, fullName, organization: partner.name, accountType: ROLE_LABELS.partner_admin, password });
+          await audit('credentials_emailed', 'profiles', userId, org.id, { status: delivery.status });
+        }
+        return json(200, { ok: true, partnerId: org.id, userId, delivery }, origin);
       }
 
       case 'create_partner_user': {
@@ -241,8 +278,9 @@ Deno.serve(async (req) => {
         const role = body.role;
         if (!partnerId || !email || !fullName || !isPartnerRole(role)) throw bad();
         const password = checkPassword(body.password, email);
-        const { data: org } = await admin.from('partners').select('id, archived_at').eq('id', partnerId).maybeSingle();
+        const { data: org } = await admin.from('partners').select('id, name, archived_at').eq('id', partnerId).maybeSingle();
         if (!org || org.archived_at) throw bad('Partner not found or archived.');
+        await emailBudget();
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
         const id = await createAuthUser(admin, email, password, fullName);
         const { error } = await admin.from('profiles').insert({
@@ -255,7 +293,12 @@ Deno.serve(async (req) => {
         }
         await audit('account_created', 'profiles', id, partnerId, { role: [null, role] });
         await activity('Partner user created', fullName, id);
-        return json(200, { ok: true, userId: id }, origin);
+        let delivery: Delivery | null = null;
+        if (sendCredentials) {
+          delivery = await deliver({ userId: id, kind: 'initial', email, fullName, organization: org.name as string, accountType: ROLE_LABELS[role], password });
+          await audit('credentials_emailed', 'profiles', id, partnerId, { status: delivery.status });
+        }
+        return json(200, { ok: true, userId: id, delivery }, origin);
       }
 
       case 'delete_partner': {
@@ -359,6 +402,32 @@ Deno.serve(async (req) => {
         await audit('password_reset', 'profiles', t.id, t.partner_id); // never the password itself
         await activity('Password reset by admin', null, t.id);
         return json(200, { ok: true }, origin);
+      }
+
+      // Never reveals or reuses a password: a fresh temporary one replaces it, the account is signed
+      // out everywhere and must set its own password at the next sign-in.
+      case 'resend_login_access': {
+        const t = await loadTarget(body.userId);
+        hrTarget(t);
+        if (t.id === me) throw bad('Use "Change password" for your own account.');
+        if (t.status !== 'active') throw bad('Activate the account before sending login access.');
+        if (!t.email) throw bad('This account has no email address.');
+        if (await overLimit(admin, { userId: t.id }, RESENDS_PER_HOUR)) throw new Fail(429, 'Login access was sent to this account several times in the last hour. Please wait and try again.');
+        const password = generateTempPassword();
+        const { error } = await admin.auth.admin.updateUserById(t.id, { password });
+        if (error) throw new Fail(500, 'Could not issue new login details.');
+        await admin.rpc('admin_revoke_sessions', { p_user: t.id });
+        const { data: prof } = await admin.from('profiles').select('full_name, designation, partner_id').eq('id', t.id).single();
+        let organization = 'SSI GLOBAL';
+        if (t.partner_id) {
+          const { data: org } = await admin.from('partners').select('name').eq('id', t.partner_id).maybeSingle();
+          organization = (org?.name as string | undefined) ?? 'Partner organisation';
+        }
+        const accountType = [prof?.designation as string | null, ROLE_LABELS[t.role]].filter(Boolean).join(' · ');
+        const delivery = await deliver({ userId: t.id, kind: 'resend', email: t.email, fullName: (prof?.full_name as string) ?? t.email, organization, accountType, password });
+        await audit('login_access_resent', 'profiles', t.id, t.partner_id, { status: delivery.status }); // never the password
+        await activity('Login access resent', null, t.id);
+        return json(200, { ok: true, delivery }, origin);
       }
 
       default:

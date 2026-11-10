@@ -12,6 +12,7 @@ import { supabase, passwordProblems } from '../../auth/auth';
 import { PARTNER_PERMISSIONS, PARTNER_PRESETS, type PartnerPermission } from '../../auth/roles';
 import { generatePassword } from '../../lib/adminApi';
 import { loadGrantable, loadTeam, teamApi, TeamApiError, type TeamMember } from '../../lib/partnerTeamApi';
+import { DeliveryBadge, ResendIcon, SendCredentialsOption, deliveryMessage, useCredentialDeliveries, useResendLoginAccess } from '../../lib/credentialDeliveries';
 import { cn, timeAgo } from '../../lib/utils';
 
 const statusTone = { active: 'green', suspended: 'amber', deactivated: 'slate' } as const;
@@ -30,6 +31,8 @@ export default function TeamManagement() {
   const [editing, setEditing] = useState<TeamMember | 'new' | null>(null);
   const [resetting, setResetting] = useState<TeamMember | null>(null);
   const preview = !!session?.previewOf;
+  const { deliveries } = useCredentialDeliveries(team?.length);
+  const resend = useResendLoginAccess((id) => teamApi.resendLoginAccess(id), () => void load());
 
   const load = useCallback(async () => {
     try {
@@ -134,7 +137,10 @@ export default function TeamManagement() {
                   <div className="text-heading">{m.designation || '—'}</div>
                   <div className="text-xs text-ink-mute">{m.department || ''}</div>
                 </td>
-                <td className="px-5 py-3.5"><Badge tone={statusTone[m.status]} dot>{m.status[0].toUpperCase() + m.status.slice(1)}</Badge></td>
+                <td className="px-5 py-3.5">
+                  <Badge tone={statusTone[m.status]} dot>{m.status[0].toUpperCase() + m.status.slice(1)}</Badge>
+                  {deliveries[m.id] && <div className="mt-1"><DeliveryBadge row={deliveries[m.id]} /></div>}
+                </td>
                 <td className="px-5 py-3.5">
                   {m.role === 'partner_admin' ? <span className="text-xs text-ink-soft">Full workspace access</span> : (
                     <Tooltip content={m.effectivePermissions.map(permLabel).join(' · ') || 'No access'}>
@@ -155,6 +161,7 @@ export default function TeamManagement() {
                       items={[
                         { label: 'Edit details & access', icon: Pencil, onClick: () => setEditing(m) },
                         { label: 'Reset password', icon: KeyRound, onClick: () => setResetting(m) },
+                        ...(m.status === 'active' ? [{ label: 'Resend login access', icon: ResendIcon, onClick: () => void resend({ id: m.id, name: m.fullName, email: m.email }) }] : []),
                         m.status === 'active'
                           ? { label: 'Suspend account', icon: UserX, danger: true, onClick: () => void setMemberStatus(m, 'suspended') }
                           : { label: 'Activate account', icon: UserCheck, onClick: () => void setMemberStatus(m, 'active') },
@@ -190,8 +197,9 @@ interface Draft {
   password: string;
   confirm: string;
   mustChange: boolean;
+  send: boolean;
 }
-const blank: Draft = { fullName: '', email: '', phone: '', designation: '', department: '', status: 'active', permissions: [...PARTNER_PRESETS[0].permissions], password: '', confirm: '', mustChange: true };
+const blank: Draft = { fullName: '', email: '', phone: '', designation: '', department: '', status: 'active', permissions: [...PARTNER_PRESETS[0].permissions], password: '', confirm: '', mustChange: true, send: true };
 
 function MemberModal({ member, grantable, onClose, onSaved }: { member: TeamMember | 'new' | null; grantable: PartnerPermission[]; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
@@ -233,8 +241,12 @@ function MemberModal({ member, grantable, onClose, onSaved }: { member: TeamMemb
     setError('');
     try {
       if (isNew) {
-        await teamApi.create({ ...d, fullName: d.fullName.trim(), email: d.email.trim().toLowerCase(), mustChangePassword: d.mustChange });
-        toast.success('Employee created', `${d.fullName.trim()} can now sign in on the SSI GLOBAL login page with their email and the password you set.`);
+        const sendCredentials = d.send && d.status === 'active';
+        const r = await teamApi.create({ ...d, fullName: d.fullName.trim(), email: d.email.trim().toLowerCase(), mustChangePassword: sendCredentials || d.mustChange, sendCredentials });
+        if (r.delivery) {
+          const m = deliveryMessage(r.delivery);
+          (m.tone === 'success' ? toast.success : toast.error)(m.title, m.detail);
+        } else toast.success('Employee created', `${d.fullName.trim()} can now sign in on the SSI GLOBAL login page with their email and the password you set.`);
       } else {
         await teamApi.update(member.id, {
           fullName: d.fullName.trim(), phone: d.phone.trim() || null, designation: d.designation.trim() || null, department: d.department.trim() || null,
@@ -285,7 +297,7 @@ function MemberModal({ member, grantable, onClose, onSaved }: { member: TeamMemb
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-heading">Initial password</div>
-                <div className="text-xs text-ink-mute">Share it privately. It is never emailed, stored or shown again.</div>
+                <div className="text-xs text-ink-mute">{d.send && d.status === 'active' ? 'Temporary: emailed to the employee, never stored or shown again.' : 'Share it privately. It is never stored or shown again.'}</div>
               </div>
               <Button size="sm" variant="secondary" icon={Wand2} onClick={() => { const p = generatePassword(); setTouched(true); setD((x) => ({ ...x, password: p, confirm: p })); }}>Generate secure password</Button>
             </div>
@@ -296,7 +308,8 @@ function MemberModal({ member, grantable, onClose, onSaved }: { member: TeamMemb
               </Field>
             </div>
             {d.password && pwProblems.length > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Needs {pwProblems.join(', ')}.</p>}
-            <div className="mt-3"><Checkbox checked={d.mustChange} onCheckedChange={(v) => set('mustChange', v)} label="Ask them to choose their own password at first sign-in" /></div>
+            {d.status === 'active' && <div className="mt-3"><SendCredentialsOption checked={d.send} onChange={(v) => set('send', v)} /></div>}
+            {!(d.send && d.status === 'active') && <div className="mt-3"><Checkbox checked={d.mustChange} onCheckedChange={(v) => set('mustChange', v)} label="Ask them to choose their own password at first sign-in" /></div>}
           </section>
         )}
 

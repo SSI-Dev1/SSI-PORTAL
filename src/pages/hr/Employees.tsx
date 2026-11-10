@@ -12,7 +12,8 @@ import { EmployeeProfileModal } from '../../components/hrProfile';
 import { useStore } from '../../store/store';
 import { adminApi, AdminApiError } from '../../lib/adminApi';
 import { supabase } from '../../auth/auth';
-import { CredentialsOnce, PasswordInput, confirmError, pwError } from '../admin/UserManagement';
+import { CredentialsOnce, PasswordInput, confirmError, createdAccount, pwError, type CreatedAccount } from '../admin/UserManagement';
+import { DeliveryBadge, ResendIcon, SendCredentialsOption, deliveryMessage, useCredentialDeliveries, useResendLoginAccess } from '../../lib/credentialDeliveries';
 import { HR_MANAGEABLE_ROLES, HR_MODULES, ROLE_DEFAULTS, ROLE_LABEL, STAFF_MODULES, STAFF_ROLES, type StaffRole } from '../../auth/roles';
 import { EMPLOYMENT_STATUSES, companyDate, fmtDay, type Employee, type EmploymentStatus } from '../../data/hr';
 import { cn, matches, money } from '../../lib/utils';
@@ -38,7 +39,9 @@ export default function Employees() {
   const [editing, setEditing] = useState<Employee | null>(null);
   const [salaryFor, setSalaryFor] = useState<string | null>(null);
   const [resetFor, setResetFor] = useState<string | null>(null);
-  const [creds, setCreds] = useState<{ title: string; email: string; password: string } | null>(null);
+  const [creds, setCreds] = useState<CreatedAccount | null>(null);
+  const { deliveries } = useCredentialDeliveries(data.directory.length);
+  const resend = useResendLoginAccess((id) => adminApi.resendLoginAccess(id), () => void load(['directory']));
   const emails = useStore().db.staff;
   const rows = useMemo(() => data.directory.filter((e) =>
     matches(q, e.fullName, e.employeeCode, lk.designation.get(e.designationId)?.name) && (!dept || e.departmentId === dept)
@@ -103,7 +106,10 @@ export default function Employees() {
                     <td>{lk.department.get(e.departmentId ?? '')?.name ?? '—'}</td>
                     <td>{e.reportingManagerId ? lk.name(e.reportingManagerId) : '—'}</td>
                     <td><Badge tone={statusTone[e.employmentStatus]}>{e.employmentStatus}</Badge></td>
-                    <td><Badge tone={accountTone[e.accountStatus as keyof typeof accountTone] ?? 'slate'}>{e.accountStatus}</Badge></td>
+                    <td>
+                      <Badge tone={accountTone[e.accountStatus as keyof typeof accountTone] ?? 'slate'}>{e.accountStatus}</Badge>
+                      {deliveries[e.id] && <div className="mt-1"><DeliveryBadge row={deliveries[e.id]} /></div>}
+                    </td>
                     {canSalary && <td className="tabular-nums">{sal ? money(sal.amount, sal.currency) : '—'}</td>}
                     <td className="text-right">
                       <Menu
@@ -114,6 +120,7 @@ export default function Employees() {
                           ...(canSalary ? [{ label: 'Salary', icon: Wallet, onClick: () => setSalaryFor(e.id) }] : []),
                           ...(manageable(e.role, e.id) ? [
                             { label: 'Reset password', icon: KeyRound, onClick: () => setResetFor(e.id) },
+                            ...(e.accountStatus === 'active' ? [{ label: 'Resend login access', icon: ResendIcon, onClick: () => void resend({ id: e.id, name: e.fullName, email: '' }) }] : []),
                             e.accountStatus === 'active'
                               ? { label: 'Deactivate account', icon: Power, danger: true, onClick: () => setAccount(e.id, 'deactivated') }
                               : { label: 'Activate account', icon: BadgeCheck, onClick: () => setAccount(e.id, 'active') },
@@ -142,14 +149,14 @@ export default function Employees() {
 // ------------------------------------------------------------------ add employee
 
 type NewEmployee = {
-  fullName: string; email: string; phone: string; password: string; confirm: string; mustChange: boolean;
+  fullName: string; email: string; phone: string; password: string; confirm: string; mustChange: boolean; send: boolean;
   role: StaffRole; permissions: string[];
   employeeCode: string; designationId: string; additional: string[]; departmentId: string; managerId: string;
   joiningDate: string; status: EmploymentStatus; probationEnd: string; dob: string; shiftId: string; location: string;
   salary: string; currency: string;
 };
 
-function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (c: { title: string; email: string; password: string }) => void }) {
+function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (c: CreatedAccount) => void }) {
   const { data } = useHR();
   const { session } = useStore();
   const toast = useToast();
@@ -157,7 +164,7 @@ function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose
   const canSalary = isSuper || (session?.permissions ?? []).includes('hr_salary');
   const roles = isSuper ? STAFF_ROLES : HR_MANAGEABLE_ROLES;
   const fresh = (): NewEmployee => ({
-    fullName: '', email: '', phone: '', password: '', confirm: '', mustChange: true, role: 'support_staff', permissions: [...ROLE_DEFAULTS.support_staff],
+    fullName: '', email: '', phone: '', password: '', confirm: '', mustChange: true, send: true, role: 'support_staff', permissions: [...ROLE_DEFAULTS.support_staff],
     employeeCode: '', designationId: '', additional: [], departmentId: '', managerId: '', joiningDate: companyDate(), status: 'Probation',
     probationEnd: '', dob: '', shiftId: data.shifts[0]?.id ?? '', location: '', salary: '', currency: 'INR',
   });
@@ -193,9 +200,9 @@ function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose
     if (!valid) return setStep('details');
     setBusy(true);
     try {
-      await adminApi.createEmployee({
+      const r = await adminApi.createEmployee({
         email: d.email.trim(), fullName: d.fullName.trim(), role: d.role, permissions: d.role === 'super_admin' ? null : d.permissions,
-        password: d.password, mustChangePassword: d.mustChange, phone: d.phone || undefined,
+        password: d.password, mustChangePassword: d.send || d.mustChange, phone: d.phone || undefined, sendCredentials: d.send,
         employee: {
           employee_code: d.employeeCode.trim(), designation_id: d.designationId, additional_designations: d.additional, department_id: d.departmentId || null,
           reporting_manager_id: d.managerId || null, joining_date: d.joiningDate || null, employment_status: d.status, probation_end_date: d.probationEnd || null,
@@ -203,8 +210,11 @@ function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose
         },
         salary: canSalary && d.salary ? { amount: Number(d.salary), currency: d.currency } : null,
       });
-      toast.success('Employee created', `${d.fullName} can sign in now.`);
-      onCreated({ title: `${d.fullName}'s login`, email: d.email.trim(), password: d.password });
+      if (r.delivery) {
+        const m = deliveryMessage(r.delivery);
+        (m.tone === 'success' ? toast.success : toast.error)(m.title, m.detail);
+      } else toast.success('Employee created', `${d.fullName} can sign in now.`);
+      onCreated(createdAccount(`${d.fullName}'s login`, d.email.trim(), d.password, r.delivery));
       onClose();
     } catch (e) {
       toast.error('Employee not created', e instanceof AdminApiError ? e.message : 'Please try again.');
@@ -275,7 +285,8 @@ function AddEmployeeModal({ open, onClose, onCreated }: { open: boolean; onClose
       ) : (
         <div className="space-y-5">
           <PasswordInput value={d.password} onChange={(v) => set('password', v)} email={d.email} error={err('password')} confirm={d.confirm} onConfirm={(v) => set('confirm', v)} confirmError={err('confirm')} />
-          <Checkbox checked={d.mustChange} onCheckedChange={(v) => set('mustChange', v)} label="Ask the employee to change the password at first sign-in" />
+          <SendCredentialsOption checked={d.send} onChange={(v) => set('send', v)} />
+          {!d.send && <Checkbox checked={d.mustChange} onCheckedChange={(v) => set('mustChange', v)} label="Ask the employee to change the password at first sign-in" />}
           <Field label="Account role">
             <Select value={d.role} onChange={(e) => { const r = e.target.value as StaffRole; setD((x) => ({ ...x, role: r, permissions: ROLE_DEFAULTS[r].filter((m) => isSuper || !HR_MODULES.includes(m)) })); }}>
               {roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}

@@ -4,7 +4,7 @@
 // triggers stop HR from touching Admin accounts or their own designation / manager / rights).
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BadgeCheck, KeyRound, MoreHorizontal, Pencil, Power, ShieldCheck, UserPlus, Users, Wallet, Eye } from 'lucide-react';
+import { BadgeCheck, KeyRound, MoreHorizontal, Pencil, Power, ShieldCheck, UserPlus, Users, Wallet, Eye, Mail } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Select, Switch, Table, Tabs, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { ExportButtons } from '../../components/hr';
@@ -337,7 +337,10 @@ function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; o
   const toast = useToast();
   const [d, setD] = useState<Employee | null>(null);
   const [perm, setPerm] = useState<{ role: StaffRole; permissions: string[] } | null>(null);
+  const [login, setLogin] = useState<{ email: string | null; status: string } | null>(null);
   const [tab, setTab] = useState<'record' | 'access'>('record');
+  const { deliveries } = useCredentialDeliveries(employee?.id);
+  const resend = useResendLoginAccess((id) => adminApi.resendLoginAccess(id));
   const [key, setKey] = useState<string | null>(null);
   const staffList = useStore().db.staff;
   const dir = employee ? lk.person.get(employee.id) ?? (() => { const s = staffList.find((x) => x.id === employee.id); return s ? { fullName: s.fullName, role: s.role } : undefined; })() : undefined;
@@ -346,10 +349,14 @@ function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; o
     setD(employee ? { ...employee } : null);
     setTab('record');
     setPerm(null);
-    // Current permissions (null in the database = the role's defaults).
+    setLogin(null);
+    // Current permissions (null in the database = the role's defaults) and the login email.
     if (employee && supabase) {
-      void supabase.from('profiles').select('role, permissions').eq('id', employee.id).maybeSingle().then(({ data: p }) => {
-        if (p) setPerm({ role: p.role as StaffRole, permissions: (p.permissions as string[] | null) ?? [...(ROLE_DEFAULTS[p.role as StaffRole] ?? [])] });
+      void supabase.from('profiles').select('role, permissions, email, status').eq('id', employee.id).maybeSingle().then(({ data: p }) => {
+        if (p) {
+          setPerm({ role: p.role as StaffRole, permissions: (p.permissions as string[] | null) ?? [...(ROLE_DEFAULTS[p.role as StaffRole] ?? [])] });
+          setLogin({ email: (p.email as string | null) ?? null, status: (p.status as string) ?? 'active' });
+        }
       });
     }
   }
@@ -382,6 +389,17 @@ function EditEmployeeModal({ employee, onClose }: { employee: Employee | null; o
   return (
     <Modal open={!!employee} onClose={onClose} size="xl" title={dir?.fullName ?? 'Employee'} subtitle="Designation changes apply to future reports; earlier reports keep their original designation."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button>{tab === 'record' ? <Button disabled={!d.employeeCode.trim()} onClick={save}>{isNew ? 'Create record' : 'Save employee'}</Button> : <Button icon={ShieldCheck} onClick={saveAccess} disabled={!perm?.permissions.length && perm?.role !== 'super_admin'}>Save access</Button>}</>}>
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-canvas px-4 py-3">
+        <Mail className="h-4 w-4 shrink-0 text-rust" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Login email</div>
+          <div className="truncate text-sm font-medium text-heading">{login?.email ?? '—'}</div>
+        </div>
+        <DeliveryBadge row={deliveries[d.id]} />
+        {login?.status === 'active' && !isNew && (
+          <Button size="sm" variant="secondary" icon={ResendIcon} onClick={() => void resend({ id: d.id, name: dir?.fullName ?? 'This employee', email: login.email ?? '' })}>Email login details</Button>
+        )}
+      </div>
       <Tabs className="mb-5" value={tab} onChange={setTab} tabs={[{ value: 'record', label: 'HR record' }, { value: 'access', label: 'Role & permissions' }]} />
       {tab === 'record' ? (
         <div className="grid gap-4 sm:grid-cols-2">

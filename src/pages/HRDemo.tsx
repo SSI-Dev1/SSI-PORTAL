@@ -24,6 +24,8 @@ import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, MyDocumentsAndAssets
 import { HRReports } from './hr/HRMisc';
 import Management from './hr/Management';
 import { MyDocuments, MyTeamMembers } from './work/SelfService';
+import Commissions from './shared/Commissions';
+import { CommissionDemo, type CommissionData } from '../lib/commissions';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -127,14 +129,35 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
+
+// Clearly fake commission data (not from any real agreement) for layout checks only.
+const COMMISSION_SAMPLE: CommissionData = {
+  countries: [{ id: 'sampleland', name: 'Sampleland', active: true }],
+  providers: [{ id: 'pv1', name: 'SAMPLE PORTAL', notes: null, active: true }],
+  tiers: [{ id: 'tier_1', label: 'Tier 1', description: null, sort: 1, active: true }, { id: 'tier_2', label: 'Tier 2', description: null, sort: 2, active: true }, { id: 'tier_3', label: 'Tier 3', description: null, sort: 3, active: true }],
+  records: [
+    { id: 'cr1', sourceKey: 'demo1', countryId: 'sampleland', universityName: 'Sample University (demo)', universityId: null, intake: 'January 2099', studyLevel: null, variant: null, studentMarket: 'Demo', route: 'portal', providerId: 'pv1', providerLabel: 'SAMPLE PORTAL', currency: null, conditions: null, effectiveFrom: null, effectiveTo: null, status: 'active', needsReview: false, reviewNotes: null, sourceSheet: 'Demo', sourceRow: 2, updatedAt: '' },
+    { id: 'cr2', sourceKey: 'demo2', countryId: 'sampleland', universityName: 'Example College (demo)', universityId: null, intake: null, studyLevel: 'UG', variant: null, studentMarket: 'Demo', route: 'direct', providerId: null, providerLabel: null, currency: 'XXX', conditions: null, effectiveFrom: null, effectiveTo: null, status: 'active', needsReview: true, reviewNotes: 'Demo review note', sourceSheet: 'Demo', sourceRow: 3, updatedAt: '' },
+  ],
+  rates: [
+    { recordId: 'cr1', tierId: 'tier_1', rawValue: '0.1', valueKind: 'percent', value: '10', currency: null, note: null, needsReview: false },
+    { recordId: 'cr1', tierId: 'tier_2', rawValue: '0.09', valueKind: 'percent', value: '9', currency: null, note: null, needsReview: false },
+    { recordId: 'cr1', tierId: 'tier_3', rawValue: '0.08', valueKind: 'percent', value: '8', currency: null, note: null, needsReview: false },
+    { recordId: 'cr2', tierId: 'tier_1', rawValue: '1000', valueKind: 'amount', value: '1000', currency: 'XXX', note: null, needsReview: false },
+    { recordId: 'cr2', tierId: 'tier_2', rawValue: '9.0', valueKind: 'unclear', value: null, currency: null, note: 'A plain number', needsReview: true },
+  ],
+  internal: [{ recordId: 'cr1', receivedRaw: '0.12', receivedKind: 'percent', receivedValue: '12', marginRaw: '0.02', marginKind: 'percent', marginValue: '2', internalNotes: null, sourceRow: { '(column A)': 'Sample University (demo)', PORTAL: 'SAMPLE PORTAL' } }],
+  assignments: [{ id: 'pa1', partnerId: 'demo-partner', recordId: 'cr1', tierId: 'tier_2', isCustom: false, customKind: null, customValue: null, customCurrency: null, partnerConditions: null, internalRemarks: null, validFrom: null, validTo: null, status: 'pending_approval', replacesId: null, assignedBy: ME, assignedAt: new Date().toISOString(), updatedBy: null, updatedAt: '', decidedBy: null, decidedAt: null, decisionNote: null }],
+  history: [], imports: [],
+};
 
 export default function HRDemo() {
   const [data, setData] = useState<HRData>(sample);
   const [log, setLog] = useState<string[]>([]);
-  const session: Session = { role: 'staff', userRole: 'application_manager', userId: ME, name: 'Manu Manager', email: '', title: 'Senior International Recruitment Manager', permissions: ['hr', 'hr_accounts', 'tasks', 'applications', 'students'], partnerModules: [], employee: true, designations: ['senior_international_recruitment_manager'], hasTeam: true };
-  const store = useMemo(() => ({ db: { staff: [], applications: [], students: [], tasks: [] } as unknown as DB, session, actions: {}, loading: false, live: 'live', profilesRev: 0 }) as unknown as StoreValue, [session]);
+  const session: Session = { role: 'staff', userRole: 'application_manager', userId: ME, name: 'Manu Manager', email: '', title: 'Senior International Recruitment Manager', permissions: ['hr', 'hr_accounts', 'tasks', 'applications', 'students', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'], partnerModules: [], employee: true, designations: ['senior_international_recruitment_manager'], hasTeam: true };
+  const store = useMemo(() => ({ db: { staff: [], applications: [], students: [], tasks: [], partners: [{ id: 'demo-partner', name: 'Demo Agency (sample)' }] } as unknown as DB, session, actions: {}, loading: false, live: 'live', profilesRev: 0 }) as unknown as StoreValue, [session]);
   const hr = useMemo<HRValue>(() => ({
     data, ready: true, enabled: true,
     load: async () => undefined,
@@ -174,6 +197,7 @@ export default function HRDemo() {
   }) as unknown as HRValue, [data]);
   return (
     <StoreContext.Provider value={store}>
+      <CommissionDemo.Provider value={COMMISSION_SAMPLE}>
       <HRContext.Provider value={hr}>
         <div className="min-h-screen bg-canvas">
           <div className="sticky top-0 z-30 flex flex-wrap gap-1.5 border-b border-line bg-surface/90 p-3 text-xs backdrop-blur">
@@ -187,6 +211,7 @@ export default function HRDemo() {
           </div>
         </div>
       </HRContext.Provider>
+      </CommissionDemo.Provider>
     </StoreContext.Provider>
   );
 }

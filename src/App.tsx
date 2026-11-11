@@ -50,6 +50,8 @@ import { Departments, Designations } from './pages/hr/OrgStructure';
 import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar } from './pages/hr/HRCalendars';
 import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, WorkAssignments } from './pages/hr/HRWork';
 import Management from './pages/hr/Management';
+import Commissions from './pages/shared/Commissions';
+import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
 import { HRReminders, HRReports, HRSettings } from './pages/hr/HRMisc';
@@ -271,6 +273,7 @@ export default function App() {
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="updates" element={<UpdatesAdmin />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="commissions" element={<Commissions />} />
                 <Route path="users" element={<UserManagement />} />
                 <Route path="settings" element={<Settings />} />
                 {employeeRoutes}
@@ -292,6 +295,7 @@ export default function App() {
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="updates" element={<UpdatesAdmin />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="commissions" element={<Commissions />} />
                 <Route path="profile" element={<Settings />} />
                 {employeeRoutes}
               </Route>
@@ -309,6 +313,7 @@ export default function App() {
                 <Route path="course-finder" element={<CourseFinder />} />
                 <Route path="updates" element={<UpdatesClient />} />
                 <Route path="team-management" element={<TeamManagement />} />
+                <Route path="commission" element={<MyCommission />} />
                 <Route path="profile" element={<Profile />} />
               </Route>
               <Route path="*" element={<Home />} />

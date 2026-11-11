@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { AlertTriangle, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
+import { AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -84,6 +84,7 @@ const adminNav: NavSection[] = [
   { id: 'operations', title: 'Operations', items: [
     { to: 'documents', label: 'Documents', icon: FileText },
     { to: 'finance', label: 'Finance', icon: Wallet },
+    { to: 'commissions', label: 'Commission Management', icon: BadgePercent },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
@@ -112,6 +113,7 @@ const staffNav: NavSection[] = [
   ] },
   { id: 'operations', title: 'Operations', items: [
     { to: 'finance', label: 'Finance', icon: Wallet },
+    { to: 'commissions', label: 'Commission Management', icon: BadgePercent },
     { to: 'providers', label: 'Education Providers', icon: Landmark },
     { to: 'courses', label: 'Courses', icon: BookOpen },
     { to: 'updates', label: 'Important Updates', icon: Megaphone },
@@ -148,6 +150,7 @@ const employeeNav: NavSection[] = [
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
     { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
     { to: 'tasks', label: 'Tasks & Reminders', icon: ListTodo },
+    { to: 'commissions', label: 'Commissions', icon: BadgePercent },
   ] },
 ];
 
@@ -189,7 +192,7 @@ const hrNav: NavSection[] = [
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
 /** Pages listed under "Work Tools" in the Employee Workspace (shared with the Staff Portal). */
-const WORK_TOOLS = ['applications', 'messages', 'students', 'course-finder', 'course-search', 'tasks'];
+const WORK_TOOLS = ['applications', 'messages', 'students', 'course-finder', 'course-search', 'tasks', 'commissions'];
 const WS_NOW = 'ssi-workspace-now';
 
 /**
@@ -262,6 +265,7 @@ const clientNav: NavSection[] = [
   { id: 'workspace', title: 'Workspace', items: [
     { to: 'documents', label: 'Documents', icon: FileText },
     { to: 'finance', label: 'Finance', icon: Wallet },
+    { to: 'commission', label: 'Commission', icon: BadgePercent },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
   // Partner Admin (and team managers they appoint) only; canOpen checks team.manage.

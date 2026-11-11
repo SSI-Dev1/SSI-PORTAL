@@ -7,6 +7,7 @@ import { useConfirm, useToast } from './feedback';
 import { useLookup, useScoped, useStore } from '../store/store';
 import { APP_STATUSES, type AppStatus, type Application } from '../data/types';
 import { appStatusColor, appStatusTone, cn, countryFlag, formatDate, formatDateTime, fullName, money } from '../lib/utils';
+import { ApplicationCommission } from './ApplicationCommission';
 
 export function StatusBadge({ status }: { status: AppStatus }) {
   return (
@@ -254,6 +255,8 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
                 </div>
               </section>
             )}
+
+            {internal && <ApplicationCommission applicationId={app.id} partnerId={app.partnerId} universityId={app.universityId} />}
 
             <section className="rounded-2xl border border-line p-5">
               <h4 className="mb-4 font-display text-sm font-semibold text-heading">Status history</h4>

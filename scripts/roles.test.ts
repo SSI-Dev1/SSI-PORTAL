@@ -41,3 +41,16 @@ test('employees: own workspace only', () => {
 test('partner users never open internal HR or workspace pages', () => {
   for (const p of ['hr/dashboard', 'hr/documents', 'hr/employees', 'work/documents', 'work/team-members', 'work/profile']) assert.equal(canOpenPath(partner, p), false, p);
 });
+
+test('commission pages', () => {
+  const viewer = { ...base, userRole: 'support_staff' as const, permissions: ['partners', 'commission_view'], employee: true, hasTeam: false };
+  assert.equal(canOpenPath(viewer, 'commissions'), true);
+  assert.equal(canOpenPath(employee, 'commissions'), false, 'no commission permission → no page');
+  const pAdmin = { role: 'client' as const, userRole: 'partner_admin' as const, permissions: [], partnerModules: ['students', 'finance'], commission: true };
+  const pAdminHidden = { ...pAdmin, commission: false };
+  const pStaff = { role: 'client' as const, userRole: 'partner_staff' as const, permissions: [], partnerModules: ['students', 'finance'], partnerPermissions: ['students.view'], commission: false };
+  assert.equal(canOpenPath(pAdmin, 'commission'), true, 'Partner Admin sees Commission');
+  assert.equal(canOpenPath(pAdminHidden, 'commission'), false, 'not when SSI hides commission for the organisation');
+  assert.equal(canOpenPath(pStaff, 'commission'), false, 'partner employees never see Commission');
+  assert.equal(canOpenPath(pAdmin, 'commissions'), false, 'partners never open Commission Management');
+});

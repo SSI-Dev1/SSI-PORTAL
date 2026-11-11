@@ -25,7 +25,8 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
   r === 'super_admin' || r === 'admin_staff' ? 'admin' : isStaffRole(r) ? 'staff' : 'client';
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
-  | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary';
+  | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -41,9 +42,15 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'hr', label: 'HR Portal', hint: 'Employees, attendance, leave, holidays (Super Admin grants)' },
   { id: 'hr_accounts', label: 'HR · Employee accounts', hint: 'Create and manage employee logins (Super Admin grants)' },
   { id: 'hr_salary', label: 'HR · Salaries', hint: 'View and edit salaries (Super Admin grants)' },
+  { id: 'commission_view', label: 'Commission · View catalogue', hint: 'Commission records, Tier 1/2/3 partner rates and agency assignments (Super Admin grants)' },
+  { id: 'commission_tag', label: 'Commission · Tag agencies', hint: 'Tag a partner agency to a standard tier; changes to existing agreements need approval (Super Admin grants)' },
+  { id: 'commission_manage', label: 'Commission · Manage agreements', hint: 'Assign, change and end agreements, custom commissions, approvals (Super Admin grants)' },
+  { id: 'commission_internal', label: 'Commission · Internal values', hint: 'SSI GLOBAL\'s own commission and profit — confidential (Super Admin grants)' },
+  { id: 'commission_edit', label: 'Commission · Edit master & import', hint: 'Edit master records, providers and tiers; import sheets (Super Admin grants)' },
 ];
 /** Only a Super Admin can grant these. */
-export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary'];
+export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'];
+export const COMMISSION_MODULES: StaffModule[] = ['commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'];
 /** HR account managers can create these roles only. */
 export const HR_MANAGEABLE_ROLES: StaffRole[] = ['application_manager', 'assessment_staff', 'finance_staff', 'support_staff'];
 
@@ -152,6 +159,7 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'work') return !!s.employee;
     if (segment === 'team') return !!s.employee && !!s.hasTeam;
     if (segment === 'hr') return isHR(session) || session.permissions.includes('hr_accounts');
+    if (segment === 'commissions') return session.userRole === 'super_admin' || COMMISSION_MODULES.some((p) => session.permissions.includes(p));
     if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
     // The Staff Portal has no partner directory or account management.
     if (session.role === 'staff' && (segment === 'partners' || segment === 'users')) return false;
@@ -162,6 +170,10 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (m === 'tasks') return true;
     return session.permissions.includes(m);
   }
+  // Internal pages are never open to partner organisations.
+  if (segment === 'commissions' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
+  // Commission agreements: the Partner Admin only, while SSI GLOBAL lets them see commission.
+  if (segment === 'commission') return session.userRole === 'partner_admin' && !!(session as { commission?: boolean }).commission;
   const m = CLIENT_ROUTE_MODULE[segment];
   // Finance (and commission) is for the Partner Admin only, never for partner employees.
   if (m === 'finance') return (session.userRole === 'partner_admin' || !!session.previewOf) && session.partnerModules.includes(m);

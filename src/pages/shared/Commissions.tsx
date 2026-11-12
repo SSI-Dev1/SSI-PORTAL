@@ -37,7 +37,7 @@ export default function Commissions() {
   const { session, db } = useStore();
   const caps = commissionCaps(session);
   const { data, loading, error, lk } = useCommissionData(caps.view, { internal: caps.internal, imports: caps.importSheets });
-  const [tab, setTab] = useState<'catalogue' | 'agreements' | 'import' | 'setup' | 'history'>('catalogue');
+  const [tab, setTab] = useState<'catalogue' | 'agreements' | 'bulk' | 'import' | 'setup' | 'history'>('catalogue');
   const partnerName = (id: string) => db.partners.find((p) => p.id === id)?.name ?? id;
   const staffName = (id: string | null) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session.name : 'SSI GLOBAL staff') : '—');
   const activeAgreements = data.assignments.filter((a) => a.status === 'active');
@@ -59,12 +59,15 @@ export default function Commissions() {
       <Tabs className="mb-4" value={tab} onChange={setTab} tabs={[
         { value: 'catalogue', label: 'Commission records' },
         { value: 'agreements', label: 'Agency agreements', count: pending.length || undefined },
+        ...(caps.manage ? [{ value: 'bulk' as const, label: 'Bulk assign' }] : []),
         ...(caps.importSheets ? [{ value: 'import' as const, label: 'Import sheet' }] : []),
         ...(caps.edit ? [{ value: 'setup' as const, label: 'Countries, portals & tiers' }] : []),
         { value: 'history', label: 'History' },
       ]} />
       {loading ? <Card className="p-6 text-sm text-ink-soft">Loading…</Card> : tab === 'catalogue' ? (
         <Catalogue data={data} lk={lk} caps={caps} partnerName={partnerName} staffName={staffName} />
+      ) : tab === 'bulk' ? (
+        <BulkAssign data={data} lk={lk} />
       ) : tab === 'agreements' ? (
         <Agreements data={data} lk={lk} caps={caps} partnerName={partnerName} staffName={staffName} />
       ) : tab === 'import' ? (
@@ -744,3 +747,169 @@ function TierRow({ id, label, description, onSave }: { id: string; label: string
     </li>
   );
 }
+
+// ------------------------------------------------------------------ bulk assignment
+
+type BulkResult = 'new' | 'unchanged' | 'change' | 'custom_kept' | 'pending_kept' | 'no_tier_data' | 'inactive' | 'unknown';
+const BULK_LABEL: Record<BulkResult, { label: string; tone: 'green' | 'slate' | 'amber' | 'orange' | 'red' | 'blue' }> = {
+  new: { label: 'New', tone: 'green' }, unchanged: { label: 'Unchanged', tone: 'slate' }, change: { label: 'Changes tier', tone: 'amber' },
+  custom_kept: { label: 'Custom kept', tone: 'orange' }, pending_kept: { label: 'Waiting for approval', tone: 'blue' }, no_tier_data: { label: 'No valid tier data', tone: 'red' },
+  inactive: { label: 'Inactive', tone: 'red' }, unknown: { label: 'Unknown', tone: 'red' },
+};
+
+function BulkAssign({ data, lk }: { data: Data; lk: Lk }) {
+  const { db } = useStore();
+  const toast = useToast();
+  const [partner, setPartner] = useState('');
+  const [countries, setCountries] = useState<string[]>([]);
+  const [q, setQ] = useState('');
+  const [defaultTier, setDefaultTier] = useState('tier_1');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState<{ items: { record_id: string; tier_id: string; result: BulkResult; current_tier: string | null }[]; counts: Partial<Record<BulkResult, number>> } | null>(null);
+  const [overwrite, setOverwrite] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const tiers = data.tiers.filter((t) => t.active);
+  const validTiers = (recordId: string) => tiers.filter((t) => { const r = lk.rate(recordId, t.id); return r && r.valueKind !== 'unclear'; });
+  const eligible = data.records.filter((r) => r.status === 'active' && (!countries.length || countries.includes(r.countryId))
+    && matches(q, r.universityName, r.variant ?? '', r.studyLevel ?? '', r.intake ?? ''));
+  const paged = usePaged(eligible, 50, `${countries.join()}${q}`);
+  const current = (recordId: string) => data.assignments.find((a) => a.partnerId === partner && a.recordId === recordId && a.status === 'active');
+  const pendingFor = (recordId: string) => data.assignments.some((a) => a.partnerId === partner && a.recordId === recordId && a.status === 'pending_approval');
+  const chosen = (recordId: string) => overrides[recordId] ?? defaultTier;
+  const status = (recordId: string): BulkResult => {
+    const tier = chosen(recordId);
+    if (!validTiers(recordId).some((t) => t.id === tier)) return 'no_tier_data';
+    const c = current(recordId);
+    if (c?.isCustom) return 'custom_kept';
+    if (pendingFor(recordId)) return 'pending_kept';
+    if (!c) return 'new';
+    return c.tierId === tier ? 'unchanged' : 'change';
+  };
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const selectIds = (ids: string[]) => setSelected((s) => new Set([...s, ...ids]));
+  const outside = [...selected].filter((id) => !eligible.some((r) => r.id === id)).length;
+  const pageAll = paged.rows.length > 0 && paged.rows.every((r) => selected.has(r.id));
+  const items = () => [...selected].map((id) => ({ record_id: id, tier_id: chosen(id) }));
+  const runPreview = async () => {
+    setBusy(true);
+    const r = await rpc<{ items: { record_id: string; tier_id: string; result: BulkResult; current_tier: string | null }[]; counts: Partial<Record<BulkResult, number>> }>('preview_bulk_partner_commissions', { p_partner: partner, p_items: items() });
+    setBusy(false);
+    if (!r.ok) return toast.error('Preview failed', r.error);
+    setOverwrite(false);
+    setPreview(r.data);
+  };
+  const apply = async () => {
+    setBusy(true);
+    const r = await rpc<{ created: number; changed: number; skipped: number; unchanged: number }>('bulk_assign_partner_commissions', { p_partner: partner, p_items: items(), p_overwrite: overwrite });
+    setBusy(false);
+    if (!r.ok) return toast.error('Not saved', r.error);
+    toast.success('Commission assigned', `${r.data.created} new · ${r.data.changed} changed · ${r.data.unchanged} unchanged · ${r.data.skipped} skipped`);
+    setPreview(null);
+    setSelected(new Set());
+    setOverrides({});
+  };
+  const partnerName = db.partners.find((p) => p.id === partner)?.name ?? '';
+  const c = preview?.counts ?? {};
+  return (
+    <>
+      <Card className="mb-4 p-4">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
+          <Field label="Partner company" required>
+            <Select value={partner} searchable onChange={(e) => { setPartner(e.target.value); setPreview(null); }}>
+              <option value="">Choose partner</option>
+              {db.partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Default tier" hint="Applied to every selected university unless you change it in the row">
+            <Segmented value={defaultTier} onChange={setDefaultTier} options={tiers.map((t) => ({ value: t.id, label: t.label }))} />
+          </Field>
+          <Field label="Countries">
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => setCountries([])} className={cn('rounded-full border px-3 py-1.5 text-xs font-semibold', !countries.length ? 'border-rust bg-rust text-white' : 'border-line text-ink-soft')}>All countries</button>
+              {data.countries.map((ct) => (
+                <button key={ct.id} type="button" aria-pressed={countries.includes(ct.id)} onClick={() => setCountries((x) => (x.includes(ct.id) ? x.filter((y) => y !== ct.id) : [...x, ct.id]))}
+                  className={cn('rounded-full border px-3 py-1.5 text-xs font-semibold', countries.includes(ct.id) ? 'border-rust bg-brand-50 text-rust dark:bg-brand-500/10' : 'border-line text-ink-soft')}>{ct.name}</button>
+              ))}
+            </div>
+          </Field>
+        </div>
+      </Card>
+      {!partner ? <Card><EmptyState icon={Users2Icon} title="Choose a partner company" description="Then pick the universities and the tier to assign." /></Card> : (
+        <Card>
+          <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
+            <SearchInput value={q} onChange={setQ} placeholder="Search university…" className="w-full sm:w-64" />
+            <Button size="sm" variant="secondary" disabled={!eligible.length} onClick={() => selectIds(eligible.map((r) => r.id))}>Select all {eligible.length} filtered</Button>
+            <Button size="sm" variant="ghost" disabled={!paged.rows.length} onClick={() => selectIds(paged.rows.map((r) => r.id))}>Select this page ({paged.rows.length})</Button>
+            <Button size="sm" variant="ghost" disabled={!selected.size} onClick={() => { setSelected(new Set()); setOverrides({}); }}>Clear selection</Button>
+            <span className="ml-auto text-sm text-ink-soft"><b className="text-heading">{selected.size}</b> selected{outside ? ` (${outside} outside the current filter)` : ''}</span>
+            <Button icon={Eye} disabled={!selected.size || busy} onClick={() => void runPreview()}>Review {selected.size || ''} assignment{selected.size === 1 ? '' : 's'}</Button>
+          </div>
+          {eligible.length === 0 ? <EmptyState icon={BadgePercent} title="No active commission records match" /> : (
+            <>
+              <Table className="hr-table" head={[
+                <Checkbox key="all" checked={pageAll} onCheckedChange={(v) => (v ? selectIds(paged.rows.map((r) => r.id)) : setSelected((s) => { const n = new Set(s); paged.rows.forEach((r) => n.delete(r.id)); return n; }))} label={<span className="sr-only">Select this page</span>} />,
+                'University', 'Country', 'Available tiers (partner rates)', 'Current tier', 'New tier', 'Status']}>
+                {paged.rows.map((r) => {
+                  const cur = current(r.id);
+                  const valid = validTiers(r.id);
+                  const st = status(r.id);
+                  const on = selected.has(r.id);
+                  return (
+                    <tr key={r.id} className={cn(on && 'bg-brand-50/40 dark:bg-brand-500/5')}>
+                      <td><Checkbox checked={on} onCheckedChange={() => toggle(r.id)} label={<span className="sr-only">Select {r.universityName}</span>} /></td>
+                      <td className="min-w-[200px]"><div className="font-medium text-heading">{r.universityName}</div>
+                        <div className="text-xs text-ink-mute">{[r.studyLevel, r.variant, r.route === 'direct' ? 'Direct' : lk.provider.get(r.providerId ?? '')?.name ?? r.providerLabel].filter(Boolean).join(' · ')}</div></td>
+                      <td>{lk.country.get(r.countryId)?.name}</td>
+                      <td className="text-xs">{tiers.map((t) => { const rate = lk.rate(r.id, t.id); return <div key={t.id} className={cn(!rate || rate.valueKind === 'unclear' ? 'text-ink-mute line-through' : 'text-heading')}>{t.label}: {rate && rate.valueKind !== 'unclear' ? fmtCommission(rate.valueKind, rate.value, rate.currency) : 'no data'}</div>; })}</td>
+                      <td>{cur ? <>{lk.tier.get(cur.tierId)?.label}{cur.isCustom && <Badge tone="orange" className="ml-1">Custom</Badge>}</> : pendingFor(r.id) ? <Badge tone="blue">Pending</Badge> : <span className="text-ink-mute">—</span>}</td>
+                      <td className="min-w-[130px]">
+                        {valid.length === 0 ? <span className="text-xs text-red-600">No valid tier data</span> : (
+                          <Select value={valid.some((t) => t.id === chosen(r.id)) ? chosen(r.id) : ''} onChange={(e) => { setOverrides((o) => ({ ...o, [r.id]: e.target.value })); if (!on) toggle(r.id); }}>
+                            <option value="">Choose</option>
+                            {valid.map((t) => <option key={t.id} value={t.id}>{t.label}{overrides[r.id] === t.id && t.id !== defaultTier ? ' (override)' : ''}</option>)}
+                          </Select>
+                        )}
+                      </td>
+                      <td>{on ? <Badge tone={BULK_LABEL[st].tone}>{BULK_LABEL[st].label}</Badge> : <span className="text-xs text-ink-mute">Not selected</span>}</td>
+                    </tr>
+                  );
+                })}
+              </Table>
+              <Pagination page={paged.page} pages={paged.pages} onPage={paged.setPage} total={eligible.length} label="records" />
+            </>
+          )}
+        </Card>
+      )}
+      <Modal open={!!preview} onClose={() => setPreview(null)} size="lg" title="Review bulk assignment" subtitle={`${partnerName} · ${selected.size} universit${selected.size === 1 ? 'y' : 'ies'} selected`}
+        footer={<><Button variant="secondary" onClick={() => setPreview(null)}>Back</Button>
+          <Button icon={CheckCircle2} disabled={busy || ((c.new ?? 0) + (overwrite ? c.change ?? 0 : 0) === 0)} onClick={() => void apply()}>
+            {busy ? 'Saving…' : `Assign to ${(c.new ?? 0) + (overwrite ? c.change ?? 0 : 0)} universit${(c.new ?? 0) + (overwrite ? c.change ?? 0 : 0) === 1 ? 'y' : 'ies'}`}
+          </Button></>}>
+        {preview && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <KPI icon={Plus} tone="green" label="New assignments" value={c.new ?? 0} />
+              <KPI icon={CheckCircle2} label="Already assigned (unchanged)" value={c.unchanged ?? 0} />
+              <KPI icon={Pencil} tone="amber" label="Would change tier" value={c.change ?? 0} />
+              <KPI icon={XCircle} tone="red" label="Will be skipped" value={(c.custom_kept ?? 0) + (c.pending_kept ?? 0) + (c.no_tier_data ?? 0) + (c.inactive ?? 0) + (c.unknown ?? 0) + (overwrite ? 0 : c.change ?? 0)} />
+            </div>
+            {(c.no_tier_data ?? 0) > 0 && <Alert tone="warning">{c.no_tier_data} record(s) have no valid data for the chosen tier and are skipped — nothing is invented.</Alert>}
+            {(c.custom_kept ?? 0) > 0 && <Alert tone="info">{c.custom_kept} record(s) have a custom agreement for this partner. They are never changed by bulk assignment.</Alert>}
+            {(c.pending_kept ?? 0) > 0 && <Alert tone="info">{c.pending_kept} record(s) have a change waiting for approval and are skipped.</Alert>}
+            {(c.change ?? 0) > 0 && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4" /> {c.change} existing agreement(s) would change tier</div>
+                <ul className="mb-2 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+                  {preview.items.filter((i) => i.result === 'change').map((i) => <li key={i.record_id}>{lk.record.get(i.record_id)?.universityName}: {lk.tier.get(i.current_tier ?? '')?.label} → <b>{lk.tier.get(i.tier_id)?.label}</b></li>)}
+                </ul>
+                <Checkbox checked={overwrite} onCheckedChange={setOverwrite} label="Yes, overwrite these existing agreements" description="Without this, they keep their current tier. Earlier agreements stay in the history." />
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+const Users2Icon = Link2;

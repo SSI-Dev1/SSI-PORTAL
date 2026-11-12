@@ -122,9 +122,10 @@ export function useCommissionData(enabled: boolean, opts: { internal: boolean; i
   return { data, loading, error, reload: load, lk: lookups };
 }
 
+/** Exactly what my_partner_commissions() returns (0031): no route, portal, other tiers or SSI values. */
 export interface MyCommission {
-  assignmentId: string; country: string; university: string; intake: string | null; studyLevel: string | null; variant: string | null; route: 'direct' | 'portal';
-  provider: string | null; tier: string; isCustom: boolean; commissionKind: ValueKind | null; commissionValue: string | null; currency: string | null; rawValue: string | null;
+  assignmentId: string; university: string; studyLevel: string | null; variant: string | null; intake: string | null; country: string;
+  tier: string; isCustom: boolean; commissionKind: ValueKind | null; commissionValue: string | null; currency: string | null;
   conditions: string | null; validFrom: string | null; validTo: string | null; updatedAt: string;
 }
 

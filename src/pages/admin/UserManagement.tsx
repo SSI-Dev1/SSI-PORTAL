@@ -898,7 +898,14 @@ function EmployeeDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
 const emptyOrg = { name: '', code: '', branch: '', contactName: '', email: '', phone: '', country: 'India', address: '', status: 'Active' };
 
 /** Clients & Branches → Add Partner: the organisation and its first login, in one step. */
-export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: OnCreated }) {
+export type PartnerPrefill = Partial<typeof emptyOrg> & { loginEmail?: string };
+
+export function PartnerDialog({ open, onClose, onCreated, initial, registrationId }: {
+  open: boolean; onClose: () => void; onCreated: OnCreated;
+  /** Prefill from an approved partner registration (Clients & Branches → Partner Registrations). */
+  initial?: PartnerPrefill;
+  registrationId?: string;
+}) {
   const { db } = useStore();
   const [org, setOrg] = useState(emptyOrg);
   const [acct, setAcct] = useState({ email: '', password: '', confirm: '', mustChange: false, send: true });
@@ -907,8 +914,9 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
-    setOrg(emptyOrg);
-    setAcct({ email: '', password: '', confirm: '', mustChange: false, send: true });
+    const { loginEmail: initialLogin, ...initialOrg } = initial ?? {};
+    setOrg({ ...emptyOrg, ...Object.fromEntries(Object.entries(initialOrg).filter(([, v]) => v != null)) });
+    setAcct({ email: initialLogin ?? '', password: '', confirm: '', mustChange: false, send: true });
     setModules(PARTNER_MODULES.map((m) => m.id));
     setErrors({});
     s.setError('');
@@ -945,6 +953,7 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
         portalEnabled: active,
         modules,
         sendCredentials,
+        ...(registrationId ? { registrationId } : {}),
       });
       await onCreated(email, acct.password, r.delivery);
     });
@@ -956,8 +965,8 @@ export function PartnerDialog({ open, onClose, onCreated }: { open: boolean; onC
       onClose={onClose}
       size="xl"
       dirty={!!(org.name || org.email || acct.password)}
-      title="Add partner"
-      subtitle="Creates the partner organisation, its private workspace and its Partner Admin login, and can email the login details."
+      title={registrationId ? 'Approve & create partner' : 'Add partner'}
+      subtitle={registrationId ? 'Prefilled from the approved registration — check every detail. Creates the partner organisation and its Partner Admin login once, and can email the login details.' : 'Creates the partner organisation, its private workspace and its Partner Admin login, and can email the login details.'}
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Create Partner &amp; Account</Button></>}
     >
       <div className="space-y-6">

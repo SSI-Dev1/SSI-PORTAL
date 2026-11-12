@@ -54,3 +54,15 @@ test('commission pages', () => {
   assert.equal(canOpenPath(pStaff, 'commission'), false, 'partner employees never see Commission');
   assert.equal(canOpenPath(pAdmin, 'commissions'), false, 'partners never open Commission Management');
 });
+
+test('partner registrations: Super Admin and Admin Staff with the permission only', () => {
+  const superAdmin = { role: 'admin' as const, userRole: 'super_admin' as const, permissions: ['partners', 'partner_onboarding'], partnerModules: [] };
+  const adminWith = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['partners', 'partner_onboarding'], partnerModules: [] };
+  const adminWithout = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['partners'], partnerModules: [] };
+  const officer = { ...base, userRole: 'support_staff' as const, permissions: ['partners', 'partner_onboarding'], employee: true, hasTeam: false };
+  assert.equal(canOpenPath(superAdmin, 'partners/registrations'), true);
+  assert.equal(canOpenPath(adminWith, 'partners/registrations'), true);
+  assert.equal(canOpenPath(adminWithout, 'partners/registrations'), false);
+  assert.equal(canOpenPath(officer, 'partners/registrations'), false, 'non-admin staff never, even with the permission');
+  assert.equal(canOpenPath(adminWithout, 'partners'), true, 'Clients & Branches itself is unchanged');
+});

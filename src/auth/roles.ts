@@ -26,7 +26,7 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -47,9 +47,14 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'commission_manage', label: 'Commission · Manage agreements', hint: 'Assign, change and end agreements, custom commissions, approvals (Super Admin grants)' },
   { id: 'commission_internal', label: 'Commission · Internal values', hint: 'SSI GLOBAL\'s own commission and profit — confidential (Super Admin grants)' },
   { id: 'commission_edit', label: 'Commission · Edit master & import', hint: 'Edit master records, providers and tiers; import sheets (Super Admin grants)' },
+  { id: 'partner_onboarding', label: 'Partner registrations', hint: 'Registration links, review and approval of new partners — Admin Staff only (Super Admin grants)' },
 ];
 /** Only a Super Admin can grant these. */
-export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'];
+export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding'];
+
+/** Partner registrations: Super Admins, and Admin Staff given "Partner registrations" (0030). */
+export const canManageRegistrations = (s: { userRole: UserRole; permissions: string[] } | null) =>
+  !!s && (s.userRole === 'super_admin' || (s.userRole === 'admin_staff' && s.permissions.includes('partner_onboarding')));
 export const COMMISSION_MODULES: StaffModule[] = ['commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'];
 /** HR account managers can create these roles only. */
 export const HR_MANAGEABLE_ROLES: StaffRole[] = ['application_manager', 'assessment_staff', 'finance_staff', 'support_staff'];
@@ -196,6 +201,7 @@ export function canOpenPath(session: Parameters<typeof canOpen>[0], path: string
   if (!canOpen(session, seg ?? '')) return false;
   if (seg === 'hr' && sub && !['employees', 'departments', 'designations'].includes(sub)) return isHR(session);
   if (seg === 'work' && (sub === 'team' || sub === 'assignments')) return canOpen(session, 'team');
+  if (seg === 'partners' && sub === 'registrations') return canManageRegistrations(session);
   return true;
 }
 

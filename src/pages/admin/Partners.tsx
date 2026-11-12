@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Building2, Eye, Globe, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
+import { canManageRegistrations } from '../../auth/roles';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, formatDate, initials, matches, type Tone } from '../../lib/utils';
@@ -71,6 +72,11 @@ export default function Partners() {
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
+            {canManageRegistrations(realSession) && (
+              <Button variant="secondary" icon={Link2} onClick={() => navigate('registrations')}>
+                Partner Registrations
+              </Button>
+            )}
             {superAdmin && (
               <Button icon={Plus} onClick={openAdd}>
                 Add Partner

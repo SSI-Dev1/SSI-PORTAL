@@ -75,6 +75,8 @@ export const adminApi = {
     portalEnabled: boolean;
     modules: string[];
     sendCredentials?: boolean;
+    /** Approved partner registration this partner is created from (claimed server-side, once). */
+    registrationId?: string;
   }) => call<{ ok: true; partnerId: string; userId: string; delivery?: Delivery | null }>({ action: 'create_partner', ...b }),
   createPartnerUser: (b: { partnerId: string; email: string; fullName: string; role: UserRole; password: string; mustChangePassword: boolean; sendCredentials?: boolean }) =>
     call<{ ok: true; userId: string; delivery?: Delivery | null }>({ action: 'create_partner_user', ...b }),

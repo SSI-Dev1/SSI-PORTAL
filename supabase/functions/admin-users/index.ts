@@ -241,12 +241,28 @@ Deno.serve(async (req) => {
         const portalEnabled = body.portalEnabled !== false;
         const accountPhone = cleanOptional(account.phone, 40);
         if (accountPhone === undefined) throw bad();
+        // From an approved partner registration: claim it first, so retries or two admins can
+        // never create two partners for it; released again if anything below fails.
+        const registrationId = typeof body.registrationId === 'string' && UUID_RE.test(body.registrationId) ? body.registrationId : null;
+        if (registrationId) {
+          if (hrMode) throw new Fail(403, 'Only a Super Admin can create the partner account for a registration.');
+          const { data: canReg } = await asCaller.rpc('can_manage_registrations');
+          if (canReg !== true) throw new Fail(403, 'Only authorised administrators can activate partner registrations.');
+          const { error: claimErr } = await admin.rpc('begin_registration_provisioning', { p_id: registrationId, p_actor: me });
+          if (claimErr) {
+            const m = claimErr.message;
+            throw new Fail(409, m.includes('ALREADY_ACTIVATED') ? 'This registration already has a partner account.'
+              : m.includes('NOT_APPROVED') ? 'Approve the registration before creating the partner.'
+              : m.includes('IN_PROGRESS') ? 'This partner is already being created. Wait a moment and refresh.' : 'The registration could not be used.');
+          }
+        }
+        const release = async (why: string) => { if (registrationId) await admin.rpc('release_registration_provisioning', { p_id: registrationId, p_actor: me, p_error: why }); };
         const { data: org, error: orgErr } = await admin
           .from('partners')
           .insert({ ...partner, status: portalEnabled ? 'Active' : 'Onboarding', portal_enabled: portalEnabled, modules })
           .select('id')
           .single();
-        if (orgErr || !org) throw new Fail(500, 'Could not create the partner.');
+        if (orgErr || !org) { await release('partner insert failed'); throw new Fail(500, 'Could not create the partner.'); }
         let userId = '';
         try {
           userId = await createAuthUser(admin, email, password, fullName);
@@ -258,7 +274,12 @@ Deno.serve(async (req) => {
         } catch (e) {
           if (userId) await admin.auth.admin.deleteUser(userId);
           await admin.from('partners').delete().eq('id', org.id);
+          await release(e instanceof Error ? e.message : 'account creation failed');
           throw e;
+        }
+        if (registrationId) {
+          const { error: finErr } = await admin.rpc('finish_registration_provisioning', { p_id: registrationId, p_partner: org.id, p_user: userId, p_actor: me });
+          if (finErr) await audit('registration_link_failed', 'partners', org.id, org.id, { registration: registrationId });
         }
         await audit('partner_created', 'partners', org.id, org.id);
         await audit('account_created', 'profiles', userId, org.id, { role: [null, 'partner_admin'] });

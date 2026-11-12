@@ -51,6 +51,8 @@ import { AttendanceExceptions, LeaveCalendar, WorkforceCalendar } from './pages/
 import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, WorkAssignments } from './pages/hr/HRWork';
 import Management from './pages/hr/Management';
 import Commissions from './pages/shared/Commissions';
+import PartnerRegistrations from './pages/admin/PartnerRegistrations';
+import PartnerRegistration from './pages/PartnerRegistration';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
@@ -175,6 +177,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/partner-registration/:token" element={<PartnerRegistration />} />
             {ChatSearchDemo && (
               <Route
                 path="/ui/chat"
@@ -266,6 +269,7 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="partners" element={<Partners />} />
+                <Route path="partners/registrations" element={<PartnerRegistrations />} />
                 <Route path="partners/:id" element={<PartnerDetail />} />
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />

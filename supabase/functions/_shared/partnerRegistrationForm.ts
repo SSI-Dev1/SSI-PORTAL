@@ -102,7 +102,7 @@ export const FORM_SECTIONS: FormSection[] = [
       { key: 'decl_review', label: 'I understand that submitting this form is a partnership enquiry: it does not create a partnership agreement or give portal access until SSI GLOBAL approves it.', type: 'checkbox', required: true, source: 'added' },
       { key: 'acceptance_full_name', label: "Your full legal name", type: 'text', required: true, source: 'screenshot', max: 120 },
       { key: 'acceptance_designation', label: 'Designation', type: 'text', required: true, source: 'screenshot', max: 120 },
-      { key: 'acceptance_signature', label: 'Digital signature (type your full name)', type: 'signature', required: true, source: 'screenshot', max: 120, hint: 'Must match your full legal name.' },
+      { key: 'acceptance_signature', label: 'Digital signature (type your full legal name again)', type: 'signature', required: true, source: 'screenshot', max: 120, hint: 'Type the same name as in “Your full legal name”.' },
     ],
   },
 ];
@@ -150,7 +150,7 @@ export function fieldProblem(f: FormField, a: Answers, year = new Date().getUTCF
   if (f.type === 'select' && f.options && !f.options.includes(s)) return 'Choose an option';
   if (f.type === 'signature') {
     const name = String(a.acceptance_full_name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-    if (name && s.toLowerCase().replace(/\s+/g, ' ') !== name) return 'Type your full legal name exactly';
+    if (name && s.toLowerCase().replace(/\s+/g, ' ') !== name) return 'Must be the same name you entered in “Your full legal name” above';
   }
   return '';
 }

@@ -261,7 +261,7 @@ export default function PartnerRegistration() {
                 </div>
                 <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
                   {section.fields.filter((f) => !f.showWhen || answers[f.showWhen.key] === f.showWhen.equals).map((f) => (
-                    <FieldInput key={f.key} f={f} value={answers[f.key]} error={errors[f.key]} flagged={changeFields.has(f.key)}
+                    <FieldInput key={f.key} f={f.type === 'signature' && String(answers.acceptance_full_name ?? '').trim() ? { ...f, hint: `Type exactly: ${String(answers.acceptance_full_name).trim()}` } : f} value={answers[f.key]} error={errors[f.key]} flagged={changeFields.has(f.key)}
                       onChange={(v) => set(f.key, v)} onBlur={() => { setTouched((t) => ({ ...t, [f.key]: true })); setErrors((e) => ({ ...e, [f.key]: fieldProblem(f, answers) })); }}
                       file={files[f.key]} token={token} onFile={(info) => setFiles((x) => ({ ...x, [f.key]: info }))}
                       emailVerification={open.emailVerification} verified={verified} onVerified={(e) => { setVerified(e); setErrors((x) => ({ ...x, registered_email: '' })); }} />

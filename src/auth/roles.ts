@@ -156,6 +156,21 @@ export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
 
 export const isHR = (s: { userRole: UserRole; permissions: string[] } | null) => !!s && (s.userRole === 'super_admin' || s.permissions.includes('hr'));
 
+/** Staff permissions that include reading the commission catalogue (matches commission_can('commission_view')). */
+const COMMISSION_READ: StaffModule[] = ['commission_view', 'commission_tag', 'commission_manage', 'commission_edit'];
+
+/**
+ * Partner Portal → Commission. The organisation's Partner Admin, while SSI GLOBAL shows commission
+ * to them (my_access().commission). Partner employees never. Staff previewing a partner's portal
+ * see it only with commission catalogue access; the page then loads preview_partner_commissions().
+ */
+export function canSeePartnerCommission(session: { role: string; userRole: UserRole; permissions: string[]; previewOf?: unknown } | null): boolean {
+  if (!session || session.role !== 'client') return false;
+  const staff = session.previewOf as { userRole: UserRole; permissions: string[] } | undefined;
+  if (staff) return staff.userRole === 'super_admin' || COMMISSION_READ.some((p) => staff.permissions.includes(p));
+  return session.userRole === 'partner_admin' && !!(session as { commission?: boolean }).commission;
+}
+
 /** Whether a session may open a portal page (menu + route guard; RLS enforces the data). */
 export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole: UserRole; permissions: string[]; partnerModules: string[]; previewOf?: unknown } | null, segment: string): boolean {
   if (!session) return false;
@@ -178,7 +193,7 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
   // Internal pages are never open to partner organisations.
   if (segment === 'commissions' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
   // Commission agreements: the Partner Admin only, while SSI GLOBAL lets them see commission.
-  if (segment === 'commission') return session.userRole === 'partner_admin' && !!(session as { commission?: boolean }).commission;
+  if (segment === 'commission') return canSeePartnerCommission(session);
   const m = CLIENT_ROUTE_MODULE[segment];
   // Finance (and commission) is for the Partner Admin only, never for partner employees.
   if (m === 'finance') return (session.userRole === 'partner_admin' || !!session.previewOf) && session.partnerModules.includes(m);

@@ -4,16 +4,20 @@
 // tiers, no processing route or portal, no SSI GLOBAL values, no other agencies (0031).
 // A configured rate is not an earned or paid commission.
 import { useMemo, useState } from 'react';
-import { BadgePercent, Info } from 'lucide-react';
-import { Alert, Badge, Card, EmptyState, FilterSelect, PageHeader, SearchInput, Table } from '../../components/ui';
-import { useStore } from '../../store/store';
+import { BadgePercent, Eye, Info, Lock, RefreshCw } from 'lucide-react';
+import { Alert, Badge, Button, Card, EmptyState, FilterSelect, PageHeader, SearchInput, Table } from '../../components/ui';
+import { useScoped, useStore } from '../../store/store';
+import { canSeePartnerCommission } from '../../auth/roles';
 import { fmtCommission, useMyCommissions } from '../../lib/commissions';
 import { matches } from '../../lib/utils';
 
 export default function MyCommission() {
   const { session } = useStore();
-  const allowed = session?.role === 'client' && session.userRole === 'partner_admin' && !!session.commission;
-  const { rows, error } = useMyCommissions(allowed);
+  const scoped = useScoped();
+  const allowed = canSeePartnerCommission(session);
+  // Staff previewing a partner's portal see exactly that partner's view (same restricted columns).
+  const previewPartner = session?.previewOf ? session.partnerId : undefined;
+  const { rows, error, reload } = useMyCommissions(allowed, previewPartner);
   const [country, setCountry] = useState('');
   const [tier, setTier] = useState('');
   const [q, setQ] = useState('');
@@ -21,12 +25,20 @@ export default function MyCommission() {
   const tiers = useMemo(() => [...new Set((rows ?? []).map((r) => r.tier))].sort(), [rows]);
   const shown = (rows ?? []).filter((r) => (!country || r.country === country) && (!tier || r.tier === tier) && matches(q, r.university, r.variant ?? '', r.studyLevel ?? ''));
 
-  if (!allowed) return <Card><EmptyState icon={BadgePercent} title="Commission is not available" description="Only your organisation's Partner Admin can see commission agreements." /></Card>;
+  if (!allowed) return <Card><EmptyState icon={Lock} title="Commission is not available" description="Only your organisation's Partner Admin can see commission agreements." /></Card>;
   return (
     <>
       <PageHeader title="Commission" subtitle="The commission SSI GLOBAL has agreed with your organisation, university by university." />
       <Alert tone="info" className="mb-4"><span className="inline-flex items-start gap-1.5"><Info className="mt-0.5 h-4 w-4 shrink-0" />These are agreed rates, not earnings. Commission is earned and paid per enrolled student, as shown in Finance.</span></Alert>
-      {error && <Alert tone="warning" className="mb-4">Commission agreements could not be loaded right now.</Alert>}
+      {previewPartner && (
+        <Alert tone="warning" className="mb-4"><span className="inline-flex items-start gap-1.5"><Eye className="mt-0.5 h-4 w-4 shrink-0" />
+          Preview: this is exactly what {scoped.partner?.name ?? 'this partner'}'s Partner Admin sees.
+          {scoped.partner?.commissionVisible === false && ' Commission is currently hidden from this partner, so their Partner Admin sees no Commission tab.'}</span></Alert>
+      )}
+      {error && (
+        <Alert tone="error" className="mb-4"><span className="flex flex-wrap items-center gap-2">Commission details could not be loaded. Please try again in a moment.
+          <Button size="sm" variant="secondary" icon={RefreshCw} onClick={() => void reload()}>Try again</Button></span></Alert>
+      )}
       <Card>
         <div className="flex flex-wrap gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search university…" className="w-full sm:w-64" />
@@ -34,8 +46,10 @@ export default function MyCommission() {
           <FilterSelect label="Tier" value={tier} onChange={setTier} options={[{ value: '', label: 'All tiers' }, ...tiers.map((t) => ({ value: t, label: t }))]} />
           {rows && rows.length > 0 && <span className="ml-auto self-center text-xs text-ink-mute">{shown.length} of {rows.length} universities</span>}
         </div>
-        {rows === null ? <div className="p-6 text-sm text-ink-soft">Loading…</div> : shown.length === 0 ? (
-          <EmptyState icon={BadgePercent} title={rows.length ? 'Nothing matches' : 'No commission agreements yet'} description={rows.length ? undefined : 'Your SSI GLOBAL Partnership Officer will set these up.'} />
+        {rows === null ? <div className="p-6 text-sm text-ink-soft" role="status">Loading commission details…</div> : error ? (
+          <EmptyState icon={BadgePercent} title="Commission details are unavailable" description="Nothing is shown until they load correctly." />
+        ) : shown.length === 0 ? (
+          <EmptyState icon={BadgePercent} title={rows.length ? 'Nothing matches your filters' : 'No commission details have been assigned to your organization yet.'} description={rows.length ? undefined : 'Your SSI GLOBAL Partnership Officer will set these up. They appear here as soon as they are assigned.'} />
         ) : (
           <Table className="hr-table" head={['University', 'Country', 'My commission tier', 'My commission', 'Currency', 'Applicable conditions']}>
             {shown.map((r) => (

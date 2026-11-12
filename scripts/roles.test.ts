@@ -66,3 +66,17 @@ test('partner registrations: Super Admin and Admin Staff with the permission onl
   assert.equal(canOpenPath(officer, 'partners/registrations'), false, 'non-admin staff never, even with the permission');
   assert.equal(canOpenPath(adminWithout, 'partners'), true, 'Clients & Branches itself is unchanged');
 });
+
+test('partner Commission tab: Partner Admin with commission, never employees; preview needs commission access', () => {
+  const admin = { role: 'client' as const, userRole: 'partner_admin' as const, permissions: [], partnerModules: ['students'], commission: true };
+  assert.equal(canOpenPath(admin, 'commission'), true, 'Partner Admin, commission shown');
+  assert.equal(canOpenPath({ ...admin, commission: false }, 'commission'), false, 'Partner Admin, commission hidden by SSI GLOBAL');
+  assert.equal(canOpenPath({ ...partner, commission: true }, 'commission'), false, 'partner employee never');
+  const superAdmin = { role: 'admin' as const, userRole: 'super_admin' as const, permissions: [], partnerModules: [] };
+  const preview = (staff: { userRole: string; permissions: string[] }) => ({ role: 'client' as const, userRole: staff.userRole as 'super_admin', permissions: staff.permissions, partnerModules: ['students'], previewOf: staff });
+  assert.equal(canOpenPath(preview(superAdmin), 'commission'), true, 'Super Admin previewing a partner');
+  assert.equal(canOpenPath(preview({ userRole: 'partnership_officer', permissions: ['commission_tag'] }), 'commission'), true, 'officer with commission access previewing');
+  assert.equal(canOpenPath(preview({ userRole: 'support_staff', permissions: ['commission_internal'] }), 'commission'), false, 'internal-values only is not catalogue access');
+  assert.equal(canOpenPath(preview({ userRole: 'support_staff', permissions: ['partners'] }), 'commission'), false, 'staff without commission access previewing');
+  assert.equal(canOpenPath(superAdmin, 'commissions'), true, 'Super Admin keeps Commission Management');
+});

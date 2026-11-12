@@ -109,7 +109,7 @@ select pg_temp.check((select count(*) from public.my_partner_commissions() where
 select pg_temp.check((select commission_value = 18 and tier = 'Tier 2' from public.my_partner_commissions() where university = 'Bulk University 2'), 'University B shows only its Tier 2 commission');
 select pg_temp.check((select bool_and(commission_value in (20, 18, 21)) from public.my_partner_commissions() where country = 'Bulkland'), 'only the assigned tier value per university (never 16 = Tier 3 here)');
 select pg_temp.check((select count(*) from public.my_partner_commissions() where university = 'Unclear University') = 0, 'unassigned universities are not shown');
-select pg_temp.check(not exists (select 1 from public.my_partner_commissions() m where to_jsonb(m)::text ilike '%SECRET PORTAL%' or to_jsonb(m)::text ilike '%25%' and m.university = 'Bulk University 1'),
+select pg_temp.check(not exists (select 1 from public.my_partner_commissions() m where to_jsonb(m)::text ilike '%SECRET PORTAL%' or m.commission_value in (25, 5)),
   'no portal name or SSI GLOBAL commission in the response');
 select pg_temp.check((select count(*) from public.commission_tier_rates) + (select count(*) from public.commission_records) + (select count(*) from public.commission_internal) = 0,
   'the partner cannot read master tables directly');

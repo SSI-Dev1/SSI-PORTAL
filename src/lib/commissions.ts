@@ -130,16 +130,22 @@ export interface MyCommission {
 }
 
 /** The Partner Admin's own agreements; refreshes live through partner_commission_signals. */
-export function useMyCommissions(enabled: boolean) {
+/**
+ * The partner's own agreements (my_partner_commissions), or — when previewPartner is set — a staff
+ * preview of that partner's view (preview_partner_commissions). Both return the same restricted columns.
+ */
+export function useMyCommissions(enabled: boolean, previewPartner?: string) {
   const [rows, setRows] = useState<MyCommission[] | null>(null);
   const [error, setError] = useState(false);
   const load = useCallback(async () => {
     if (!supabase || !enabled) { setRows([]); return; }
-    const { data, error: e } = await supabase.rpc('my_partner_commissions');
+    const { data, error: e } = previewPartner
+      ? await supabase.rpc('preview_partner_commissions', { p_partner: previewPartner })
+      : await supabase.rpc('my_partner_commissions');
     if (e) { setError(true); setRows([]); return; }
     setError(false);
     setRows(fromRows<MyCommission>(data).map((r) => ({ ...r, commissionValue: r.commissionValue == null ? null : String(r.commissionValue) })));
-  }, [enabled]);
+  }, [enabled, previewPartner]);
   useEffect(() => {
     void load();
     if (!supabase || !enabled) return;

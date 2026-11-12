@@ -264,8 +264,8 @@ const clientNav: NavSection[] = [
   ] },
   { id: 'workspace', title: 'Workspace', items: [
     { to: 'documents', label: 'Documents', icon: FileText },
-    { to: 'finance', label: 'Finance', icon: Wallet },
     { to: 'commission', label: 'Commission', icon: BadgePercent },
+    { to: 'finance', label: 'Finance', icon: Wallet },
   ] },
   { id: 'comms', title: 'Communication', items: [{ to: 'updates', label: 'Important Updates', icon: Megaphone }] },
   // Partner Admin (and team managers they appoint) only; canOpen checks team.manage.

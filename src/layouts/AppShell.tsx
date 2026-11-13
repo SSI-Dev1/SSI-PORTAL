@@ -5,7 +5,7 @@ import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPref
 import { useHR } from '../store/hr';
 import { useChat } from '../store/chat';
 import { AttendanceControl } from '../components/AttendanceControl';
-import { canOpenPath } from '../auth/roles';
+import { canOpenPath, canSwitchPortals } from '../auth/roles';
 import { Alert, Avatar, Badge, Button, Card, EmptyState, IconButton, Menu, Modal, useClickOutside } from '../components/ui';
 import { useConfirm, useToast } from '../components/feedback';
 import { useScoped, useStore } from '../store/store';
@@ -55,6 +55,7 @@ export default function AppShell() {
   const workspace = workspaceOf(location.pathname);
   const designationName = (id: string) => hr.data.designations.find((d) => d.id === id)?.name ?? id.replace(/_/g, ' ');
   const workspaces = workspacesFor(session, designationName);
+  const switcher = canSwitchPortals(session);
   const currentWorkspace = workspace === 'work' ? `work:${chosenDesignation(session)}` : workspace;
 
   // HR Portal: items waiting for a decision (the lists are already limited by RLS to what this user may see).
@@ -74,7 +75,8 @@ export default function AppShell() {
     currentWorkspace,
     base,
     portal: session?.role ?? 'client',
-    orgName: session?.role === 'client' ? scoped.partner?.name : session?.role === 'staff' ? `SSI GLOBAL · ${session.title}` : undefined,
+    orgName: session?.role === 'client' ? scoped.partner?.name : session && (session.role === 'staff' || !switcher) ? `SSI GLOBAL · ${session.title}` : undefined,
+    portalLabel: session && session.role !== 'client' && !switcher ? (session.employee ? 'Employee Workspace' : 'Staff Portal') : undefined,
     badges: { ...(session?.role === 'client' && liveUpdates > 0 ? { updates: liveUpdates } : {}), ...(chat.totalUnread > 0 ? { applications: chat.totalUnread, messages: chat.totalUnread } : {}), ...hrBadges } as Record<string, number>,
   };
 
@@ -151,7 +153,8 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
   const { session } = useStore();
   const scoped = useScoped();
   const navigate = useNavigate();
-  const isAdmin = session?.role === 'admin';
+  // Admin labels and the Settings page entry are for Super Admins (role from the database).
+  const isAdmin = canSwitchPortals(session);
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur-xl">
@@ -161,8 +164,8 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
         <div className="hidden items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-semibold text-heading md:flex">
           <Building2 className="h-4 w-4 text-ink-mute" />
           {session?.role === 'client' ? scoped.partner?.city ?? 'Workspace' : 'Head Office'}
-          <Badge tone={session?.role === 'client' ? 'orange' : session?.role === 'staff' ? 'teal' : 'navy'} className="ml-1">
-            {session?.role === 'client' ? 'Partner' : session?.role === 'staff' ? 'Staff' : 'Admin'}
+          <Badge tone={session?.role === 'client' ? 'orange' : isAdmin ? 'navy' : 'teal'} className="ml-1">
+            {session?.role === 'client' ? 'Partner' : isAdmin ? 'Admin' : 'Staff'}
           </Badge>
         </div>
         <div className="hidden lg:block">
@@ -186,7 +189,8 @@ function Topbar({ onMenu, onSignOut, wide }: { onMenu: () => void; onSignOut: ()
               </button>
             )}
             items={[
-              { label: isAdmin ? 'Settings' : 'My Profile', icon: isAdmin ? Settings : UserCircle2, onClick: () => navigate(`${scoped.base}/${isAdmin ? 'settings' : 'profile'}`) },
+              { label: isAdmin ? 'Settings' : 'My Profile', icon: isAdmin ? Settings : UserCircle2,
+                onClick: () => navigate(`${scoped.base}/${isAdmin ? 'settings' : session?.role !== 'client' && session?.employee ? 'work/profile' : session?.role === 'admin' ? 'settings' : 'profile'}`) },
               { label: 'Sign out', icon: LogOut, onClick: onSignOut, danger: true },
             ]}
           />

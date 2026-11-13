@@ -157,6 +157,18 @@ export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
 
 export const isHR = (s: { userRole: UserRole; permissions: string[] } | null) => !!s && (s.userRole === 'super_admin' || s.permissions.includes('hr'));
 
+/**
+ * Portal switching (Admin Portal ⇄ HR Portal ⇄ designation workspaces) is for Super Admins only.
+ * The role comes from my_access() (the database), never from local state. Every other employee
+ * has one workspace with one menu; the route guard and RLS still decide each page and row.
+ */
+export const canSwitchPortals = (s: { role: string; userRole: UserRole } | null) => !!s && s.role !== 'client' && s.userRole === 'super_admin';
+
+/** HR is this employee's main work: HR access and none of the business modules. */
+export const hrPrimary = (s: { role: string; userRole: UserRole; permissions: string[] } | null) =>
+  !!s && s.role !== 'client' && s.userRole !== 'super_admin' && (isHR(s) || s.permissions.includes('hr_accounts'))
+  && !['partners', 'students', 'applications', 'agency_outreach'].some((m) => s.permissions.includes(m));
+
 /** Staff permissions that include reading the commission catalogue (matches commission_can('commission_view')). */
 const COMMISSION_READ: StaffModule[] = ['commission_view', 'commission_tag', 'commission_manage', 'commission_edit'];
 

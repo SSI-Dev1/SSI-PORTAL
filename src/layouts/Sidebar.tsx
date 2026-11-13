@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { partnershipFocused } from '../lib/agencies';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
+import { Linkedin, Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -72,6 +72,7 @@ const adminNav: NavSection[] = [
   ] },
   { id: 'people', title: 'Partners & Students', items: [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
+    { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
@@ -105,6 +106,7 @@ const staffNav: NavSection[] = [
   ] },
   { id: 'work', title: 'My Work', items: [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
+    { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -148,6 +150,7 @@ const employeeNav: NavSection[] = [
   ] },
   { id: 'w-tools', title: 'Work Tools', items: [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
+    { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'students', label: 'Students', icon: Users },
@@ -284,6 +287,7 @@ const partnershipNav: NavSection[] = [
   { id: 'p-manage', title: 'Partnership Management', items: [
     { to: 'agencies/new', label: 'Add Agency', icon: Plus },
     { to: 'agencies', label: 'Agency List', icon: Handshake },
+    { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
     { to: 'agencies/proposals', label: 'Proposals', icon: Send },
     { to: 'agencies/registrations', label: 'Partner Registrations', icon: ClipboardCheck },

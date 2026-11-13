@@ -149,6 +149,9 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [body, setBody] = useState('');
   const [auto, setAuto] = useState(true);
   const [days, setDays] = useState('30');
+  const [mou, setMou] = useState<{ title: string; body: string } | null>(null);
+  const [mouTitle, setMouTitle] = useState('');
+  const [mouBody, setMouBody] = useState('');
   const [busy, setBusy] = useState(false);
   const load = async () => {
     if (!supabase) return;
@@ -158,6 +161,8 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
     ]);
     setTerms((t as Terms | null) ?? null); setTitle((t as Terms | null)?.title ?? ''); setBody((t as Terms | null)?.body ?? '');
     if (s) { setAuto(!!s.auto_registration_link); setDays(String(s.proposal_valid_days)); }
+    const { data: m } = await supabase.from('mou_documents').select('title, body').eq('active', true).maybeSingle();
+    setMou((m as { title: string; body: string } | null) ?? null); setMouTitle((m?.title as string) ?? ''); setMouBody((m?.body as string) ?? '');
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && terms === undefined) void load(); }, [open, terms]);
@@ -166,6 +171,11 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
     if (title.trim() !== (terms?.title ?? '') || body.trim() !== (terms?.body ?? '')) {
       const r = await rpc('publish_proposal_terms', { p_title: title, p_body: body });
       if (!r.ok) { setBusy(false); return toast.error(r.error); }
+    }
+    if ((mouTitle.trim() || mouBody.trim()) && (mouTitle.trim() !== (mou?.title ?? '') || mouBody.trim() !== (mou?.body ?? ''))) {
+      if (mouTitle.trim().length < 2 || mouBody.trim().length < 20) { setBusy(false); return toast.error('MOU needs a title and at least 20 characters of text'); }
+      const m = await rpc('publish_mou_document', { p_title: mouTitle, p_body: mouBody });
+      if (!m.ok) { setBusy(false); return toast.error(m.error); }
     }
     const s = await rpc('update_partnership_settings', { p_auto: auto, p_days: Number(days) || 30 });
     setBusy(false);
@@ -181,8 +191,14 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
       <Field label="Approved partnership terms" required hint="Shown in every proposal email and on the confirmation page. Publishing replaces the current version; sent proposals keep theirs." className="mt-3">
         <Textarea rows={10} value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} />
       </Field>
+      <div className="mt-5 border-t border-line pt-4">
+        <h4 className="text-sm font-semibold text-heading">MOU document</h4>
+        <p className="text-xs text-ink-mute">Emailed with the registration form when an agency confirms a proposal. Sending never marks it signed.{mou ? '' : ' None published yet — no MOU email is sent until you publish one.'}</p>
+        <Field label="MOU title" className="mt-2"><Input value={mouTitle} onChange={(e) => setMouTitle(e.target.value)} maxLength={160} placeholder="e.g. SSI GLOBAL Memorandum of Understanding" /></Field>
+        <Field label="Approved MOU text" className="mt-2"><Textarea rows={8} value={mouBody} onChange={(e) => setMouBody(e.target.value)} maxLength={30000} /></Field>
+      </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Field label="After an agency confirms"><span className="flex items-center gap-2 text-sm"><Switch checked={auto} onCheckedChange={setAuto} label="Email the registration form automatically" />{auto ? 'Email the registration form automatically' : 'An administrator issues the registration link'}</span></Field>
+        <Field label="After an agency confirms"><span className="flex items-center gap-2 text-sm"><Switch checked={auto} onCheckedChange={setAuto} label="Email the registration form automatically" />{auto ? 'Email the MOU and registration form automatically' : 'An administrator issues the registration link'}</span></Field>
         <Field label="Proposal valid for (days)"><Input type="number" min={1} max={180} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
       </div>
     </Modal>

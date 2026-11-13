@@ -12,7 +12,7 @@ import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
 import {
   ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, stageLabel, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
-  AgencyDemo, useAgencyData, type Agency, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
+  AgencyDemo, EMAIL_STATE, resendAgencyEmail, useAgencyData, type Agency, type AgencyEmail, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 
@@ -29,7 +29,7 @@ export default function AgencyDetail() {
   const commissionManager = !!session && (session.userRole === 'super_admin' || session.permissions.includes('commission_manage'));
   const { data, reload } = useAgencyData(allowed);
   const [history, setHistory] = useState<AgencyActivity[] | null>(null);
-  const [modal, setModal] = useState<null | { kind: 'edit' } | { kind: 'log'; log: LogKind } | { kind: 'proposal' } | { kind: 'mou' } | { kind: 'stage' }
+  const [modal, setModal] = useState<null | { kind: 'edit' } | { kind: 'log'; log: LogKind } | { kind: 'proposal' } | { kind: 'email' } | { kind: 'mou' } | { kind: 'stage' }
     | { kind: 'view'; p: Proposal } | { kind: 'sign'; m: Mou }>(null);
   const [busy, setBusy] = useState('');
 
@@ -54,6 +54,20 @@ export default function AgencyDetail() {
     setBusy('');
     if (!r.ok) return toast.error('Not saved', (r as { error?: string }).error);
     toast.success(done);
+    void reload();
+  };
+  // Email is optional until a proposal is sent: ask for it first when the agency has none.
+  const startProposal = () => setModal({ kind: a?.email ? 'proposal' : 'email' });
+  const [emails, setEmails] = useState<AgencyEmail[]>([]);
+  useEffect(() => {
+    if (!supabase || !id || demo) return;
+    void supabase.from('agency_emails').select('*').eq('prospect_id', id).then(({ data: e }) => setEmails((e ?? []) as AgencyEmail[]));
+  }, [id, data, demo]);
+  const retry = async (kind: 'mou' | 'registration') => {
+    setBusy(`retry:${kind}`);
+    const r = await resendAgencyEmail(id, kind);
+    setBusy('');
+    if (r.ok) toast.success(r.message); else toast.error('Not sent', r.message);
     void reload();
   };
   const contact = (s: 'connected' | 'not_connected') => run('contact', () => rpc('set_agency_contact_status', { p_id: id, p_status: s, p_note: null }), s === 'connected' ? 'Marked Connected' : 'Marked Not connected');
@@ -92,7 +106,7 @@ export default function AgencyDetail() {
             { label: 'Record MOU sent', icon: FileSignature, onClick: () => setModal({ kind: 'mou' }) },
             { label: 'Change stage', icon: Pencil, onClick: () => setModal({ kind: 'stage' }) },
           ]} />
-          <Button icon={Send} disabled={closed} onClick={() => setModal({ kind: 'proposal' })}>Send Proposal</Button>
+          <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
         </>}
       />
       {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
@@ -125,7 +139,7 @@ export default function AgencyDetail() {
 
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:col-span-2 [&>*]:min-w-0">
           <Card>
-            <CardHeader title="Proposals" subtitle="Commission comes from Commission Management — partner-facing rates only." action={<Button size="sm" icon={Send} disabled={closed} onClick={() => setModal({ kind: 'proposal' })}>Send Proposal</Button>} />
+            <CardHeader title="Proposals" subtitle="Commission comes from Commission Management — partner-facing rates only." action={<Button size="sm" icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>} />
             {proposals.length === 0 ? <p className="px-5 pb-5 text-sm text-ink-soft">No proposal yet.</p> : (
               <Table className="hr-table" head={['Proposal', 'Commission', 'Status', 'Email', 'Sent', 'Confirmed', '']}>
                 {proposals.map((p) => (
@@ -184,6 +198,26 @@ export default function AgencyDetail() {
               </div>
             </Card>
           </div>
+          {(emails.length > 0 || a.stage === 'proposal_confirmed' || a.registration_id) && (
+            <Card>
+              <CardHeader title="Onboarding emails" subtitle="Sent automatically after the agency confirms a proposal. Each is tracked on its own." />
+              <div className="grid gap-2 px-5 pb-5 text-sm sm:grid-cols-2">
+                {(['mou', 'registration'] as const).map((k) => {
+                  const e = emails.find((x) => x.kind === k);
+                  return (
+                    <div key={k} className="rounded-xl border border-line p-3">
+                      <div className="flex items-center justify-between gap-2"><b className="text-heading">{k === 'mou' ? 'MOU email' : 'Registration form email'}</b>
+                        {e ? <Badge tone={EMAIL_STATE[e.status].tone}>{EMAIL_STATE[e.status].label}</Badge> : <Badge tone="slate">Not sent</Badge>}</div>
+                      <p className="mt-1 text-xs text-ink-mute">{e ? `${e.attempts} attempt${e.attempts === 1 ? '' : 's'} · ${fmtWhen(e.updated_at)}${e.detail ? ` · ${e.detail}` : ''}` : k === 'registration' && !a.registration_id ? 'No registration yet.' : '—'}</p>
+                      {(!e || e.status === 'failed' || e.status === 'not_configured' || e.status === 'accepted') && (k === 'mou' || a.registration_id) && (
+                        <Button size="sm" variant="secondary" className="mt-2" disabled={!!busy} onClick={() => void retry(k)}>{busy === `retry:${k}` ? 'Sending…' : e ? 'Send again' : 'Send now'}</Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="History" subtitle="Every contact, note, proposal and registration step. Nothing is deleted." />
@@ -210,6 +244,7 @@ export default function AgencyDetail() {
       {modal?.kind === 'sign' && <UpdateMou m={modal.m} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'view' && <ViewProposal p={modal.p} onClose={() => setModal(null)} />}
       {modal?.kind === 'proposal' && <ProposalForm a={a} onClose={() => setModal(null)} onDone={reload} />}
+      {modal?.kind === 'email' && <AskEmail a={a} onClose={() => setModal(null)} onSaved={() => { void reload(); setModal({ kind: 'proposal' }); }} />}
     </>
   );
 }
@@ -221,6 +256,31 @@ function label(h: AgencyActivity) {
 }
 
 // ------------------------------------------------------------------ small modals
+/** A proposal needs an email address: ask for it, save it on the agency, then continue. */
+function AskEmail({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const bad = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const save = async () => {
+    if (bad) return;
+    setBusy(true);
+    const r = await rpc('update_agency_prospect', { p_id: a.id, p: { email: email.trim() } });
+    setBusy(false);
+    if (!r.ok) return toast.error('Not saved', r.error);
+    onSaved();
+  };
+  return (
+    <Modal open onClose={onClose} title="Email needed to send a proposal" subtitle={`${agencyName(a)} has no email address yet.`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || bad} onClick={() => void save()}>Save & continue</Button></>}>
+      <Field label="Agency email" required error={email && bad ? 'Enter a valid email address' : undefined}>
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200} autoFocus invalid={!!email && bad} />
+      </Field>
+      <p className="mt-2 text-xs text-ink-mute">Saved on the agency. The proposal, MOU and registration form are sent to this address.</p>
+    </Modal>
+  );
+}
+
 function EditAgency({ a, manager, onClose, onSaved }: { a: Agency; manager: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const { db } = useStore();
@@ -372,32 +432,50 @@ function ViewProposal({ p, onClose }: { p: Proposal; onClose: () => void }) {
 // ------------------------------------------------------------------ proposal form
 interface Option { record_id: string; university: string; country: string; study_level: string | null; variant: string | null; intake: string | null;
   tier_id: string; tier_label: string; commission_kind: ValueKind; commission_value: number; currency: string | null; conditions: string | null }
+interface Edit { value: string; kind?: 'percent' | 'amount'; currency?: string }
+interface Line { id: string; university: string; sub: string; country: string; base: Option | undefined; kind: 'percent' | 'amount' | undefined; value: string;
+  currency: string | null; conditions: string | null; customized: boolean; needsApproval: boolean; problem: string }
 
+/**
+ * Send Proposal. Standard tier: the tier's partner rates as they are. Custom commission: choose a
+ * base tier, then every selected commission record (each university / level / campus / intake rule
+ * is its own row) starts at that tier's rate and can be changed on its own. Edits are kept while
+ * searching, filtering or switching rows; nothing reloads the values except an explicit reset.
+ */
 function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
+  const { session } = useStore();
+  const commissionManager = !!session && (session.userRole === 'super_admin' || session.permissions.includes('commission_manage'));
   const [f, setF] = useState({ company_name: a.company_name ?? '', recipient_name: a.contact_name ?? '', recipient_email: a.email ?? '', country: a.country ?? '', message: '' });
-  const [arr, setArr] = useState<'tier' | 'custom'>('tier');
+  const [mode, setMode] = useState<'tier' | 'custom'>('tier');
   const [tier, setTier] = useState('');
-  const [custom, setCustom] = useState({ kind: 'percent', value: '', currency: 'GBP' });
   const [options, setOptions] = useState<Option[] | null>(null);
   const [terms, setTerms] = useState<Terms | null | undefined>(undefined);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [uniCountry, setUniCountry] = useState('');
   const [q, setQ] = useState('');
+  const [onlyChanged, setOnlyChanged] = useState(false);
+  const [bulk, setBulk] = useState('');
+  const [step, setStep] = useState<'edit' | 'review'>('edit');
   const [missing, setMissing] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [req] = useState(() => crypto.randomUUID());
   const [loadErr, setLoadErr] = useState('');
 
+  // Loaded once: realtime updates never reset the form.
+  const demo = useContext(AgencyDemo);
   useEffect(() => {
+    if (demo?.demoOptions) { setOptions(demo.demoOptions as Option[]); setTerms(demo.demoTerms ?? null); return; }
     void (async () => {
       const o = await rpc<Option[]>('proposal_commission_options', { p_country: null });
       if (!o.ok) { setLoadErr(o.error); setOptions([]); } else setOptions(o.data);
       if (supabase) { const { data } = await supabase.from('proposal_terms').select('*').eq('active', true).maybeSingle(); setTerms((data as Terms | null) ?? null); }
     })();
-  }, []);
+  }, [demo]);
   const tiers = useMemo(() => [...new Map((options ?? []).map((o) => [o.tier_id, o.tier_label])).entries()], [options]);
   useEffect(() => { if (!tier && tiers.length) setTier(tiers[0][0]); }, [tiers, tier]);
+  const tierLabel = tiers.find(([v]) => v === tier)?.[1] ?? 'tier';
   const records = useMemo(() => {
     const m = new Map<string, { o: Option; rates: Record<string, Option> }>();
     for (const o of options ?? []) {
@@ -405,13 +483,44 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
       e.rates[o.tier_id] = o;
       m.set(o.record_id, e);
     }
-    return [...m.values()];
+    return [...m.values()].sort((x, y) => x.o.country.localeCompare(y.o.country) || x.o.university.localeCompare(y.o.university));
   }, [options]);
+  const byId = useMemo(() => new Map(records.map((r) => [r.o.record_id, r])), [records]);
+
+  const lineOf = (id: string): Line | null => {
+    const r = byId.get(id);
+    if (!r) return null;
+    const base = r.rates[tier];
+    const e = edits[id];
+    const kind = base?.commission_kind as 'percent' | 'amount' | undefined ?? e?.kind;
+    const value = mode === 'tier' ? String(base?.commission_value ?? '') : e?.value ?? (base ? String(base.commission_value) : '');
+    const currency = base ? base.currency : kind === 'amount' ? (e?.currency ?? '').toUpperCase() || null : null;
+    const n = Number(value);
+    const problem = mode === 'tier' ? (base ? '' : `No ${tierLabel} rate`)
+      : !kind ? 'Choose percent or amount' : !(n > 0) ? 'Enter the commission' : kind === 'percent' && n > 100 ? 'At most 100%'
+      : kind === 'amount' && !/^[A-Z]{3}$/.test(currency ?? '') ? 'Enter the currency' : '';
+    const customized = mode === 'custom' && (!base || n !== Number(base.commission_value));
+    const needsApproval = mode === 'custom' && (!base || n > Number(base.commission_value));
+    return { id, university: r.o.university, sub: [r.o.study_level, r.o.variant, r.o.intake].filter(Boolean).join(' · '), country: r.o.country, base, kind, value,
+      currency, conditions: base?.conditions ?? r.o.conditions, customized, needsApproval, problem };
+  };
+  const lines = [...picked].map(lineOf).filter((l): l is Line => !!l);
   const countries = useMemo(() => [...new Set(records.map((r) => r.o.country))].sort(), [records]);
-  const shown = records.filter((r) => (!uniCountry || r.o.country === uniCountry) && matches(q, r.o.university, r.o.variant ?? '', r.o.study_level ?? ''));
-  const eligible = (r: (typeof records)[number]) => arr === 'custom' || !!r.rates[tier];
+  const shown = records.filter((r) => (!uniCountry || r.o.country === uniCountry) && matches(q, r.o.university, r.o.variant ?? '', r.o.study_level ?? '')
+    && (!onlyChanged || (picked.has(r.o.record_id) && !!lineOf(r.o.record_id)?.customized)));
+  const selectable = (r: (typeof records)[number]) => mode === 'custom' || !!r.rates[tier];
   const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const setEdit = (id: string, patch: Partial<Edit>) => setEdits((m) => ({ ...m, [id]: { ...m[id], value: m[id]?.value ?? String(byId.get(id)?.rates[tier]?.commission_value ?? ''), ...patch } }));
+  const reset = (id: string) => setEdits((m) => { const n = { ...m }; delete n[id]; return n; });
+  const applyBulk = () => {
+    const v = Number(bulk);
+    if (!(v > 0 && v <= 100)) return toast.error('Enter a percentage from 0 to 100');
+    const targets = lines.filter((l) => l.kind === 'percent' || (!l.base && !l.kind));
+    setEdits((m) => { const n = { ...m }; for (const l of targets) n[l.id] = { ...n[l.id], value: String(v), kind: 'percent' }; return n; });
+    toast.info(`${v}% applied to ${targets.length} selected percentage rows`, lines.length > targets.length ? 'Fixed-amount rows were left as they are.' : undefined);
+  };
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const approval = lines.some((l) => l.needsApproval) && !commissionManager;
 
   const validate = () => {
     const m: string[] = [];
@@ -419,24 +528,25 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
     if (!f.recipient_name.trim()) m.push('Primary contact name');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.recipient_email.trim())) m.push('Valid recipient email');
     if (!f.country.trim()) m.push('Country');
-    if (arr === 'tier' && !tier) m.push('Commission tier');
-    if (arr === 'custom' && !(Number(custom.value) > 0)) m.push('Custom commission value');
-    if (picked.size === 0) m.push('At least one university');
+    if (!tier) m.push(mode === 'custom' ? 'Base tier' : 'Commission tier');
+    if (lines.length === 0) m.push('At least one university');
+    const bad = lines.filter((l) => l.problem);
+    if (bad.length) m.push(`Fix ${bad.length} row${bad.length === 1 ? '' : 's'}: ${bad.slice(0, 3).map((l) => `${l.university} (${l.problem})`).join(', ')}${bad.length > 3 ? '…' : ''}`);
     if (!terms) m.push('Approved proposal terms (an administrator must publish them)');
     setMissing(m);
     return m.length === 0;
   };
   const submit = async () => {
-    if (!validate()) return;
-    const ids = [...picked].filter((id) => { const r = records.find((x) => x.o.record_id === id); return r && eligible(r); });
     setBusy(true);
-    const r = await rpc<{ id: string; status: string }>('create_agency_proposal', { p_prospect: a.id, p_request: req, p: {
-      ...f, arrangement: arr, tier_id: tier, custom_kind: custom.kind, custom_value: custom.value, custom_currency: custom.currency, record_ids: ids, terms_id: terms?.id,
-    } });
-    if (!r.ok) { setBusy(false); return toast.error('Proposal not created', r.error); }
+    const p = mode === 'tier'
+      ? { ...f, arrangement: 'tier', tier_id: tier, record_ids: lines.map((l) => l.id), terms_id: terms?.id }
+      : { ...f, arrangement: 'custom', base_tier_id: tier, terms_id: terms?.id,
+          items: lines.map((l) => ({ record_id: l.id, value: l.value, kind: l.kind, currency: l.currency })) };
+    const r = await rpc<{ id: string; status: string }>('create_agency_proposal', { p_prospect: a.id, p_request: req, p });
+    if (!r.ok) { setBusy(false); setStep('edit'); return toast.error('Proposal not created', r.error); }
     if (r.data.status === 'pending_approval') {
       setBusy(false);
-      toast.info('Waiting for approval', 'A custom commission must be approved by a commission manager before it is sent.');
+      toast.info('Waiting for approval', 'Rows above their base rate (or without one) need a commission manager’s approval. You can send it once approved.');
       onDone(); return onClose();
     }
     const s = await sendProposal(r.data.id);
@@ -445,10 +555,40 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
     onDone(); onClose();
   };
 
+  const footer = step === 'edit'
+    ? <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={Eye} disabled={options === null} onClick={() => validate() && setStep('review')}>Review proposal</Button></>
+    : <><Button variant="ghost" disabled={busy} onClick={() => setStep('edit')}>Back to editing</Button>
+        <Button icon={Send} disabled={busy} onClick={() => void submit()}>{busy ? 'Working…' : approval ? 'Submit for approval' : 'Confirm & send'}</Button></>;
+
+  if (step === 'review') return (
+    <Modal open onClose={onClose} size="wide" dirty title="Review proposal" subtitle="Exactly what the agency will see. Internal tiers and base rates are never included." footer={footer}>
+      <dl className="grid gap-2 text-sm sm:grid-cols-4">
+        {[['Agency', f.company_name], ['Contact', f.recipient_name], ['Email', f.recipient_email], ['Country', f.country]].map(([k, v]) => (
+          <div key={k} className="rounded-xl bg-canvas p-3"><dt className="text-xs text-ink-mute">{k}</dt><dd className="truncate font-medium text-heading">{v}</dd></div>
+        ))}
+      </dl>
+      {approval && <Alert tone="warning" className="mt-3">{lines.filter((l) => l.needsApproval).length} row(s) are above their base rate or have no base rate. The proposal is saved and sent to a commission manager for approval first.</Alert>}
+      <h4 className="mt-4 text-sm font-semibold text-heading">Your Partnership Commission Details</h4>
+      <div className="mt-2 max-h-[45vh] overflow-auto rounded-2xl border border-line">
+        <Table className="hr-table" head={['University', 'Commission', 'Currency', 'Applicable conditions']}>
+          {lines.map((l) => (
+            <tr key={l.id}>
+              <td className="min-w-[200px]">{l.university}<div className="text-xs text-ink-mute">{[l.sub, l.country].filter(Boolean).join(' · ')}</div></td>
+              <td className="whitespace-nowrap font-semibold tabular-nums text-heading">{fmtCommission(l.kind as ValueKind, l.value, l.currency)}</td>
+              <td>{l.kind === 'amount' ? l.currency : '—'}</td>
+              <td className="max-w-[280px] text-xs text-ink-soft">{l.conditions ?? '—'}</td>
+            </tr>
+          ))}
+        </Table>
+      </div>
+      {f.message && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-canvas p-3 text-sm">{f.message}</p>}
+      <p className="mt-3 text-xs text-ink-mute">Subject: “SSI GLOBAL — Partnership Proposal for {f.company_name}”. Terms: {terms?.title}. The agency confirms on a secure page; opening the email does not accept anything.</p>
+    </Modal>
+  );
+
   return (
-    <Modal open onClose={onClose} size="wide" dirty title="Send Proposal" subtitle={`${agencyName(a)} · emailed as “SSI GLOBAL — Partnership Proposal for ${f.company_name || '…'}”`}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={Send} disabled={busy || options === null} onClick={() => void submit()}>{busy ? 'Sending…' : arr === 'custom' ? 'Submit for approval' : 'Send Proposal'}</Button></>}>
-      {missing.length > 0 && <Alert tone="error" className="mb-4" title="Add these before sending">{missing.join(' · ')}</Alert>}
+    <Modal open onClose={onClose} size="wide" dirty title="Send Proposal" subtitle={`${agencyName(a)} · emailed as “SSI GLOBAL — Partnership Proposal for ${f.company_name || '…'}”`} footer={footer}>
+      {missing.length > 0 && <Alert tone="error" className="mb-4" title="Before reviewing">{missing.join(' · ')}</Alert>}
       {loadErr && <Alert tone="warning" className="mb-4">{loadErr}</Alert>}
       <div className="grid gap-3 md:grid-cols-4">
         <Field label="Agency / company name" required><Input value={f.company_name} onChange={set('company_name')} maxLength={160} invalid={missing.includes('Agency / company name')} /></Field>
@@ -457,41 +597,62 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
         <Field label="Country" required><Input value={f.country} onChange={set('country')} maxLength={80} invalid={missing.includes('Country')} /></Field>
       </div>
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <Field label="Commission arrangement"><Segmented options={[{ value: 'tier', label: 'Standard tier' }, { value: 'custom', label: 'Custom commission' }]} value={arr} onChange={(v) => setArr(v as 'tier' | 'custom')} /></Field>
-        {arr === 'tier' ? (
-          <Field label="Tier"><Segmented options={tiers.map(([v, l]) => ({ value: v, label: l }))} value={tier} onChange={setTier} /></Field>
-        ) : (
-          <>
-            <Field label="Type"><Segmented options={[{ value: 'percent', label: '%' }, { value: 'amount', label: 'Amount' }]} value={custom.kind} onChange={(v) => setCustom((c) => ({ ...c, kind: v }))} /></Field>
-            <Field label={custom.kind === 'percent' ? 'Percent' : 'Amount'}><Input type="number" min={0} step="0.01" value={custom.value} onChange={(e) => setCustom((c) => ({ ...c, value: e.target.value }))} className="w-28" /></Field>
-            {custom.kind === 'amount' && <Field label="Currency"><Input value={custom.currency} maxLength={3} onChange={(e) => setCustom((c) => ({ ...c, currency: e.target.value.toUpperCase() }))} className="w-20" /></Field>}
-          </>
+        <Field label="Commission"><Segmented options={[{ value: 'tier', label: 'Standard tier' }, { value: 'custom', label: 'Custom commission' }]} value={mode} onChange={(v) => setMode(v as 'tier' | 'custom')} /></Field>
+        <Field label={mode === 'custom' ? 'Base tier (starting values)' : 'Tier'}><Segmented options={tiers.map(([v, l]) => ({ value: v, label: l }))} value={tier} onChange={setTier} /></Field>
+        {mode === 'custom' && (
+          <div className="flex items-end gap-2">
+            <Field label="Apply % to selected rows"><Input type="number" min={0} max={100} step="0.01" value={bulk} onChange={(e) => setBulk(e.target.value)} className="w-24" /></Field>
+            <Button size="sm" variant="secondary" disabled={!bulk || !lines.length} onClick={applyBulk}>Apply</Button>
+            <Button size="sm" variant="ghost" disabled={!Object.keys(edits).length} onClick={() => setEdits({})}>Reset all to base</Button>
+          </div>
         )}
       </div>
-      {arr === 'custom' && <Alert tone="info" className="mt-3">A custom commission needs a commission manager's approval before it can be sent.</Alert>}
+      {mode === 'custom' && <p className="mt-2 text-xs text-ink-mute">Each selected row starts at its {tierLabel} rate and can be changed on its own. Rows above their base rate, or without one, need a commission manager's approval. Internal tiers never appear in the proposal.</p>}
 
       <div className="mt-4 rounded-2xl border border-line">
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
           <SearchInput value={q} onChange={setQ} placeholder="Search university…" className="w-full sm:w-60" />
           <FilterSelect label="Country" value={uniCountry} onChange={setUniCountry} options={[{ value: '', label: 'All countries' }, ...countries]} />
-          <Button size="sm" variant="secondary" onClick={() => setPicked((s) => new Set([...s, ...shown.filter(eligible).map((r) => r.o.record_id)]))}>Select all {shown.filter(eligible).length} shown</Button>
+          <Button size="sm" variant="secondary" onClick={() => setPicked((s) => new Set([...s, ...shown.filter(selectable).map((r) => r.o.record_id)]))}>Select all {shown.filter(selectable).length} shown</Button>
           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
-          <span className="ml-auto text-sm text-ink-soft"><b className="text-heading">{picked.size}</b> selected</span>
+          {mode === 'custom' && <Checkbox checked={onlyChanged} onCheckedChange={setOnlyChanged} label="Customised only" />}
+          <span className="ml-auto text-sm text-ink-soft"><b className="text-heading">{picked.size}</b> selected{mode === 'custom' ? ` · ${lines.filter((l) => l.customized).length} customised` : ''}</span>
         </div>
-        <div className="max-h-[320px] overflow-auto">
+        <div className="max-h-[42vh] overflow-auto">
           {options === null ? <p className="p-4 text-sm text-ink-soft">Loading commission options…</p> : shown.length === 0 ? <p className="p-4 text-sm text-ink-soft">No commission records match.</p> : (
-            <Table className="hr-table" head={['', 'University', 'Country', arr === 'tier' ? `${tiers.find(([v]) => v === tier)?.[1] ?? 'Tier'} commission` : 'Commission', 'Conditions']}>
+            <Table className="hr-table" head={mode === 'tier' ? ['', 'University', 'Country', `${tierLabel} commission`, 'Conditions']
+              : ['', 'University', 'Country', `Base (${tierLabel})`, 'Proposed', 'Type', 'Currency', 'Conditions', '', '']}>
               {shown.map((r) => {
-                const rate = r.rates[tier];
-                const ok = eligible(r);
+                const id = r.o.record_id;
+                const base = r.rates[tier];
+                const ok = selectable(r);
+                const on = picked.has(id) && ok;
+                const l = on ? lineOf(id) : null;
                 return (
-                  <tr key={r.o.record_id} className={cn(!ok && 'opacity-50')}>
-                    <td><Checkbox checked={picked.has(r.o.record_id) && ok} disabled={!ok} onCheckedChange={() => toggle(r.o.record_id)} label={<span className="sr-only">Select {r.o.university}</span>} /></td>
-                    <td className="min-w-[200px]">{r.o.university}<div className="text-xs text-ink-mute">{[r.o.study_level, r.o.variant, r.o.intake].filter(Boolean).join(' · ')}</div></td>
+                  <tr key={id} className={cn(!ok && 'opacity-50', l?.customized && 'bg-brand-50/40 dark:bg-brand-500/5')}>
+                    <td><Checkbox checked={on} disabled={!ok} onCheckedChange={() => toggle(id)} label={<span className="sr-only">Select {r.o.university}</span>} /></td>
+                    <td className="min-w-[190px]">{r.o.university}<div className="text-xs text-ink-mute">{[r.o.study_level, r.o.variant, r.o.intake].filter(Boolean).join(' · ')}</div></td>
                     <td>{r.o.country}</td>
-                    <td className="whitespace-nowrap font-semibold tabular-nums">{arr === 'custom' ? (custom.value ? fmtCommission(custom.kind as ValueKind, custom.value, custom.kind === 'amount' ? custom.currency : null) : '—')
-                      : rate ? fmtCommission(rate.commission_kind, String(rate.commission_value), rate.currency) : <span className="font-normal text-ink-mute">No valid rate</span>}</td>
-                    <td className="max-w-[240px] text-xs text-ink-soft">{(arr === 'tier' ? rate?.conditions : r.o.conditions) ?? '—'}</td>
+                    {mode === 'tier' ? (
+                      <>
+                        <td className="whitespace-nowrap font-semibold tabular-nums">{base ? fmtCommission(base.commission_kind, String(base.commission_value), base.currency) : <span className="font-normal text-ink-mute">No valid rate</span>}</td>
+                        <td className="max-w-[240px] text-xs text-ink-soft">{base?.conditions ?? '—'}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="whitespace-nowrap tabular-nums text-ink-soft">{base ? fmtCommission(base.commission_kind, String(base.commission_value), base.currency) : <span className="text-amber-700 dark:text-amber-300">No base rate</span>}</td>
+                        <td>{on ? <Input aria-label={`Proposed commission for ${r.o.university}`} type="number" min={0} step="0.01" value={l?.value ?? ''} invalid={!!l?.problem && l.problem !== 'Enter the currency' && l.problem !== 'Choose percent or amount'}
+                          onChange={(e) => setEdit(id, { value: e.target.value })} className="w-24" /> : <span className="text-ink-mute">—</span>}</td>
+                        <td className="whitespace-nowrap text-xs">{base ? (base.commission_kind === 'percent' ? '%' : 'Amount')
+                          : on ? <Select value={edits[id]?.kind ?? ''} onChange={(e) => setEdit(id, { kind: e.target.value as 'percent' | 'amount' })}><option value="">Type…</option><option value="percent">%</option><option value="amount">Amount</option></Select> : '—'}</td>
+                        <td className="text-xs">{base ? (base.currency ?? '—') : on && edits[id]?.kind === 'amount'
+                          ? <Input aria-label="Currency" maxLength={3} value={edits[id]?.currency ?? ''} onChange={(e) => setEdit(id, { currency: e.target.value.toUpperCase() })} className="w-16" /> : '—'}</td>
+                        <td className="max-w-[200px] text-xs text-ink-soft">{base?.conditions ?? r.o.conditions ?? '—'}</td>
+                        <td className="whitespace-nowrap text-xs">{l?.problem ? <span className="text-red-600 dark:text-red-400">{l.problem}</span>
+                          : l?.needsApproval ? <Badge tone="amber">Needs approval</Badge> : l?.customized ? <Badge tone="orange">Modified</Badge> : null}</td>
+                        <td>{on && edits[id] && base && <Button size="sm" variant="ghost" onClick={() => reset(id)}>Reset</Button>}</td>
+                      </>
+                    )}
                   </tr>
                 );
               })}
@@ -500,12 +661,11 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
         </div>
       </div>
 
-      <Field label="Personal message (optional)" className="mt-4"><Textarea rows={3} value={f.message} onChange={set('message')} maxLength={2000} /></Field>
+      <Field label="Personal message (optional)" className="mt-4"><Textarea rows={2} value={f.message} onChange={set('message')} maxLength={2000} /></Field>
       <div className="mt-4 rounded-2xl bg-canvas p-4 text-sm">
-        {terms === undefined ? 'Loading terms…' : terms ? (<><b className="text-heading">{terms.title}</b><p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-ink-soft">{terms.body}</p></>)
+        {terms === undefined ? 'Loading terms…' : terms ? (<><b className="text-heading">{terms.title}</b><p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-ink-soft">{terms.body}</p></>)
           : <span className="text-red-600 dark:text-red-400">No approved proposal terms are published. Ask an administrator to publish them in Agencies → Proposal terms & settings.</span>}
       </div>
-      <p className="mt-3 text-xs text-ink-mute">Only partner-facing commission is included — never SSI GLOBAL's own commission, processing routes or portal names. The agency confirms on a secure page; opening the email does not accept anything.</p>
     </Modal>
   );
 }

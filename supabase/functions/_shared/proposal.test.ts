@@ -1,6 +1,6 @@
 // deno test supabase/functions/_shared/proposal.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { fmtRate, proposalEmail, proposalSubject } from './proposal.ts';
+import { fmtRate, mouEmail, proposalEmail, proposalSubject } from './proposal.ts';
 
 const base = {
   reference: 'PP-26-ABC123', companyName: 'Ravi <Overseas>', recipientName: 'Ravi', country: 'India',
@@ -28,7 +28,7 @@ Deno.test('no internal tier, arrangement or classification wording for Tier 1, 2
     for (const out of [m.subject, m.html, m.text]) {
       assert(!/\btier|arrangement:|classification|category|custom commission|tier_\d/i.test(out), `${label}: ${out.match(/.{0,30}(tier|arrangement|classification|category).{0,30}/i)?.[0]}`);
     }
-    assert(m.html.includes('YOUR PARTNERSHIP COMMISSION') && m.text.includes('Commission: 20%'));
+    assert(m.html.includes('Your Partnership Commission Details') && m.text.includes('Commission: 20%'));
   }
 });
 
@@ -47,4 +47,11 @@ Deno.test('email shows the offered commission, terms and an I CONFIRM link; esca
   assert(m.html.includes('Line one<br>Line two'));
   assert(m.text.includes('Opening the link does not accept anything'));
   assert(!/portal name|route|margin/i.test(m.text.replace('portal access', '')), 'no internal wording');
+});
+
+Deno.test('MOU email: approved text, escaped, never says signed', () => {
+  const m = mouEmail({ companyName: 'Ravi <Overseas>', recipientName: 'Ravi', title: 'SSI GLOBAL MOU', body: 'Clause 1\nClause 2', reference: 'PP-26-ABC123' });
+  assertEquals(m.subject, 'SSI GLOBAL — Memorandum of Understanding for Ravi <Overseas>');
+  assert(m.html.includes('Clause 1<br>Clause 2') && m.html.includes('Ravi &lt;Overseas&gt;'));
+  assert(m.text.includes('This email is not a signed agreement') && !/\btier/i.test(m.html + m.text));
 });

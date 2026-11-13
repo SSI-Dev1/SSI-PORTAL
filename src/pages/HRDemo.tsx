@@ -30,6 +30,7 @@ import { AgencyDemo, type AgencyData } from '../lib/agencies';
 import Agencies from './shared/Agencies';
 import AgencyDetail from './shared/AgencyDetail';
 import PartnershipDashboard from './shared/PartnershipDashboard';
+import LinkedInOutreach from './shared/LinkedInOutreach';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -133,7 +134,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['linkedin', 'LinkedIn', <LinkedInOutreach key="li" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 // Clearly fake commission data (not from any real agreement) for layout checks only.
@@ -188,6 +189,23 @@ const AGENCY_SAMPLE: AgencyData = {
     { id: 3, prospect_id: 'ag1', kind: 'proposal_sent', note: null, detail: {}, actor: ME, at: d(1) },
     { id: 2, prospect_id: 'ag1', kind: 'call', note: 'Discussed sample intake.', detail: {}, actor: ME, at: d(2) },
     { id: 1, prospect_id: 'ag1', kind: 'created', note: null, detail: {}, actor: ME, at: d(5) },
+  ],
+  demoLinkedIn: [
+    { id: 'li1', reference: 'LI-26-DEMO01', name: 'Sample Person (demo)', company_name: null, phone: null, email: null, linkedin_url: null, notes: null, status: 'not_contacted',
+      last_contact_at: null, next_follow_up: null, assigned_to: ME, agency_id: null, converted_at: null, created_by: ME, created_at: d(1), updated_at: d(1) },
+    { id: 'li2', reference: 'LI-26-DEMO02', name: 'Another Person (demo)', company_name: 'Sample Recruiters (demo)', phone: '+00 0000 000009', email: null, linkedin_url: 'linkedin.com/in/sample',
+      notes: 'Met in a sample group', status: 'interested', last_contact_at: d(1), next_follow_up: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10), assigned_to: ME,
+      agency_id: null, converted_at: null, created_by: ME, created_at: d(4), updated_at: d(1) },
+  ],
+  demoTerms: { id: 1, title: 'Sample terms (demo)', body: 'Sample text only.', active: true, created_at: d(1) },
+  demoOptions: [
+    ...['tier_1', 'tier_2', 'tier_3'].flatMap((t, i) => [
+      { record_id: 'cr-a', university: 'Sample University A (demo)', country: 'Sampleland', study_level: 'PG', variant: null, intake: 'Sep', tier_id: t, tier_label: `Tier ${i + 1}`, commission_kind: 'percent', commission_value: 60 - i * 5, currency: null, conditions: null },
+      { record_id: 'cr-a2', university: 'Sample University A (demo)', country: 'Sampleland', study_level: 'UG', variant: null, intake: 'Jan', tier_id: t, tier_label: `Tier ${i + 1}`, commission_kind: 'percent', commission_value: 50 - i * 5, currency: null, conditions: 'Sample condition' },
+      { record_id: 'cr-b', university: 'Sample College B (demo)', country: 'Sampleland', study_level: null, variant: null, intake: null, tier_id: t, tier_label: `Tier ${i + 1}`, commission_kind: 'percent', commission_value: 45 - i * 5, currency: null, conditions: null },
+      { record_id: 'cr-c', university: 'Sample Institute C (demo)', country: 'Exampleland', study_level: null, variant: null, intake: null, tier_id: t, tier_label: `Tier ${i + 1}`, commission_kind: 'amount', commission_value: 1000 - i * 100, currency: 'XXX', conditions: null },
+    ]),
+    { record_id: 'cr-d', university: 'Sample School D (demo)', country: 'Exampleland', study_level: null, variant: null, intake: null, tier_id: 'tier_1', tier_label: 'Tier 1', commission_kind: 'percent', commission_value: 30, currency: null, conditions: null },
   ],
   registrations: [{ id: 'reg-demo', reference: 'PR-26-DEMO01', status: 'activated', link_status: 'closed', submitted_at: d(10), activated_at: d(4) }],
 };

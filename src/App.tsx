@@ -57,6 +57,7 @@ import ProposalConfirm from './pages/ProposalConfirm';
 import Agencies from './pages/shared/Agencies';
 import AgencyDetail from './pages/shared/AgencyDetail';
 import AgencyProposals from './pages/shared/AgencyProposals';
+import LinkedInOutreach from './pages/shared/LinkedInOutreach';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
@@ -277,6 +278,7 @@ export default function App() {
                 <Route path="agencies/new" element={<Agencies addNew />} />
                 <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
                 <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
+                <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
                 <Route path="partners/registrations" element={<PartnerRegistrations />} />
@@ -303,7 +305,13 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<StaffDashboard />} />
                 <Route path="agencies" element={<Agencies />} />
+                <Route path="agencies/new" element={<Agencies addNew />} />
+                <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
+                <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
+                <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
+                <Route path="partners" element={<Partners />} />
+                <Route path="partners/:id" element={<PartnerDetail />} />
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />
                 <Route path="courses" element={<Courses />} />

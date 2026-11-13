@@ -77,7 +77,10 @@ export const ACTIVITY: Record<string, string> = {
   registration_submitted: 'Registration submitted', registration_resubmitted: 'Registration corrected', registration_in_review: 'Registration under review',
   registration_changes_requested: 'Registration changes requested', registration_approved: 'Registration approved', registration_rejected: 'Registration rejected',
   registration_activated: 'Partner account activated', registration_in_progress: 'Agency started the registration form',
-  contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
+  contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', converted_from_linkedin: 'Created from a LinkedIn prospect',
+  linked_from_linkedin: 'LinkedIn prospect linked to this agency', mou_email_accepted: 'MOU emailed', mou_email_failed: 'MOU email failed',
+  mou_email_not_configured: 'MOU not emailed — no MOU published', registration_email_accepted: 'Registration form emailed',
+  registration_email_failed: 'Registration email failed', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
   reactivated: 'Reopened',
 };
 /** Stage label, marking onboarded agencies that have no verified partner account. */
@@ -117,7 +120,9 @@ export async function sendProposal(proposalId: string): Promise<{ ok: boolean; m
   return { ok: !!(data as { ok?: boolean })?.ok, message: 'Proposal emailed. It is waiting for the agency to confirm.' };
 }
 
-export interface AgencyData { agencies: Agency[]; proposals: Proposal[]; mous: Mou[]; activities: AgencyActivity[]; registrations: Registration[] }
+export interface AgencyData { agencies: Agency[]; proposals: Proposal[]; mous: Mou[]; activities: AgencyActivity[]; registrations: Registration[];
+  /** Harness only: sample commission options and terms for the proposal form. */
+  demoOptions?: unknown[]; demoTerms?: Terms | null; demoLinkedIn?: LinkedInProspect[] }
 
 /** Sample data for the dev harness (#/ui/hr/agencies); never used in the app itself. */
 export const AgencyDemo = createContext<AgencyData | null>(null);
@@ -197,4 +202,69 @@ export function matchesFilter(a: Agency, f: AgencyFilter, d: AgencyData): boolea
     case 'closed': return a.stage === 'closed';
     case 'follow_up': return a.stage === 'follow_up_required' || isOpenFollowUp(a);
   }
+}
+
+// ------------------------------------------------------------------ onboarding emails (0039)
+export interface AgencyEmail { id: number; prospect_id: string; proposal_id: string | null; kind: 'mou' | 'registration'; status: 'accepted' | 'delivered' | 'failed' | 'not_configured';
+  detail: string | null; attempts: number; updated_at: string }
+export const EMAIL_STATE: Record<AgencyEmail['status'], { label: string; tone: Tone }> = {
+  accepted: { label: 'Sent (not yet delivered)', tone: 'blue' }, delivered: { label: 'Delivered', tone: 'green' }, failed: { label: 'Failed', tone: 'red' },
+  not_configured: { label: 'No MOU published', tone: 'amber' },
+};
+
+/** Retries the MOU or registration email through the agency-proposal function. */
+export async function resendAgencyEmail(prospectId: string, kind: 'mou' | 'registration'): Promise<{ ok: boolean; message: string }> {
+  if (!supabase) return { ok: false, message: 'Not configured' };
+  const { error } = await supabase.functions.invoke('agency-proposal', { body: { action: 'resend', prospectId, kind } });
+  if (!error) return { ok: true, message: kind === 'mou' ? 'MOU email sent.' : 'A new registration link was emailed.' };
+  let msg = 'The email could not be sent. Please try again.';
+  try {
+    const body = (await (error as { context?: Response }).context?.json()) as { error?: string; code?: string } | undefined;
+    msg = body?.code === 'NOT_FOUND' ? 'The email service is not set up on the server yet (agency-proposal function).' : body?.error ?? msg;
+  } catch { /* keep default */ }
+  return { ok: false, message: msg };
+}
+
+// ------------------------------------------------------------------ LinkedIn outreach (0039)
+export type LinkedInStatus = 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
+export interface LinkedInProspect {
+  id: string; reference: string; name: string; company_name: string | null; phone: string | null; email: string | null; linkedin_url: string | null; notes: string | null;
+  status: LinkedInStatus; last_contact_at: string | null; next_follow_up: string | null; assigned_to: string | null; agency_id: string | null; converted_at: string | null;
+  created_by: string | null; created_at: string; updated_at: string;
+}
+export interface LinkedInActivity { id: number; prospect_id: string; kind: string; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
+export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = {
+  not_contacted: { label: 'Not contacted', tone: 'slate' }, contacted: { label: 'Contacted', tone: 'blue' }, responded: { label: 'Responded', tone: 'violet' },
+  interested: { label: 'Interested', tone: 'green' }, not_interested: { label: 'Not interested', tone: 'red' }, converted: { label: 'Converted to agency', tone: 'navy' },
+};
+export const LI_ACTIVITY: Record<string, string> = {
+  created: 'Prospect added', edited: 'Details edited', contacted: 'Connection contacted', follow_up: 'Follow-up message sent', response: 'Response received',
+  interested: 'Positive response', not_interested: 'Not interested', note: 'Note', follow_up_date: 'Follow-up scheduled', converted: 'Converted to agency',
+};
+
+export function useLinkedIn(enabled = true) {
+  const demo = useContext(AgencyDemo)?.demoLinkedIn;
+  const [rows, setRows] = useState<LinkedInProspect[] | null>(demo ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    if (demo) { setRows(demo); return; }
+    if (!supabase || !enabled) { setRows([]); return; }
+    const { data, error: e } = await supabase.from('linkedin_prospects').select('*').order('updated_at', { ascending: false }).limit(5000);
+    if (e) { setError(/linkedin_prospects/.test(e.message) ? 'Run migration 0039 to enable LinkedIn Outreach.' : 'Prospects could not be loaded.'); setRows([]); return; }
+    setError(null); setRows((data ?? []) as LinkedInProspect[]);
+  }, [enabled, demo]);
+  useEffect(() => {
+    void load();
+    if (!supabase || !enabled || demo) return;
+    const sb = supabase;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const soon = () => { clearTimeout(t); t = setTimeout(() => void load(), 250); };
+    const ch = sb.channel(`linkedin-${Math.random().toString(36).slice(2, 8)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'linkedin_prospects' }, soon)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'linkedin_activities' }, soon).subscribe();
+    const onFocus = () => document.visibilityState === 'visible' && soon();
+    document.addEventListener('visibilitychange', onFocus);
+    return () => { clearTimeout(t); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
+  }, [load, enabled, demo]);
+  return { rows, error, reload: load };
 }

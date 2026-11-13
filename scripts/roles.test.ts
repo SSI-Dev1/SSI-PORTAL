@@ -104,3 +104,12 @@ test('Clients & Branches in the Staff Portal: Partnership Officers only', () => 
   assert.equal(canOpenPath(staffNoOutreach, 'partners'), false, 'unchanged for other staff');
   assert.equal(canOpenPath(staffOfficer, 'users'), false);
 });
+
+test('LinkedIn Outreach: anyone with Agencies & proposals (Partnership Officer, Senior IRM), nobody else', () => {
+  const seniorIrm = { role: 'staff' as const, userRole: 'application_manager' as const, permissions: ['partners', 'students', 'applications', 'tasks', 'agency_outreach'], partnerModules: [] };
+  const appTeam = { role: 'staff' as const, userRole: 'application_manager' as const, permissions: ['students', 'applications', 'tasks'], partnerModules: [] };
+  assert.equal(canOpenPath(seniorIrm, 'agencies/linkedin'), true);
+  assert.equal(canOpenPath(seniorIrm, 'messages'), true, 'Senior IRM keeps Messages (application work)');
+  assert.equal(canOpenPath(appTeam, 'agencies/linkedin'), false);
+  assert.equal(canOpenPath(partner, 'agencies/linkedin'), false);
+});

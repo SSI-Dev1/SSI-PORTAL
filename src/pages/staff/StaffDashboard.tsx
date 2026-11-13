@@ -17,7 +17,11 @@ const CLOSED = ['Visa Granted', 'Visa Refused', 'Withdrawn', 'Rejected'];
 /** Partnership Officers see the partnership dashboard instead of student / application figures. */
 export default function StaffDashboard() {
   const { session } = useStore();
-  return partnershipFocused(session) ? <PartnershipDashboard /> : <BusinessStaffDashboard />;
+  if (partnershipFocused(session)) return <PartnershipDashboard />;
+  // Agencies access plus student / application work (e.g. Senior IRM): partnership first, then the rest.
+  if (session && session.userRole !== 'super_admin' && session.permissions.includes('agency_outreach'))
+    return <><PartnershipDashboard /><div className="mt-10"><BusinessStaffDashboard /></div></>;
+  return <BusinessStaffDashboard />;
 }
 
 function BusinessStaffDashboard() {

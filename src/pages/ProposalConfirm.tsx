@@ -89,7 +89,7 @@ export default function ProposalConfirm() {
             {v.message && <p className="mt-4 whitespace-pre-wrap rounded-2xl bg-surface p-4 text-sm shadow-sm">{v.message}</p>}
             <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-surface">
               <table className="w-full text-left text-sm">
-                <thead><tr className="border-b border-line bg-canvas/70 text-[11.5px] uppercase tracking-wider text-ink-mute"><th className="px-4 py-3">Your partnership commission</th><th className="px-4 py-3 text-right">Commission</th></tr></thead>
+                <thead><tr className="border-b border-line bg-canvas/70 text-[11.5px] uppercase tracking-wider text-ink-mute"><th className="px-4 py-3">Your Partnership Commission Details</th><th className="px-4 py-3 text-right">Commission</th></tr></thead>
                 <tbody>
                   {v.universities.map((u, i) => (
                     <tr key={i} className="border-b border-line last:border-0">

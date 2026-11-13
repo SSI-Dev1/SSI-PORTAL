@@ -17,10 +17,10 @@
 // Deploy:  supabase functions deploy agency-proposal --no-verify-jwt --project-ref <ref>
 // Uses the same secrets as partner-registration: ALLOWED_ORIGINS, BREVO_API_KEY, EMAIL_FROM_ADDRESS,
 // EMAIL_FROM_NAME, PORTAL_PUBLIC_URL.
-import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.117.3';
 import { mailConfig, sendViaBrevo } from '../_shared/credentials.ts';
 import { TOKEN_RE, linkEmail } from '../_shared/registration.ts';
-import { proposalEmail, type ProposalArrangement } from '../_shared/proposal.ts';
+import { mouEmail, proposalEmail, type ProposalArrangement } from '../_shared/proposal.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -49,6 +49,38 @@ function newToken() {
 }
 const longDate = (d: string | Date) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const portal = () => MAIL.portalUrl.replace(/\/$/, '');
+type Admin = SupabaseClient;
+
+/** Emails the published MOU (if any) and records the outcome on its own. */
+async function sendMou(admin: Admin, prospectId: string, proposalId: string | null, actor: string | null) {
+  const { data: doc } = await admin.from('mou_documents').select('title, body').eq('active', true).maybeSingle();
+  if (!doc) { await admin.rpc('record_agency_email', { p_prospect: prospectId, p_proposal: proposalId, p_kind: 'mou', p_status: 'not_configured', p_message: null, p_detail: 'No MOU document is published', p_actor: actor }); return 'not_configured'; }
+  const { data: a } = await admin.from('agency_prospects').select('company_name, contact_name, email').eq('id', prospectId).maybeSingle();
+  const { data: pr } = proposalId ? await admin.from('agency_proposals').select('reference, recipient_name, recipient_email, company_name').eq('id', proposalId).maybeSingle() : { data: null };
+  const to = (pr?.recipient_email as string | undefined) ?? (a?.email as string | undefined);
+  const company = (pr?.company_name as string | undefined) ?? (a?.company_name as string | undefined) ?? '';
+  if (!to) { await admin.rpc('record_agency_email', { p_prospect: prospectId, p_proposal: proposalId, p_kind: 'mou', p_status: 'failed', p_message: null, p_detail: 'No email address for this agency', p_actor: actor }); return 'failed'; }
+  const sent = await sendViaBrevo(MAIL, { email: to, name: company }, mouEmail({ companyName: company, recipientName: (pr?.recipient_name as string | undefined) ?? (a?.contact_name as string | undefined) ?? company,
+    title: doc.title as string, body: doc.body as string, reference: (pr?.reference as string | undefined) ?? 'MOU' }));
+  await admin.rpc('record_agency_email', { p_prospect: prospectId, p_proposal: proposalId, p_kind: 'mou', p_status: sent.ok ? 'accepted' : 'failed',
+    p_message: sent.ok ? sent.messageId : null, p_detail: sent.ok ? null : sent.detail, p_actor: actor });
+  return sent.ok ? 'accepted' : 'failed';
+}
+
+/** Emails a registration link (token issued by the database) and records the outcome on its own. */
+async function sendRegistration(admin: Admin, prospectId: string, proposalId: string | null, actor: string | null,
+  g: { registration_id?: string; token?: string; expires_at?: string; company_name?: string; email?: string }) {
+  if (!g.token || !g.email) {
+    await admin.rpc('record_agency_email', { p_prospect: prospectId, p_proposal: proposalId, p_kind: 'registration', p_status: 'failed', p_message: null, p_detail: 'No email address for this agency', p_actor: actor });
+    return 'failed';
+  }
+  const sent = await sendViaBrevo(MAIL, { email: g.email, name: g.company_name ?? '' },
+    linkEmail('invite', g.company_name ?? '', `${portal()}/#/partner-registration/${g.token}`, longDate(g.expires_at ?? new Date())));
+  await admin.from('partner_registration_events').insert({ registration_id: g.registration_id, actor, action: sent.ok ? 'link_emailed' : 'link_email_failed', detail: { kind: 'invite', source: 'agency' } });
+  await admin.rpc('record_agency_email', { p_prospect: prospectId, p_proposal: proposalId, p_kind: 'registration', p_status: sent.ok ? 'accepted' : 'failed',
+    p_message: sent.ok ? sent.messageId : null, p_detail: sent.ok ? null : sent.detail, p_actor: actor });
+  return sent.ok ? 'accepted' : 'failed';
+}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -98,6 +130,34 @@ Deno.serve(async (req) => {
       return json(200, { ok: true, state: 'awaiting_confirmation', email: 'accepted' }, origin);
     }
 
+    // ---------------------------------------------------------------- signed in: retry an onboarding email
+    if (action === 'resend') {
+      const auth = req.headers.get('Authorization') ?? '';
+      if (!auth.startsWith('Bearer ')) throw new Fail(401, 'Sign in again.');
+      const user = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
+      const { data: who } = await user.auth.getUser();
+      const me = who.user?.id;
+      const prospectId = String(body.prospectId ?? '');
+      const kind = body.kind === 'mou' ? 'mou' : body.kind === 'registration' ? 'registration' : '';
+      if (!me || !/^[0-9a-f-]{36}$/.test(prospectId) || !kind) throw new Fail(400, 'Unknown request.');
+      const { data: ok } = await user.rpc('agency_can_see', { p_prospect: prospectId });
+      if (ok !== true) throw new Fail(403, 'You cannot update this agency.');
+      await limit(`agency_resend:${me}`, 20, 60);
+      const { data: last } = await admin.from('agency_emails').select('proposal_id').eq('prospect_id', prospectId).eq('kind', kind).maybeSingle();
+      const proposalId = (last?.proposal_id as string | null | undefined) ?? null;
+      if (kind === 'mou') {
+        const r = await sendMou(admin, prospectId, proposalId, me);
+        if (r === 'not_configured') throw new Fail(409, 'No MOU document is published. An administrator publishes it in Agencies → Proposal terms & settings.');
+        return json(r === 'accepted' ? 200 : 502, r === 'accepted' ? { ok: true } : { error: 'The MOU email could not be sent. Try again later.' }, origin);
+      }
+      const { data: g } = await admin.rpc('reissue_agency_registration_link', { p_prospect: prospectId });
+      const st = (g as { state?: string } | null)?.state;
+      if (st === 'none') throw new Fail(409, 'This agency has no registration yet. It is created when the agency confirms a proposal, or an administrator issues it.');
+      if (st === 'closed') throw new Fail(409, 'The registration has already been submitted — no new link is needed.');
+      const r = await sendRegistration(admin, prospectId, proposalId, me, g as Record<string, string>);
+      return json(r === 'accepted' ? 200 : 502, r === 'accepted' ? { ok: true } : { error: 'The registration email could not be sent. Try again later.' }, origin);
+    }
+
     // ---------------------------------------------------------------- public: load · confirm · decline
     if (!['load', 'confirm', 'decline'].includes(action)) throw new Fail(400, 'Unknown request.');
     const { data: badRows } = await admin.from('partner_registration_hits').select('hits').eq('bucket', `badproposal:${ip}`)
@@ -127,16 +187,15 @@ Deno.serve(async (req) => {
     if (confErr) throw new Fail(409, /full name/.test(confErr.message) ? 'Type your full name to confirm.' : 'This proposal can no longer be confirmed.');
     let registration: 'emailed' | 'manual' | 'exists' | 'email_failed' = 'exists';
     if (!(conf as { duplicate?: boolean }).duplicate) {
+      const { data: pr } = await admin.from('agency_proposals').select('prospect_id').eq('id', proposalId).maybeSingle();
+      const prospectId = pr?.prospect_id as string | undefined;
       const { data: reg, error: regErr } = await admin.rpc('issue_registration_for_proposal', { p_proposal: proposalId });
       const g = reg as { state: string; registration_id?: string; token?: string; expires_at?: string; company_name?: string; email?: string } | null;
       if (regErr || !g) registration = 'manual';
-      else if (g.state === 'created' && g.token && g.email) {
-        const sent = await sendViaBrevo(MAIL, { email: g.email, name: g.company_name ?? '' },
-          linkEmail('invite', g.company_name ?? '', `${portal()}/#/partner-registration/${g.token}`, longDate(g.expires_at ?? new Date())));
-        await admin.from('partner_registration_events').insert({ registration_id: g.registration_id, actor: null,
-          action: sent.ok ? 'link_emailed' : 'link_email_failed', detail: { kind: 'invite', source: 'proposal' } });
-        registration = sent.ok ? 'emailed' : 'email_failed';
-      } else registration = g.state === 'manual' ? 'manual' : 'exists';
+      else if (g.state === 'created' && prospectId) registration = (await sendRegistration(admin, prospectId, String(proposalId), null, g)) === 'accepted' ? 'emailed' : 'email_failed';
+      else registration = g.state === 'manual' ? 'manual' : 'exists';
+      // The MOU goes out on its own: a failure of one email never stops the other.
+      if (prospectId) await sendMou(admin, prospectId, String(proposalId), null).catch(() => 'failed');
     }
     return json(200, { ...visible, state: 'confirmed', registration }, origin);
   } catch (e) {

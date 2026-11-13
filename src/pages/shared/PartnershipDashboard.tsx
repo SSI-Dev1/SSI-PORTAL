@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Ban, Building2, CalendarClock, CheckCircle2, FileSignature, Handshake, ListFilter, Moon, PhoneCall, Plus, Send, UserCheck, UserX,
+  Ban, Building2, CalendarClock, CheckCircle2, ClipboardList, FileSignature, Handshake, ListFilter, Moon, PhoneCall, Plus, Send, UserCheck, UserX,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, EmptyState } from '../../components/ui';
 import { KPI } from '../../components/hr';
@@ -36,7 +36,9 @@ export default function PartnershipDashboard() {
     { label: 'Connected', f: 'connected', icon: UserCheck, tone: 'green', hint: 'Contact status Connected' },
     { label: 'Not connected', f: 'not_connected', icon: UserX, tone: 'amber', hint: 'Tried, not yet connected' },
     { label: 'Proposals sent', f: 'proposal_sent', icon: Send, tone: 'orange', hint: 'Currently at Proposal Sent' },
+    { label: 'Proposal confirmed', f: 'proposal_confirmed', icon: CheckCircle2, tone: 'green', hint: 'Agency confirmed, onboarding next' },
     { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy', hint: 'Currently at MOU Sent (not signed)' },
+    { label: 'Registration pending', f: 'registration_pending', icon: ClipboardList, tone: 'amber', hint: 'Form sent, submitted or under review' },
     { label: 'Onboarded partners', f: 'onboarded', icon: Handshake, tone: 'green', value: data ? verified : '…', hint: historical ? `With a partner account · +${historical} historical` : 'With a partner account' },
     { label: 'Inactive agencies', f: 'inactive', icon: Moon, tone: 'navy', hint: 'Marked Inactive' },
     { label: 'Closed agencies', f: 'closed', icon: Ban, tone: 'red', hint: 'Marked Closed (kept in the list)' },

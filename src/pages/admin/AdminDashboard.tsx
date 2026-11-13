@@ -31,7 +31,11 @@ import { cn, daysUntil, formatDate, greeting, money } from '../../lib/utils';
 /** Partnership Officers see the partnership dashboard instead of student / application figures. */
 export default function AdminDashboard() {
   const { session } = useStore();
-  return partnershipFocused(session) ? <PartnershipDashboard /> : <BusinessAdminDashboard />;
+  if (partnershipFocused(session)) return <PartnershipDashboard />;
+  // Agencies access plus student / application work (e.g. Senior IRM): partnership first, then the rest.
+  if (session && session.userRole !== 'super_admin' && session.permissions.includes('agency_outreach'))
+    return <><PartnershipDashboard /><div className="mt-10"><BusinessAdminDashboard /></div></>;
+  return <BusinessAdminDashboard />;
 }
 
 function BusinessAdminDashboard() {

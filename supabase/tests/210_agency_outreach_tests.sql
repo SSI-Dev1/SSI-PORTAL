@@ -142,9 +142,9 @@ select pg_temp.check((select count(*) from public.proposal_commission_options(nu
 select pg_temp.check(pg_get_function_result('public.proposal_commission_options(text)'::regprocedure) !~ '(route|provider|raw|received|margin|internal)', 'options have no internal columns');
 -- custom commission needs approval
 select public.create_agency_proposal(:'ag_phone', jsonb_build_object('company_name', 'Phone Agency', 'recipient_name', 'Anu', 'recipient_email', 'anu@example.com', 'country', 'India',
-  'arrangement', 'custom', 'custom_kind', 'percent', 'custom_value', 22, 'terms_id', :terms_id,
-  'record_ids', (select jsonb_agg(id) from public.commission_records where university_name = 'Bulk University 3')), gen_random_uuid()) ->> 'id' as custom_prop \gset
-select pg_temp.check((select status = 'pending_approval' from public.agency_proposals where id = :'custom_prop'), 'a custom commission waits for approval');
+  'arrangement', 'custom', 'base_tier_id', 'tier_1', 'terms_id', :terms_id,
+  'items', (select jsonb_agg(jsonb_build_object('record_id', id, 'value', 22)) from public.commission_records where university_name = 'Bulk University 3')), gen_random_uuid()) ->> 'id' as custom_prop \gset
+select pg_temp.check((select status = 'pending_approval' from public.agency_proposals where id = :'custom_prop'), 'a custom commission above the base rate waits for approval');
 select pg_temp.denied(format($$select public.decide_agency_proposal(%L, true)$$, :'custom_prop'), 'the officer cannot approve her own custom commission', '%commission managers%');
 commit;
 begin; select pg_temp.act_as(:super);

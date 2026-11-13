@@ -46,7 +46,7 @@ ${rows.map((u) => `<tr><td style="${td}">${escapeHtml(uniLabel(u))}<br><span sty
 <p style="font-size:15px;line-height:1.5">Greetings from SSI GLOBAL!</p>
 <p style="font-size:15px;line-height:1.5">We are pleased to share our proposed partnership commission arrangements with <b>${escapeHtml(p.companyName)}</b>. Please find below the commission details applicable to your organization.</p>
 ${p.message ? `<p style="font-size:14px;line-height:1.5;background:#f4f6f8;border-radius:8px;padding:12px 14px">${escapeHtml(p.message).replace(/\n/g, '<br>')}</p>` : ''}
-<p style="font-size:14px;margin:16px 0 4px;letter-spacing:.3px"><b>YOUR PARTNERSHIP COMMISSION</b></p>
+<p style="font-size:14px;margin:16px 0 4px;letter-spacing:.3px"><b>Your Partnership Commission Details</b></p>
 ${table}
 <p style="font-size:13px;color:#5b6b73;margin:0 0 12px">Valid until ${escapeHtml(p.expires)}.</p>
 <p style="font-size:14px;margin:16px 0 4px"><b>${escapeHtml(p.termsTitle)}</b></p>
@@ -62,7 +62,7 @@ ${table}
     'Greetings from SSI GLOBAL!', '',
     `We are pleased to share our proposed partnership commission arrangements with ${p.companyName}. Please find below the commission details applicable to your organization.`, '',
     ...(p.message ? [p.message, ''] : []),
-    'YOUR PARTNERSHIP COMMISSION',
+    'YOUR PARTNERSHIP COMMISSION DETAILS',
     ...rows.flatMap((u) => [
       `University: ${uniLabel(u)}${u.country ? ` (${u.country})` : ''}`,
       `Commission: ${fmtRate(u.commission_kind, u.commission_value, u.currency)}`,
@@ -79,4 +79,22 @@ ${table}
     `Proposal ${p.reference}`,
   ].join('\n');
   return { subject: proposalSubject(p.companyName), html, text };
+}
+
+// ------------------------------------------------------------------ MOU email (after confirmation)
+export interface MouMail { companyName: string; recipientName: string; title: string; body: string; reference: string }
+export const mouSubject = (company: string) => `SSI GLOBAL — Memorandum of Understanding for ${company}`;
+
+/** The approved MOU text published by SSI GLOBAL. Sending it never marks it as signed. */
+export function mouEmail(m: MouMail) {
+  const html = shell(m.title, `
+<p style="font-size:15px;line-height:1.5">Dear ${escapeHtml(m.recipientName)},</p>
+<p style="font-size:15px;line-height:1.5">Thank you for confirming our partnership proposal. Please find below the Memorandum of Understanding between SSI GLOBAL and <b>${escapeHtml(m.companyName)}</b> for your review.</p>
+<div style="font-size:13px;line-height:1.6;color:#33444c;border-left:3px solid #FBA51E;padding:6px 14px;margin:14px 0">${escapeHtml(m.body).replace(/\n/g, '<br>')}</div>
+<p style="font-size:14px;line-height:1.5">Your SSI GLOBAL Partnerships Team will contact you to complete the signing. You will also receive your partner registration form in a separate email.</p>
+<p style="font-size:12px;color:#5b6b73">Reference ${escapeHtml(m.reference)}. This email is not a signed agreement.</p>`, 'SSI GLOBAL Partnerships Team');
+  const text = [`Dear ${m.recipientName},`, '', `Thank you for confirming our partnership proposal. Below is the Memorandum of Understanding between SSI GLOBAL and ${m.companyName} for your review.`, '',
+    m.title, m.body, '', 'Your SSI GLOBAL Partnerships Team will contact you to complete the signing. You will also receive your partner registration form in a separate email.', '',
+    `Reference ${m.reference}. This email is not a signed agreement.`, '', 'SSI GLOBAL Partnerships Team'].join('\n');
+  return { subject: mouSubject(m.companyName), html, text };
 }

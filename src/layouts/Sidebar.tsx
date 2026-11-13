@@ -49,7 +49,7 @@ import { Logo, LogoMark } from '../components/brand';
 import { Menu, Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { Session } from '../data/types';
-import { canOpen, canOpenPath, isHR } from '../auth/roles';
+import { canOpen, canOpenPath, canSwitchPortals, hrPrimary, isHR } from '../auth/roles';
 
 export const SIDEBAR_EXPANDED = 264;
 export const SIDEBAR_RAIL = 76;
@@ -230,7 +230,8 @@ export const workspaceOf = (pathname: string): WorkspaceId => {
 
 /** Workspaces this user can switch between without signing in again. */
 export function workspacesFor(session: Session | null, designationName: (id: string) => string) {
-  if (!session || session.role === 'client') return [];
+  // Only Super Admins switch portals; every other employee stays in one workspace.
+  if (!session || !canSwitchPortals(session)) return [];
   const out: { id: string; label: string; to: string; designation?: string }[] = [
     { id: 'business', label: session.role === 'admin' ? 'Admin Portal' : 'Staff Portal', to: 'dashboard' },
   ];
@@ -308,9 +309,40 @@ const partnershipNav: NavSection[] = [
 ];
 
 /** Menu for this session: only modules its role / organisation may use (the database enforces the same). */
+/**
+ * One menu for an employee who cannot switch portals: their main work first, then their
+ * employee self-service and (with HR access) the HR pages, so nothing needs a portal switch.
+ */
+function singleWorkspaceNav(session: Session): NavSection[] {
+  const emp = !!(session as { employee?: boolean }).employee;
+  const hr = canOpen(session, 'hr') ? hrNav : [];
+  let parts: NavSection[];
+  if (partnershipFocused(session) && emp) parts = [...partnershipNav, ...hr];
+  else if (hrPrimary(session)) parts = [...hrNav, ...(emp ? employeeNav : [])];
+  else if (session.role === 'staff' && emp) parts = [...employeeNav, ...staffNav, ...hr];
+  else parts = [...(session.role === 'admin' ? adminNav : staffNav), ...(emp ? employeeNav : []), ...hr];
+  const relabel: Record<string, string> = { 'work/dashboard': 'My Workspace', 'hr/dashboard': 'HR Dashboard' };
+  const seenTo = new Set<string>();
+  const seenLabel = new Set<string>();
+  return parts.map((sec) => ({
+    ...sec,
+    items: sec.items
+      // Employees use My Profile in self-service; the portal Profile / Settings page would be a duplicate.
+      .filter((n) => !(emp && (n.to === 'profile' || n.to === 'settings')))
+      .map((n) => (relabel[n.to] ? { ...n, label: relabel[n.to] } : n))
+      .filter((n) => {
+        if (seenTo.has(n.to) || seenLabel.has(n.label)) return false;
+        seenTo.add(n.to);
+        seenLabel.add(n.label);
+        return true;
+      }),
+  }));
+}
+
 export function navFor(session: Session | null, workspace: WorkspaceId = 'business'): NavSection[] {
   if (!session) return [];
   const sets = session.role === 'client' ? clientNav
+    : !canSwitchPortals(session) ? singleWorkspaceNav(session)
     : workspace === 'hr' ? hrNav
     : partnershipFocused(session) && (session as { employee?: boolean }).employee ? partnershipNav
     : workspace === 'work' ? employeeNav
@@ -373,6 +405,8 @@ interface ContentProps {
   collapsed: boolean;
   portal: 'admin' | 'staff' | 'client';
   orgName?: string;
+  /** Overrides the portal name on the card (employees who do not switch portals). */
+  portalLabel?: string;
   badges: Record<string, number>;
   /** Workspaces the user can switch between (internal users). */
   workspaces?: { id: string; label: string; to: string; designation?: string }[];
@@ -388,6 +422,7 @@ function SidebarContent({
   collapsed,
   portal,
   orgName,
+  portalLabel,
   badges,
   workspaces = [],
   currentWorkspace,
@@ -420,7 +455,7 @@ function SidebarContent({
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="whitespace-nowrap text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-300">
-              {current && current.id !== 'business' ? (current.id === 'hr' ? 'HR Portal' : 'Employee Workspace') : portal === 'admin' ? 'Admin Portal' : portal === 'staff' ? 'Staff Portal' : 'Partner Portal'}
+              {portalLabel ?? (current && current.id !== 'business' ? (current.id === 'hr' ? 'HR Portal' : 'Employee Workspace') : portal === 'admin' ? 'Admin Portal' : portal === 'staff' ? 'Staff Portal' : 'Partner Portal')}
             </div>
             <div className="mt-0.5 truncate text-[13px] font-semibold">
               {current?.designation ? current.label : portal === 'client' ? orgName : orgName || 'SSI GLOBAL · Head Office'}

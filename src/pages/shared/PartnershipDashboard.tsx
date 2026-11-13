@@ -31,23 +31,28 @@ export default function PartnershipDashboard() {
   const toClients = (tab: string) => navigate(`../partners?tab=${tab}`, { relative: 'path' });
   // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
   // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
-  const cards: { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string; open?: () => void }[] = [
+  type Card = { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string; open?: () => void };
+  // Business priority (fixed order on every screen size): Total agencies first, Onboarded clients second.
+  const cards: Card[] = [
     { label: 'Total agencies', f: 'all', icon: Building2, tone: 'navy', hint: 'Every agency in the Agency List' },
-    { label: 'Newly added', f: 'new_added', icon: Plus, tone: 'orange', hint: 'Added this month (imports not counted)' },
-    { label: 'Agencies contacted', f: 'new_contacted', icon: PhoneCall, tone: 'orange', hint: 'First outreach recorded this month' },
-    { label: 'Connected', f: 'connected', icon: UserCheck, tone: 'green', hint: 'Contact status Connected' },
-    { label: 'Not connected', f: 'not_connected', icon: UserX, tone: 'amber', hint: 'Tried, not yet connected' },
-    { label: 'Proposals sent', f: 'proposal_sent', icon: Send, tone: 'orange', hint: 'Currently at Proposal Sent' },
-    { label: 'Proposal confirmed', f: 'proposal_confirmed', icon: CheckCircle2, tone: 'green', hint: 'Agency confirmed, onboarding next' },
-    { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy', hint: 'Currently at MOU Sent (not signed)' },
-    { label: 'Registration pending', f: 'registration_pending', icon: ClipboardList, tone: 'amber', hint: 'Form sent, submitted or under review' },
     { label: 'Onboarded clients', f: 'onboarded', icon: Handshake, tone: 'green', value: summary ? summary.total : '…', open: () => toClients('onboarded'),
       hint: summary ? `Company-wide · ${summary.historical} historical · ${summary.verified} verified${summary.unlinked ? ` · ${summary.unlinked} to review` : ''}` : 'Company-wide' },
-    { label: 'My onboarded partners', f: 'onboarded', icon: Handshake, tone: 'navy', value: summary ? summary.mine : '…', open: () => toClients('mine'), hint: 'Clients where you are the Partnership Officer' },
-    { label: 'Portal active', f: 'onboarded', icon: UserCheck, tone: 'green', value: summary ? summary.portal_active : '…', open: () => toClients('active'), hint: `Partner login active${summary?.no_account ? ` · ${summary.no_account} not activated` : ''}` },
+    { label: 'Proposals sent', f: 'proposal_sent', icon: Send, tone: 'orange', hint: 'Currently at Proposal Sent' },
+    { label: 'Pending follow-ups', f: 'follow_up', icon: CalendarClock, tone: 'amber', hint: 'Follow-up required or a follow-up date still open' },
+    { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy', hint: 'Currently at MOU Sent (not signed)' },
+    { label: 'Registration pending', f: 'registration_pending', icon: ClipboardList, tone: 'amber', hint: 'Form sent, submitted or under review' },
+    { label: 'Connected agencies', f: 'connected', icon: UserCheck, tone: 'green', hint: 'Contact status Connected' },
+    { label: 'Not connected agencies', f: 'not_connected', icon: UserX, tone: 'amber', hint: 'Tried, not yet connected' },
     { label: 'Inactive agencies', f: 'inactive', icon: Moon, tone: 'navy', hint: 'Marked Inactive' },
     { label: 'Closed agencies', f: 'closed', icon: Ban, tone: 'red', hint: 'Marked Closed (kept in the list)' },
-    { label: 'Pending follow-ups', f: 'follow_up', icon: CalendarClock, tone: 'amber', value: followUps.length, hint: 'Follow-up date set, still open' },
+  ];
+  // Secondary: personal results, portal access and this month's activity.
+  const more: Card[] = [
+    { label: 'My onboarded partners', f: 'onboarded', icon: Handshake, tone: 'navy', value: summary ? summary.mine : '…', open: () => toClients('mine'), hint: 'Clients where you are the Partnership Officer' },
+    { label: 'Portal active', f: 'onboarded', icon: UserCheck, tone: 'green', value: summary ? summary.portal_active : '…', open: () => toClients('active'), hint: `Partner login active${summary?.no_account ? ` · ${summary.no_account} not activated` : ''}` },
+    { label: 'Proposal confirmed', f: 'proposal_confirmed', icon: CheckCircle2, tone: 'green', hint: 'Agency confirmed, onboarding next' },
+    { label: 'Newly added', f: 'new_added', icon: Plus, tone: 'orange', hint: 'Added this month (imports not counted)' },
+    { label: 'Agencies contacted', f: 'new_contacted', icon: PhoneCall, tone: 'orange', hint: 'First outreach recorded this month' },
   ];
   const proposals = (data?.proposals ?? []).filter((p) => p.sent_at).slice(0, 6);
   const pending = (data?.proposals ?? []).filter((p) => p.status === 'awaiting_confirmation');
@@ -70,8 +75,12 @@ export default function PartnershipDashboard() {
         </div>
       </div>
       {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error}</p>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+      <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={c.open ?? (() => go(c.f))} />)}
+      </div>
+      <h2 className="mb-2 mt-5 text-[11px] font-semibold uppercase tracking-[0.13em] text-ink-mute">My results, portal access and this month</h2>
+      <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+        {more.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={c.open ?? (() => go(c.f))} />)}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">

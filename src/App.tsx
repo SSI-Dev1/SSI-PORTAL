@@ -31,7 +31,7 @@ import UserManagement from './pages/admin/UserManagement';
 import StaffDashboard from './pages/staff/StaffDashboard';
 import { HRProvider } from './store/hr';
 import { ChatProvider } from './store/chat';
-import { isHR } from './auth/roles';
+import { canSwitchPortals, hrPrimary, isHR } from './auth/roles';
 import type { Session } from './data/types';
 import WorkDashboard from './pages/work/WorkDashboard';
 import MyReport from './pages/work/MyReport';
@@ -86,7 +86,9 @@ function FullScreenLoader() {
 
 /** Where a user lands after sign-in: Admin → Admin Portal, HR → HR Portal, other employees → their workspace. */
 function homeFor(session: Session) {
-  if (session.role === 'client' || session.role === 'admin') return `/${session.role}/dashboard`;
+  if (session.role === 'client' || canSwitchPortals(session)) return `/${session.role}/dashboard`;
+  // Admin Staff who are employees: their one workspace (HR Portal for HR, otherwise the dashboard).
+  if (session.role === 'admin') return hrPrimary(session) ? `/admin/${isHR(session) ? 'hr/dashboard' : 'hr/employees'}` : '/admin/dashboard';
   if (isHR(session)) return '/staff/hr/dashboard';
   if (session.employee) return '/staff/work/dashboard';
   return '/staff/dashboard';

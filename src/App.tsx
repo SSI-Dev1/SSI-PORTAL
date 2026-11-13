@@ -53,6 +53,9 @@ import Management from './pages/hr/Management';
 import Commissions from './pages/shared/Commissions';
 import PartnerRegistrations from './pages/admin/PartnerRegistrations';
 import PartnerRegistration from './pages/PartnerRegistration';
+import ProposalConfirm from './pages/ProposalConfirm';
+import Agencies from './pages/shared/Agencies';
+import AgencyDetail from './pages/shared/AgencyDetail';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
@@ -178,6 +181,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/partner-registration/:token" element={<PartnerRegistration />} />
+              <Route path="/proposal/:token" element={<ProposalConfirm />} />
             {ChatSearchDemo && (
               <Route
                 path="/ui/chat"
@@ -268,6 +272,8 @@ export default function App() {
               >
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<AdminDashboard />} />
+                <Route path="agencies" element={<Agencies />} />
+                <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
                 <Route path="partners/registrations" element={<PartnerRegistrations />} />
                 <Route path="partners/:id" element={<PartnerDetail />} />
@@ -292,6 +298,8 @@ export default function App() {
               >
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<StaffDashboard />} />
+                <Route path="agencies" element={<Agencies />} />
+                <Route path="agencies/:id" element={<AgencyDetail />} />
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />
                 <Route path="courses" element={<Courses />} />

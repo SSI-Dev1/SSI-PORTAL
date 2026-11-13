@@ -28,7 +28,7 @@ export function sixDigitCode(): string {
   }
 }
 
-const shell = (title: string, body: string) => `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#06242F">
+export const shell = (title: string, body: string) => `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#06242F">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden">
 <tr><td style="background:#06242F;padding:20px 24px;color:#ffffff;font-size:18px;font-weight:bold">SSI GLOBAL</td></tr>

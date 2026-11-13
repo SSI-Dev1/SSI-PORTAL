@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
+import { Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -70,6 +70,7 @@ const adminNav: NavSection[] = [
     { to: 'reports', label: 'Reports', icon: BarChart3 },
   ] },
   { id: 'people', title: 'Partners & Students', items: [
+    { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
@@ -102,6 +103,7 @@ const staffNav: NavSection[] = [
     { to: 'reports', label: 'Reports', icon: BarChart3 },
   ] },
   { id: 'work', title: 'My Work', items: [
+    { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -144,6 +146,7 @@ const employeeNav: NavSection[] = [
     { to: 'work/assignments', label: 'Team Assignments', icon: Briefcase },
   ] },
   { id: 'w-tools', title: 'Work Tools', items: [
+    { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'students', label: 'Students', icon: Users },
@@ -192,7 +195,7 @@ const hrNav: NavSection[] = [
 
 export type WorkspaceId = 'business' | 'hr' | 'work';
 /** Pages listed under "Work Tools" in the Employee Workspace (shared with the Staff Portal). */
-const WORK_TOOLS = ['applications', 'messages', 'students', 'course-finder', 'course-search', 'tasks', 'commissions'];
+const WORK_TOOLS = ['agencies', 'applications', 'messages', 'students', 'course-finder', 'course-search', 'tasks', 'commissions'];
 const WS_NOW = 'ssi-workspace-now';
 
 /**

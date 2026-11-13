@@ -24,9 +24,17 @@ import { StatusDonut, TopCountries, TrendChart, monthlyTrend } from '../../compo
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { LiveActivity } from '../../components/LiveActivity';
 import { useLookup, useStore } from '../../store/store';
+import { partnershipFocused } from '../../lib/agencies';
+import PartnershipDashboard from '../shared/PartnershipDashboard';
 import { cn, daysUntil, formatDate, greeting, money } from '../../lib/utils';
 
+/** Partnership Officers see the partnership dashboard instead of student / application figures. */
 export default function AdminDashboard() {
+  const { session } = useStore();
+  return partnershipFocused(session) ? <PartnershipDashboard /> : <BusinessAdminDashboard />;
+}
+
+function BusinessAdminDashboard() {
   const { db, session } = useStore();
   const lk = useLookup();
   const navigate = useNavigate();

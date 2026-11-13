@@ -8,11 +8,19 @@ import { Badge, Card, CardHeader, EmptyState } from '../../components/ui';
 import { StatCard } from '../../components/StatCard';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { useLookup, useStore } from '../../store/store';
+import { partnershipFocused } from '../../lib/agencies';
+import PartnershipDashboard from '../shared/PartnershipDashboard';
 import { appStatusTone, cn, daysUntil, formatDate, greeting } from '../../lib/utils';
 
 const CLOSED = ['Visa Granted', 'Visa Refused', 'Withdrawn', 'Rejected'];
 
+/** Partnership Officers see the partnership dashboard instead of student / application figures. */
 export default function StaffDashboard() {
+  const { session } = useStore();
+  return partnershipFocused(session) ? <PartnershipDashboard /> : <BusinessStaffDashboard />;
+}
+
+function BusinessStaffDashboard() {
   const { db, session } = useStore();
   const lk = useLookup();
   const navigate = useNavigate();

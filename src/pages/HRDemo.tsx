@@ -26,6 +26,10 @@ import Management from './hr/Management';
 import { MyDocuments, MyTeamMembers } from './work/SelfService';
 import Commissions from './shared/Commissions';
 import { CommissionDemo, type CommissionData } from '../lib/commissions';
+import { AgencyDemo, type AgencyData } from '../lib/agencies';
+import Agencies from './shared/Agencies';
+import AgencyDetail from './shared/AgencyDetail';
+import PartnershipDashboard from './shared/PartnershipDashboard';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -129,7 +133,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 // Clearly fake commission data (not from any real agreement) for layout checks only.
@@ -153,10 +157,39 @@ const COMMISSION_SAMPLE: CommissionData = {
   history: [], imports: [],
 };
 
+// Clearly fake agency data (no real agency or person) for layout checks only.
+const d = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+const AGENCY_SAMPLE: AgencyData = {
+  agencies: [
+    { id: 'ag1', reference: 'AG-26-DEMO01', company_name: 'Sample Agency A (demo)', contact_name: 'Sample Contact', phone: '+00 0000 000001', email: 'a@example.test', country: 'Sampleland',
+      notes: 'Met at a sample fair.', contact_status: 'connected', contact_changed_by: ME, contact_changed_at: d(3), first_connected_at: d(3), stage: 'proposal_sent', stage_changed_at: d(1),
+      assigned_officer: ME, last_contact_at: d(1), next_follow_up: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), selected_tier: 'Tier 1', registration_id: null,
+      partner_id: null, created_by: ME, created_at: d(5), updated_at: d(1), stage_changed_by: ME } as never,
+    { id: 'ag2', reference: 'AG-26-DEMO02', company_name: null, contact_name: null, phone: '+00 0000 000002', email: null, country: null, notes: null, contact_status: 'not_connected',
+      contact_changed_by: ME, contact_changed_at: d(2), first_connected_at: null, stage: 'new_prospect', stage_changed_at: null, assigned_officer: ME, last_contact_at: null,
+      next_follow_up: null, selected_tier: null, registration_id: null, partner_id: null, created_by: ME, created_at: d(2), updated_at: d(2) } as never,
+    { id: 'ag3', reference: 'AG-26-DEMO03', company_name: 'Sample Agency C (demo)', contact_name: 'Other Contact', phone: null, email: 'c@example.test', country: 'Sampleland', notes: null,
+      contact_status: 'connected', contact_changed_by: ME, contact_changed_at: d(20), first_connected_at: d(20), stage: 'onboarded', stage_changed_at: d(4), assigned_officer: ME,
+      last_contact_at: d(6), next_follow_up: null, selected_tier: 'Tier 2', registration_id: 'reg-demo', partner_id: 'demo-partner', created_by: ME, created_at: d(30), updated_at: d(4) } as never,
+  ],
+  proposals: [{ id: 'pp1', reference: 'PP-26-DEMO01', prospect_id: 'ag1', status: 'awaiting_confirmation', company_name: 'Sample Agency A (demo)', recipient_name: 'Sample Contact',
+    recipient_email: 'a@example.test', country: 'Sampleland', arrangement: { kind: 'tier', tier_id: 'tier_1', tier_label: 'Tier 1', universities: [
+      { record_id: 'cr1', university: 'Sample University (demo)', country: 'Sampleland', study_level: null, variant: null, intake: null, commission_kind: 'percent', commission_value: '10', currency: null, conditions: null }] },
+    terms_title: 'Sample terms (demo)', terms_body: 'Sample text only.', message: null, expires_at: d(-29), created_by: ME, created_at: d(1), approved_by: null, approved_at: null, sent_by: ME,
+    sent_at: d(1), email_status: 'accepted', email_detail: null, first_viewed_at: null, confirmed_at: null, confirmed_name: null, declined_at: null, decline_reason: null, updated_at: d(1) }],
+  mous: [],
+  activities: [
+    { id: 3, prospect_id: 'ag1', kind: 'proposal_sent', note: null, detail: {}, actor: ME, at: d(1) },
+    { id: 2, prospect_id: 'ag1', kind: 'call', note: 'Discussed sample intake.', detail: {}, actor: ME, at: d(2) },
+    { id: 1, prospect_id: 'ag1', kind: 'created', note: null, detail: {}, actor: ME, at: d(5) },
+  ],
+  registrations: [{ id: 'reg-demo', reference: 'PR-26-DEMO01', status: 'activated', link_status: 'closed', submitted_at: d(10), activated_at: d(4) }],
+};
+
 export default function HRDemo() {
   const [data, setData] = useState<HRData>(sample);
   const [log, setLog] = useState<string[]>([]);
-  const session: Session = { role: 'staff', userRole: 'application_manager', userId: ME, name: 'Manu Manager', email: '', title: 'Senior International Recruitment Manager', permissions: ['hr', 'hr_accounts', 'tasks', 'applications', 'students', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'], partnerModules: [], employee: true, designations: ['senior_international_recruitment_manager'], hasTeam: true };
+  const session: Session = { role: 'staff', userRole: 'application_manager', userId: ME, name: 'Manu Manager', email: '', title: 'Senior International Recruitment Manager', permissions: ['hr', 'hr_accounts', 'tasks', 'applications', 'students', 'agency_outreach', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit'], partnerModules: [], employee: true, designations: ['senior_international_recruitment_manager'], hasTeam: true };
   const store = useMemo(() => ({ db: { staff: [], applications: [], students: [], tasks: [], partners: [{ id: 'demo-partner', name: 'Demo Agency (sample)' }] } as unknown as DB, session, actions: {}, loading: false, live: 'live', profilesRev: 0 }) as unknown as StoreValue, [session]);
   const hr = useMemo<HRValue>(() => ({
     data, ready: true, enabled: true,
@@ -198,6 +231,7 @@ export default function HRDemo() {
   return (
     <StoreContext.Provider value={store}>
       <CommissionDemo.Provider value={COMMISSION_SAMPLE}>
+      <AgencyDemo.Provider value={AGENCY_SAMPLE}>
       <HRContext.Provider value={hr}>
         <div className="min-h-screen bg-canvas">
           <div className="sticky top-0 z-30 flex flex-wrap gap-1.5 border-b border-line bg-surface/90 p-3 text-xs backdrop-blur">
@@ -207,10 +241,11 @@ export default function HRDemo() {
             <AttendanceControl />
           </div>
           <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6">
-            <Routes>{PAGES.map(([k, , el]) => <Route key={k} path={k} element={el} />)}</Routes>
+            <Routes>{PAGES.map(([k, , el]) => <Route key={k} path={k} element={el} />)}<Route path="agencies/:id" element={<AgencyDetail />} /></Routes>
           </div>
         </div>
       </HRContext.Provider>
+      </AgencyDemo.Provider>
       </CommissionDemo.Provider>
     </StoreContext.Provider>
   );

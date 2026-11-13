@@ -80,3 +80,18 @@ test('partner Commission tab: Partner Admin with commission, never employees; pr
   assert.equal(canOpenPath(preview({ userRole: 'support_staff', permissions: ['partners'] }), 'commission'), false, 'staff without commission access previewing');
   assert.equal(canOpenPath(superAdmin, 'commissions'), true, 'Super Admin keeps Commission Management');
 });
+
+test('Agencies: Partnership Officers and registration managers; Messages only with student / application work', () => {
+  const officer = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['partners', 'catalogue', 'tasks', 'agency_outreach'], partnerModules: [] };
+  const staffOfficer = { role: 'staff' as const, userRole: 'support_staff' as const, permissions: ['partners', 'catalogue', 'tasks', 'agency_outreach'], partnerModules: [] };
+  const appTeam = { role: 'staff' as const, userRole: 'application_manager' as const, permissions: ['students', 'applications', 'tasks'], partnerModules: [] };
+  const regManager = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['partners', 'partner_onboarding'], partnerModules: [] };
+  assert.equal(canOpenPath(officer, 'agencies'), true);
+  assert.equal(canOpenPath(staffOfficer, 'agencies/123'), true);
+  assert.equal(canOpenPath(regManager, 'agencies'), true);
+  assert.equal(canOpenPath(appTeam, 'agencies'), false);
+  assert.equal(canOpenPath(partner, 'agencies'), false, 'partners never');
+  assert.equal(canOpenPath(officer, 'messages'), false, 'officer: no Messages menu');
+  assert.equal(canOpenPath(appTeam, 'messages'), true, 'application team keeps Messages');
+  assert.equal(canOpenPath(officer, 'partners/registrations'), false, 'officers cannot approve registrations');
+});

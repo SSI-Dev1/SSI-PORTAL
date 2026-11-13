@@ -26,7 +26,7 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -48,6 +48,7 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'commission_internal', label: 'Commission · Internal values', hint: 'SSI GLOBAL\'s own commission and profit — confidential (Super Admin grants)' },
   { id: 'commission_edit', label: 'Commission · Edit master & import', hint: 'Edit master records, providers and tiers; import sheets (Super Admin grants)' },
   { id: 'partner_onboarding', label: 'Partner registrations', hint: 'Registration links, review and approval of new partners — Admin Staff only (Super Admin grants)' },
+  { id: 'agency_outreach', label: 'Agencies & proposals', hint: 'Agency prospects, follow-ups and partnership proposals (Partnership Officers). Not registration approval or partner accounts' },
 ];
 /** Only a Super Admin can grant these. */
 export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding'];
@@ -180,6 +181,10 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'team') return !!s.employee && !!s.hasTeam;
     if (segment === 'hr') return isHR(session) || session.permissions.includes('hr_accounts');
     if (segment === 'commissions') return session.userRole === 'super_admin' || COMMISSION_MODULES.some((p) => session.permissions.includes(p));
+    // Agencies: Partnership Officers (agency_outreach) and registration managers.
+    if (segment === 'agencies') return session.userRole === 'super_admin' || canManageRegistrations(session) || session.permissions.includes('agency_outreach');
+    // Messages (application chat) belongs to student / application work.
+    if (segment === 'messages') return session.userRole === 'super_admin' || session.permissions.includes('applications') || session.permissions.includes('students');
     if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
     // The Staff Portal has no partner directory or account management.
     if (session.role === 'staff' && (segment === 'partners' || segment === 'users')) return false;
@@ -191,7 +196,7 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     return session.permissions.includes(m);
   }
   // Internal pages are never open to partner organisations.
-  if (segment === 'commissions' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
+  if (segment === 'commissions' || segment === 'agencies' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
   // Commission agreements: the Partner Admin only, while SSI GLOBAL lets them see commission.
   if (segment === 'commission') return canSeePartnerCommission(session);
   const m = CLIENT_ROUTE_MODULE[segment];

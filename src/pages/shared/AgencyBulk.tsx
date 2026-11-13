@@ -238,3 +238,41 @@ export function LinkPartnerModal({ agency, partners, onClose }: {
     </Modal>
   );
 }
+
+// ------------------------------------------------------------------ business onboarding vs portal access (0042)
+export type BusinessStatus = 'historical' | 'verified' | 'not_onboarded';
+export type PortalStatus = 'no_account' | 'pending' | 'active' | 'suspended' | 'deactivated';
+export interface PartnerStatusRow { partner_id: string; business_status: BusinessStatus; portal_status: PortalStatus; onboarding_source: 'portal' | 'historical'; users: number; agency_id: string | null; agency_reference: string | null }
+export interface OnboardingSummary { total: number; historical: number; verified: number; unlinked: number; portal_active: number; no_account: number; mine: number }
+export const BUSINESS: Record<BusinessStatus, { label: string; tone: 'green' | 'navy' | 'slate' }> = {
+  historical: { label: 'Historically onboarded', tone: 'navy' }, verified: { label: 'Verified onboarded', tone: 'green' }, not_onboarded: { label: 'Not onboarded', tone: 'slate' },
+};
+export const PORTAL: Record<PortalStatus, { label: string; tone: 'slate' | 'amber' | 'green' | 'red' }> = {
+  no_account: { label: 'Portal: Not activated', tone: 'slate' }, pending: { label: 'Portal: Pending', tone: 'amber' }, active: { label: 'Portal: Active', tone: 'green' },
+  suspended: { label: 'Portal: Suspended', tone: 'red' }, deactivated: { label: 'Portal: Deactivated', tone: 'slate' },
+};
+
+/** Server-calculated status per partner and the Onboarded KPI, re-read on any agency, partner or account change. */
+function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T): T | null {
+  const [v, setV] = useState<T | null>(null);
+  useEffect(() => {
+    if (!supabase || !enabled) return;
+    const sb = supabase;
+    let alive = true;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const load = () => void sb.rpc(fn).then(({ data, error }) => alive && !error && setV(map(data)));
+    const soon = () => { clearTimeout(t); t = setTimeout(load, 300); };
+    load();
+    const ch = sb.channel(`${fn}-${Math.random().toString(36).slice(2, 8)}`);
+    for (const table of ['agency_prospects', 'partners', 'profiles']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
+    ch.subscribe();
+    const onFocus = () => document.visibilityState === 'visible' && soon();
+    document.addEventListener('visibilitychange', onFocus);
+    return () => { alive = false; clearTimeout(t); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fn, enabled]);
+  return v;
+}
+export const useOnboardingSummary = (enabled = true) => useLive<OnboardingSummary>('partnership_onboarding_summary', enabled, (d) => d as OnboardingSummary);
+export const usePartnerStatus = (enabled = true) =>
+  useLive<Map<string, PartnerStatusRow>>('partner_directory_status', enabled, (d) => new Map(((d ?? []) as PartnerStatusRow[]).map((r) => [r.partner_id, r])));

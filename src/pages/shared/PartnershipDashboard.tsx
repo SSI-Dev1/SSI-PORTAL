@@ -14,6 +14,7 @@ import {
   ACTIVITY, PROPOSAL, STAGE, agencyName, fmtDate, fmtWhen, isOpenFollowUp, matchesFilter, today, useAgencyData, type AgencyFilter,
 } from '../../lib/agencies';
 import { AddAgencyModal } from './Agencies';
+import { useOnboardingSummary } from './AgencyBulk';
 
 export default function PartnershipDashboard() {
   const { session } = useStore();
@@ -25,11 +26,12 @@ export default function PartnershipDashboard() {
 
   const count = (f: AgencyFilter) => (data ? data.agencies.filter((a) => matchesFilter(a, f, data)).length : '…');
   const followUps = useMemo(() => (data?.agencies ?? []).filter(isOpenFollowUp).sort((a, b) => (a.next_follow_up ?? '').localeCompare(b.next_follow_up ?? '')), [data]);
-  const verified = (data?.agencies ?? []).filter((a) => a.stage === 'onboarded' && a.partner_id).length;
-  const historical = (data?.agencies ?? []).filter((a) => a.stage === 'onboarded' && !a.partner_id).length;
+  // Business onboarding (0042): historical clients count without a login; portal access is separate.
+  const summary = useOnboardingSummary(true);
+  const toClients = (tab: string) => navigate(`../partners?tab=${tab}`, { relative: 'path' });
   // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
   // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
-  const cards: { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string }[] = [
+  const cards: { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string; open?: () => void }[] = [
     { label: 'Total agencies', f: 'all', icon: Building2, tone: 'navy', hint: 'Every agency in the Agency List' },
     { label: 'Newly added', f: 'new_added', icon: Plus, tone: 'orange', hint: 'Added this month (imports not counted)' },
     { label: 'Agencies contacted', f: 'new_contacted', icon: PhoneCall, tone: 'orange', hint: 'First outreach recorded this month' },
@@ -39,7 +41,10 @@ export default function PartnershipDashboard() {
     { label: 'Proposal confirmed', f: 'proposal_confirmed', icon: CheckCircle2, tone: 'green', hint: 'Agency confirmed, onboarding next' },
     { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy', hint: 'Currently at MOU Sent (not signed)' },
     { label: 'Registration pending', f: 'registration_pending', icon: ClipboardList, tone: 'amber', hint: 'Form sent, submitted or under review' },
-    { label: 'Onboarded partners', f: 'onboarded', icon: Handshake, tone: 'green', value: data ? verified : '…', hint: historical ? `With a partner account · +${historical} historical` : 'With a partner account' },
+    { label: 'Onboarded clients', f: 'onboarded', icon: Handshake, tone: 'green', value: summary ? summary.total : '…', open: () => toClients('onboarded'),
+      hint: summary ? `Company-wide · ${summary.historical} historical · ${summary.verified} verified${summary.unlinked ? ` · ${summary.unlinked} to review` : ''}` : 'Company-wide' },
+    { label: 'My onboarded partners', f: 'onboarded', icon: Handshake, tone: 'navy', value: summary ? summary.mine : '…', open: () => toClients('mine'), hint: 'Clients where you are the Partnership Officer' },
+    { label: 'Portal active', f: 'onboarded', icon: UserCheck, tone: 'green', value: summary ? summary.portal_active : '…', open: () => toClients('active'), hint: `Partner login active${summary?.no_account ? ` · ${summary.no_account} not activated` : ''}` },
     { label: 'Inactive agencies', f: 'inactive', icon: Moon, tone: 'navy', hint: 'Marked Inactive' },
     { label: 'Closed agencies', f: 'closed', icon: Ban, tone: 'red', hint: 'Marked Closed (kept in the list)' },
     { label: 'Pending follow-ups', f: 'follow_up', icon: CalendarClock, tone: 'amber', value: followUps.length, hint: 'Follow-up date set, still open' },
@@ -66,7 +71,7 @@ export default function PartnershipDashboard() {
       </div>
       {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-        {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={() => go(c.f)} />)}
+        {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={c.open ?? (() => go(c.f))} />)}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">

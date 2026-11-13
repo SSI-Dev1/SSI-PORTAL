@@ -81,7 +81,7 @@ export const ACTIVITY: Record<string, string> = {
   linked_from_linkedin: 'LinkedIn prospect linked to this agency', mou_email_accepted: 'MOU emailed', mou_email_failed: 'MOU email failed',
   mou_email_not_configured: 'MOU not emailed — no MOU published', registration_email_accepted: 'Registration form emailed',
   registration_email_failed: 'Registration email failed', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
-  reactivated: 'Reopened',
+  reactivated: 'Reopened', officer_changed: 'Officer changed', contact_status_corrected: 'Contact status corrected by an administrator',
 };
 /** Stage label, marking onboarded agencies that have no verified partner account. */
 export const stageLabel = (a: Agency) => (a.stage === 'onboarded' && !a.partner_id ? 'Onboarded (historical)' : STAGE[a.stage].label);

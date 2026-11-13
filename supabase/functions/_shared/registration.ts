@@ -28,12 +28,12 @@ export function sixDigitCode(): string {
   }
 }
 
-export const shell = (title: string, body: string) => `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#06242F">
+export const shell = (title: string, body: string, signOff = 'SSI GLOBAL Team') => `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#06242F">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden">
 <tr><td style="background:#06242F;padding:20px 24px;color:#ffffff;font-size:18px;font-weight:bold">SSI GLOBAL</td></tr>
 <tr><td style="padding:24px"><h1 style="margin:0 0 12px;font-size:20px;color:#06242F">${escapeHtml(title)}</h1>${body}
-<p style="margin:24px 0 0;font-size:13px;color:#5b6b73">SSI GLOBAL Team</p></td></tr></table></td></tr></table></body></html>`;
+<p style="margin:24px 0 0;font-size:13px;color:#5b6b73">${escapeHtml(signOff)}</p></td></tr></table></td></tr></table></body></html>`;
 
 export function codeEmail(company: string, code: string) {
   const text = `Your SSI GLOBAL partner registration code for ${company} is ${code}. It expires in 10 minutes. If you did not request it, ignore this email.`;

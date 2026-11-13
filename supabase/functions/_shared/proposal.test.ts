@@ -22,6 +22,23 @@ Deno.test('rates are exact and readable', () => {
   assertEquals(fmtRate('amount', 1250.5, 'EUR'), 'EUR 1,250.5');
 });
 
+Deno.test('no internal tier, arrangement or classification wording for Tier 1, 2, 3 or custom', () => {
+  for (const label of ['Tier 1', 'Tier 2', 'Tier 3', 'Custom commission']) {
+    const m = proposalEmail({ ...base, arrangement: { ...base.arrangement, tier_label: label, tier_id: label.toLowerCase().replace(' ', '_'), kind: label.startsWith('Tier') ? 'tier' : 'custom' } as never });
+    for (const out of [m.subject, m.html, m.text]) {
+      assert(!/\btier|arrangement:|classification|category|custom commission|tier_\d/i.test(out), `${label}: ${out.match(/.{0,30}(tier|arrangement|classification|category).{0,30}/i)?.[0]}`);
+    }
+    assert(m.html.includes('YOUR PARTNERSHIP COMMISSION') && m.text.includes('Commission: 20%'));
+  }
+});
+
+Deno.test('suggested wording, currency and conditions per university', () => {
+  const m = proposalEmail(base);
+  assert(m.html.includes('SSI GLOBAL — Partnership Commission Proposal') && m.html.includes('Greetings from SSI GLOBAL!'));
+  assert(m.html.includes('We look forward to building a successful partnership') && m.html.includes('SSI GLOBAL Partnerships Team'));
+  assert(m.text.includes('University: Example College (United Kingdom)') && m.text.includes('Currency: GBP') && m.text.includes('Applicable conditions: Paid after enrolment'));
+});
+
 Deno.test('email shows the offered commission, terms and an I CONFIRM link; escapes input', () => {
   const m = proposalEmail(base);
   assert(m.html.includes('I CONFIRM') && m.html.includes(base.url));

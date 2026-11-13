@@ -10,22 +10,24 @@ import { Logo } from '../components/brand';
 import { ThemeMenu } from '../components/ThemeSwitcher';
 import { supabase } from '../auth/auth';
 import { fmtCommission, type ValueKind } from '../lib/commissions';
+/** What the public page receives per university: partner-facing values only (0037). */
+type PublicUniversity = Pick<ProposalUniversity, 'university' | 'country' | 'study_level' | 'variant' | 'intake' | 'commission_kind' | 'commission_value' | 'currency' | 'conditions'>;
 import type { ProposalUniversity } from '../lib/agencies';
 
 interface View {
   state: 'open' | 'confirmed' | 'declined' | 'expired' | 'closed' | 'invalid' | 'loading' | 'error';
   reference?: string; company_name?: string; recipient_name?: string; country?: string;
-  arrangement?: { tier_label: string; universities: ProposalUniversity[] }; terms_title?: string; terms_body?: string; message?: string | null;
+  universities?: PublicUniversity[]; terms_title?: string; terms_body?: string; message?: string | null;
   expires_at?: string; confirmed_at?: string | null; registration?: 'emailed' | 'manual' | 'exists' | 'email_failed'; error?: string;
 }
 
 const isDemo = () => import.meta.env.DEV && window.location.hash.includes('/proposal/demo');
 const DEMO: View = {
   state: 'open', reference: 'PP-26-DEMO01', company_name: 'Sample Agency (demo)', recipient_name: 'Sample Contact', country: 'India',
-  arrangement: { tier_label: 'Tier 1', universities: [
-    { record_id: 'd1', university: 'Sample University (demo)', country: 'Sampleland', study_level: 'PG', variant: null, intake: 'Sep', commission_kind: 'percent', commission_value: '10', currency: null, conditions: 'Sample condition' },
-    { record_id: 'd2', university: 'Example College (demo)', country: 'Sampleland', study_level: null, variant: null, intake: null, commission_kind: 'amount', commission_value: '1000', currency: 'XXX', conditions: null },
-  ] },
+  universities: [
+    { university: 'Sample University (demo)', country: 'Sampleland', study_level: 'PG', variant: null, intake: 'Sep', commission_kind: 'percent', commission_value: '10', currency: null, conditions: 'Sample condition' },
+    { university: 'Example College (demo)', country: 'Sampleland', study_level: null, variant: null, intake: null, commission_kind: 'amount', commission_value: '1000', currency: 'XXX', conditions: null },
+  ],
   terms_title: 'Sample terms (demo)', terms_body: 'Sample text only — real terms are published by SSI GLOBAL administrators.', message: null, expires_at: new Date(Date.now() + 864e6).toISOString(),
 };
 
@@ -79,18 +81,18 @@ export default function ProposalConfirm() {
               : v.registration === 'email_failed' ? 'Your confirmation is saved. We could not email the registration form right now — SSI GLOBAL will send it to you shortly.'
               : 'Your confirmation is saved. SSI GLOBAL will send your partner registration form shortly.'} />
         )}
-        {v.reference && (v.state === 'open' || (v.state === 'error' && v.reference)) && v.arrangement && (
+        {v.reference && (v.state === 'open' || (v.state === 'error' && v.reference)) && v.universities && (
           <>
             <p className="text-sm font-semibold uppercase tracking-wide text-rust">Partnership proposal · {v.reference}</p>
             <h1 className="mt-1 font-display text-2xl font-semibold text-heading">{v.company_name}</h1>
-            <p className="mt-1 text-sm text-ink-soft">For {v.recipient_name} · {v.arrangement.tier_label} · {v.country}{v.expires_at ? ` · valid until ${new Date(v.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}</p>
+            <p className="mt-1 text-sm text-ink-soft">For {v.recipient_name} · {v.country}{v.expires_at ? ` · valid until ${new Date(v.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}</p>
             {v.message && <p className="mt-4 whitespace-pre-wrap rounded-2xl bg-surface p-4 text-sm shadow-sm">{v.message}</p>}
             <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-surface">
               <table className="w-full text-left text-sm">
-                <thead><tr className="border-b border-line bg-canvas/70 text-[11.5px] uppercase tracking-wider text-ink-mute"><th className="px-4 py-3">University</th><th className="px-4 py-3 text-right">Your commission</th></tr></thead>
+                <thead><tr className="border-b border-line bg-canvas/70 text-[11.5px] uppercase tracking-wider text-ink-mute"><th className="px-4 py-3">Your partnership commission</th><th className="px-4 py-3 text-right">Commission</th></tr></thead>
                 <tbody>
-                  {v.arrangement.universities.map((u) => (
-                    <tr key={u.record_id} className="border-b border-line last:border-0">
+                  {v.universities.map((u, i) => (
+                    <tr key={i} className="border-b border-line last:border-0">
                       <td className="px-4 py-3"><div className="font-medium text-heading">{[u.university, u.study_level, u.variant].filter(Boolean).join(' · ')}</div>
                         <div className="text-xs text-ink-mute">{[u.country, u.intake, u.conditions].filter(Boolean).join(' · ')}</div></td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-heading">{fmtCommission(u.commission_kind as ValueKind, String(u.commission_value), u.currency)}</td>

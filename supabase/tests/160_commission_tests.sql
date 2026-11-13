@@ -135,7 +135,7 @@ select pg_temp.denied(format($$select public.set_custom_partner_commission('p1',
   'a tagger cannot set custom commissions', '%commission managers%');
 
 select pg_temp.act_as(:p1admin);
-select pg_temp.check((select count(*) = 1 and bool_and(tier = 'Tier 1' and commission_value = 20 and commission_kind = 'percent' and not is_custom) from public.my_partner_commissions()),
+select pg_temp.check((select count(*) = 1 and bool_and(commission_value = 20 and commission_kind = 'percent') from public.my_partner_commissions()),
   'Partner Admin sees only their Tier 1 rate');
 select pg_temp.check((select count(*) from public.partner_commission_signals where partner_id = 'p1') = 1, 'Partner Admin can follow their change signal');
 select pg_temp.act_as(:p1staff);
@@ -152,7 +152,7 @@ select public.set_custom_partner_commission('p1', :'rec_gre', 'tier_1', 'percent
 select pg_temp.check((select value from public.commission_tier_rates where record_id = :'rec_gre' and tier_id = 'tier_1') = 20, 'a custom agreement never changes the master rate');
 select pg_temp.check((select count(*) from public.commission_assignment_history where partner_id = 'p1') >= 4, 'every change is in the history');
 select pg_temp.act_as(:p1admin);
-select pg_temp.check((select is_custom and commission_value = 19.5 and conditions like '%Includes the bonus terms%' from public.my_partner_commissions()), 'the partner sees their custom rate');
+select pg_temp.check((select commission_value = 19.5 and conditions like '%Includes the bonus terms%' from public.my_partner_commissions()), 'the partner sees their custom rate');
 select pg_temp.check((select count(*) from public.my_partner_commissions() where conditions like '%Special deal%') = 0, 'internal remarks never reach the partner');
 select pg_temp.act_as(:super);
 select public.tag_partner_commission('p2', :'rec_gre', 'tier_2');

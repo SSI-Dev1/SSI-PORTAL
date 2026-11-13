@@ -49,7 +49,7 @@ select pg_temp.denied($$select * from public.preview_partner_commissions('p1')$$
 rollback;
 begin; select pg_temp.act_as(:p2admin);
 select pg_temp.denied($$select * from public.preview_partner_commissions('p1')$$, 'another partner cannot read p1 through the preview (TEST 8)', '%Not allowed%');
-select pg_temp.check(not exists (select 1 from public.my_partner_commissions() where tier <> 'Tier 3' and country = 'Bulkland'), 'another partner still sees only its own agreements (TEST 8)');
+select pg_temp.check(not exists (select 1 from public.my_partner_commissions() where commission_value <> 16 and country = 'Bulkland'), 'another partner still sees only its own agreements (TEST 8)');
 rollback;
 begin; select pg_temp.act_as(:p1admin);
 select pg_temp.denied($$select * from public.partner_commission_rows('p2')$$, 'the internal row builder is not callable by partners', '%permission denied%');
@@ -81,8 +81,8 @@ rollback;
 begin; select pg_temp.act_as(:p1admin);
 create temp table pa as select * from public.my_partner_commissions();
 select pg_temp.act_as(:super);
-select pg_temp.check((select count(*) from (select assignment_id, tier, commission_value from public.preview_partner_commissions('p1')
-  except select assignment_id, tier, commission_value from pa) x) = 0
+select pg_temp.check((select count(*) from (select assignment_id, commission_value from public.preview_partner_commissions('p1')
+  except select assignment_id, commission_value from pa) x) = 0
   and (select count(*) from public.preview_partner_commissions('p1')) = (select count(*) from pa), 'preview returns exactly what the Partner Admin receives');
 rollback;
 begin; select pg_temp.act_as(:po);

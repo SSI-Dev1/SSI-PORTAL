@@ -108,7 +108,10 @@ export async function sendProposal(proposalId: string): Promise<{ ok: boolean; m
   const { data, error } = await supabase.functions.invoke('agency-proposal', { body: { action: 'send', proposalId } });
   if (error) {
     let msg = 'The proposal could not be sent. Please try again.';
-    try { msg = ((await (error as { context?: Response }).context?.json()) as { error?: string })?.error ?? msg; } catch { /* keep default */ }
+    try {
+      const body = (await (error as { context?: Response }).context?.json()) as { error?: string; code?: string } | undefined;
+      msg = body?.code === 'NOT_FOUND' ? 'The proposal email service is not set up on the server yet (agency-proposal function). Ask your administrator to deploy it.' : body?.error ?? msg;
+    } catch { /* keep default */ }
     return { ok: false, message: msg };
   }
   return { ok: !!(data as { ok?: boolean })?.ok, message: 'Proposal emailed. It is waiting for the agency to confirm.' };

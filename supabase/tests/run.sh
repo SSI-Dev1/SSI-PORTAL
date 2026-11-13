@@ -49,6 +49,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0032_partner_commission_preview.sql
 "${PSQL[@]}" -f migrations/0033_partner_first_login.sql
 "${PSQL[@]}" -f migrations/0034_agency_outreach.sql
+"${PSQL[@]}" -f migrations/0035_agency_import.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
 "${PSQL[@]}" -f tests/20_account_tests.sql
@@ -76,6 +77,9 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f tests/190_commission_tab_tests.sql
 "${PSQL[@]}" -f tests/200_partner_first_login_tests.sql
 "${PSQL[@]}" -f tests/210_agency_outreach_tests.sql
+"${PSQL[@]}" -f tests/220_agency_import_tests.sql
+# Optional: an extra local-only SQL file (e.g. a real-data import check that is never committed).
+if [ -n "${EXTRA_SQL:-}" ]; then "${PSQL[@]}" -f "$EXTRA_SQL"; fi
 # Optional: dump the imported CourseFinder records for scripts/verify-coursefinder.py.
 if [ -n "${CATALOGUE_DUMP:-}" ]; then
   "${PSQL[@]}" -At -c "select jsonb_build_object(

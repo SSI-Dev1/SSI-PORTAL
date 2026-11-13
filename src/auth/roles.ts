@@ -187,7 +187,9 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'messages') return session.userRole === 'super_admin' || session.permissions.includes('applications') || session.permissions.includes('students');
     if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
     // The Staff Portal has no partner directory or account management.
-    if (session.role === 'staff' && (segment === 'partners' || segment === 'users')) return false;
+    if (session.role === 'staff' && segment === 'users') return false;
+    // Staff Portal: Clients & Branches only for Partnership Officers (their active partners).
+    if (session.role === 'staff' && segment === 'partners' && !session.permissions.includes('agency_outreach')) return false;
     const m = ADMIN_ROUTE_MODULE[segment];
     if (!m) return true;
     if (m === 'users') return session.userRole === 'super_admin';

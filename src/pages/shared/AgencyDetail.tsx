@@ -11,13 +11,13 @@ import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
 import {
-  ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
+  ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, stageLabel, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
   AgencyDemo, useAgencyData, type Agency, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 
-type LogKind = 'call' | 'meeting' | 'follow_up_done' | 'note' | 'follow_up';
-const LOG_TITLE: Record<LogKind, string> = { call: 'Log call', meeting: 'Record meeting', follow_up_done: 'Follow-up completed', note: 'Add note', follow_up: 'Add follow-up' };
+type LogKind = 'contact_attempt' | 'call' | 'meeting' | 'follow_up_done' | 'note' | 'follow_up';
+const LOG_TITLE: Record<LogKind, string> = { contact_attempt: 'Contact attempt (no answer / not reached)', call: 'Log call', meeting: 'Record meeting', follow_up_done: 'Follow-up completed', note: 'Add note', follow_up: 'Add follow-up' };
 
 export default function AgencyDetail() {
   const { id = '' } = useParams();
@@ -76,13 +76,14 @@ export default function AgencyDetail() {
       <Link to=".." relative="path" className="mb-3 inline-flex items-center gap-1 text-sm text-ink-soft hover:text-heading"><ArrowLeft className="h-4 w-4" />Agencies</Link>
       <PageHeader
         title={agencyName(a)}
-        subtitle={<span className="flex flex-wrap items-center gap-2">{a.reference}<Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge><Badge tone={STAGE[a.stage].tone}>{STAGE[a.stage].label}</Badge></span>}
+        subtitle={<span className="flex flex-wrap items-center gap-2">{a.reference}<Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge></span>}
         actions={<>
           <Button variant="secondary" icon={Pencil} onClick={() => setModal({ kind: 'edit' })}>Edit</Button>
-          {a.contact_status === 'not_connected'
-            ? <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>
-            : <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
+          {!a.assigned_officer && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void run('claim', () => rpc('claim_agency', { p_id: id }), 'You are now the officer for this agency')}>Take this agency</Button>}
+          {a.contact_status !== 'connected' && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>}
+          {a.contact_status !== 'not_connected' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
           <Menu width="w-56" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
+            { label: 'Contact attempt', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'contact_attempt' }) },
             { label: 'Log call', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'call' }) },
             { label: 'Add follow-up', icon: CalendarPlus, onClick: () => setModal({ kind: 'log', log: 'follow_up' }) },
             { label: 'Follow-up completed', icon: CheckCircle2, onClick: () => setModal({ kind: 'log', log: 'follow_up_done' }) },
@@ -102,7 +103,7 @@ export default function AgencyDetail() {
           <dl className="grid gap-3 px-5 pb-5 text-sm">
             {([
               ['Company', a.company_name], ['Contact person', a.contact_name], ['Phone', a.phone], ['Email', a.email], ['Country', a.country],
-              ['Assigned officer', staffName(a.assigned_officer)], ['Contact status changed', a.contact_changed_at ? `${fmtWhen(a.contact_changed_at)} · ${staffName(a.contact_changed_by)}` : null],
+              ['Assigned officer', a.assigned_officer ? staffName(a.assigned_officer) : 'Unassigned'], ['Contact status changed', a.contact_changed_at ? `${fmtWhen(a.contact_changed_at)} · ${staffName(a.contact_changed_by)}` : null],
               ['Last contact', fmtDate(a.last_contact_at)], ['Next follow-up', fmtDate(a.next_follow_up)], ['Selected commission', a.selected_tier],
               ['Added', `${fmtWhen(a.created_at)} · ${staffName(a.created_by)}`],
             ] as [string, string | null][]).map(([k, v]) => (
@@ -110,6 +111,16 @@ export default function AgencyDetail() {
             ))}
           </dl>
           {a.notes && <div className="mx-5 mb-5 whitespace-pre-wrap rounded-xl bg-canvas p-3 text-sm text-ink-soft">{a.notes}</div>}
+          {a.source === 'import' && (
+            <div className="mx-5 mb-5 rounded-xl border border-line p-3 text-xs text-ink-soft">
+              <div className="font-semibold text-heading">Imported from a spreadsheet</div>
+              Row {a.source_row ?? '—'} · original status “{a.source_status ?? '—'}” · {fmtWhen(a.created_at)}. Contact status and dates before the import are not known.
+            </div>
+          )}
+          {a.needs_reconciliation && <Reconcile a={a} manager={manager} onSaved={reload} />}
+          {!a.needs_reconciliation && a.historical_onboarded && !a.partner_id && (
+            <p className="mx-5 mb-5 text-xs text-ink-mute">Onboarded before the CRM; no partner account is linked{a.reconciliation_note ? ` — ${a.reconciliation_note}` : ''}.</p>
+          )}
         </Card>
 
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:col-span-2 [&>*]:min-w-0">
@@ -496,5 +507,39 @@ function ProposalForm({ a, onClose, onDone }: { a: Agency; onClose: () => void; 
       </div>
       <p className="mt-3 text-xs text-ink-mute">Only partner-facing commission is included — never SSI GLOBAL's own commission, processing routes or portal names. The agency confirms on a secure page; opening the email does not accept anything.</p>
     </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ reconciliation (administrators)
+function Reconcile({ a, manager, onSaved }: { a: Agency; manager: boolean; onSaved: () => void }) {
+  const toast = useToast();
+  const { db } = useStore();
+  const [partner, setPartner] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async (link: boolean) => {
+    setBusy(true);
+    const r = await rpc('reconcile_agency', { p_id: a.id, p_partner: link ? partner : null, p_note: note || null });
+    setBusy(false);
+    if (!r.ok) return toast.error('Not saved', r.error);
+    toast.success(link ? 'Linked to the partner' : 'Kept as historically onboarded'); onSaved();
+  };
+  return (
+    <Alert tone="warning" title="Needs reconciliation" className="mx-5 mb-5">
+      <p className="text-xs">{(a.reconciliation_note ?? 'Marked onboarded in the spreadsheet, but no partner account is linked').replace(/\.?$/, '.')} It is not treated as an active partner until an administrator checks it.</p>
+      {manager ? (
+        <div className="mt-3 grid gap-2">
+          <Select value={partner} onChange={(e) => setPartner(e.target.value)} searchable>
+            <option value="">Choose the partner in Clients & Branches…</option>
+            {db.partners.filter((p) => !p.archivedAt).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={1000} />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={busy || !partner} onClick={() => void save(true)}>Link to partner</Button>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save(false)}>Keep as historical</Button>
+          </div>
+        </div>
+      ) : <p className="mt-2 text-xs">An administrator will review it.</p>}
+    </Alert>
   );
 }

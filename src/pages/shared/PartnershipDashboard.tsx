@@ -25,17 +25,22 @@ export default function PartnershipDashboard() {
 
   const count = (f: AgencyFilter) => (data ? data.agencies.filter((a) => matchesFilter(a, f, data)).length : '…');
   const followUps = useMemo(() => (data?.agencies ?? []).filter(isOpenFollowUp).sort((a, b) => (a.next_follow_up ?? '').localeCompare(b.next_follow_up ?? '')), [data]);
-  const cards: { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string }[] = [
-    { label: 'Total agencies', f: 'all', icon: Building2, tone: 'navy' },
-    { label: 'New agencies contacted (this month)', f: 'new_contacted', icon: PhoneCall, tone: 'orange' },
-    { label: 'Connected agencies', f: 'connected', icon: UserCheck, tone: 'green' },
-    { label: 'Not connected', f: 'not_connected', icon: UserX, tone: 'amber' },
-    { label: 'Proposals sent', f: 'proposal_sent', icon: Send, tone: 'orange' },
-    { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy' },
-    { label: 'Onboarded partners', f: 'onboarded', icon: Handshake, tone: 'green' },
-    { label: 'Inactive agencies', f: 'inactive', icon: Moon, tone: 'navy' },
-    { label: 'Closed / Rejected', f: 'closed', icon: Ban, tone: 'red' },
-    { label: 'Follow-ups pending', f: 'follow_up', icon: CalendarClock, tone: 'amber', value: followUps.length },
+  const verified = (data?.agencies ?? []).filter((a) => a.stage === 'onboarded' && a.partner_id).length;
+  const historical = (data?.agencies ?? []).filter((a) => a.stage === 'onboarded' && !a.partner_id).length;
+  // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
+  // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
+  const cards: { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string }[] = [
+    { label: 'Total agencies', f: 'all', icon: Building2, tone: 'navy', hint: 'Every agency in the Agency List' },
+    { label: 'Newly added', f: 'new_added', icon: Plus, tone: 'orange', hint: 'Added this month (imports not counted)' },
+    { label: 'Agencies contacted', f: 'new_contacted', icon: PhoneCall, tone: 'orange', hint: 'First outreach recorded this month' },
+    { label: 'Connected', f: 'connected', icon: UserCheck, tone: 'green', hint: 'Contact status Connected' },
+    { label: 'Not connected', f: 'not_connected', icon: UserX, tone: 'amber', hint: 'Tried, not yet connected' },
+    { label: 'Proposals sent', f: 'proposal_sent', icon: Send, tone: 'orange', hint: 'Currently at Proposal Sent' },
+    { label: 'MOU sent', f: 'mou_sent', icon: FileSignature, tone: 'navy', hint: 'Currently at MOU Sent (not signed)' },
+    { label: 'Onboarded partners', f: 'onboarded', icon: Handshake, tone: 'green', value: data ? verified : '…', hint: historical ? `With a partner account · +${historical} historical` : 'With a partner account' },
+    { label: 'Inactive agencies', f: 'inactive', icon: Moon, tone: 'navy', hint: 'Marked Inactive' },
+    { label: 'Closed agencies', f: 'closed', icon: Ban, tone: 'red', hint: 'Marked Closed (kept in the list)' },
+    { label: 'Pending follow-ups', f: 'follow_up', icon: CalendarClock, tone: 'amber', value: followUps.length, hint: 'Follow-up date set, still open' },
   ];
   const proposals = (data?.proposals ?? []).filter((p) => p.sent_at).slice(0, 6);
   const pending = (data?.proposals ?? []).filter((p) => p.status === 'awaiting_confirmation');
@@ -58,8 +63,8 @@ export default function PartnershipDashboard() {
         </div>
       </div>
       {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error}</p>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} icon={c.icon} tone={c.tone} onClick={() => go(c.f)} />)}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={() => go(c.f)} />)}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">

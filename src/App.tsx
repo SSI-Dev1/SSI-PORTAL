@@ -56,6 +56,7 @@ import PartnerRegistration from './pages/PartnerRegistration';
 import ProposalConfirm from './pages/ProposalConfirm';
 import Agencies from './pages/shared/Agencies';
 import AgencyDetail from './pages/shared/AgencyDetail';
+import AgencyProposals from './pages/shared/AgencyProposals';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
@@ -273,6 +274,9 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="agencies" element={<Agencies />} />
+                <Route path="agencies/new" element={<Agencies addNew />} />
+                <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
+                <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
                 <Route path="partners/registrations" element={<PartnerRegistrations />} />

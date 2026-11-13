@@ -6,8 +6,9 @@
 //  <768     hidden; the top-bar menu button opens a slide-out drawer.
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { partnershipFocused } from '../lib/agencies';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
+import { Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -276,11 +277,38 @@ const clientNav: NavSection[] = [
   { id: 'account', title: 'Account', items: [{ to: 'profile', label: 'My Profile', icon: UserCircle2 }] },
 ];
 
+// Partnership Officers (agencies permission, no student / application work): one menu for
+// partnership work and their own employee self-service.
+const partnershipNav: NavSection[] = [
+  { id: 'p-overview', title: 'Overview', items: [{ to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
+  { id: 'p-manage', title: 'Partnership Management', items: [
+    { to: 'agencies/new', label: 'Add Agency', icon: Plus },
+    { to: 'agencies', label: 'Agency List', icon: Handshake },
+    { to: 'partners', label: 'Clients & Branches', icon: Building2 },
+    { to: 'agencies/proposals', label: 'Proposals', icon: Send },
+    { to: 'agencies/registrations', label: 'Partner Registrations', icon: ClipboardCheck },
+  ] },
+  { id: 'p-work', title: 'My Workspace', items: [
+    { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
+    { to: 'work/reports', label: 'Report History', icon: History },
+    { to: 'work/assigned', label: 'My Assigned Tasks', icon: ListChecks },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
+  ] },
+  { id: 'p-self', title: 'Employee Self-Service', items: [
+    { to: 'work/profile', label: 'My Profile', icon: UserCircle2 },
+    { to: 'work/attendance', label: 'My Attendance', icon: Clock },
+    { to: 'work/leave', label: 'My Leave', icon: Palmtree },
+    { to: 'work/documents', label: 'My Documents', icon: FolderLock },
+    { to: 'work/team-members', label: 'My Team Members', icon: Users },
+  ] },
+];
+
 /** Menu for this session: only modules its role / organisation may use (the database enforces the same). */
 export function navFor(session: Session | null, workspace: WorkspaceId = 'business'): NavSection[] {
   if (!session) return [];
   const sets = session.role === 'client' ? clientNav
     : workspace === 'hr' ? hrNav
+    : partnershipFocused(session) && (session as { employee?: boolean }).employee ? partnershipNav
     : workspace === 'work' ? employeeNav
     : session.role === 'admin' ? adminNav : staffNav;
   const allowed = (to: string) => {
@@ -446,6 +474,7 @@ function SidebarContent({
                         <Tooltip content={collapsed ? (badge ? `${item.label} (${badge})` : item.label) : undefined} side="right">
                           <NavLink
                             to={`${base}/${item.to}`}
+                            end={item.to === 'agencies'}
                             tabIndex={closed ? -1 : undefined}
                             aria-label={collapsed ? item.label : undefined}
                             className={({ isActive }) =>

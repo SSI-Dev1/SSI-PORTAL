@@ -7,6 +7,7 @@ import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
 import { canManageRegistrations } from '../../auth/roles';
+import { partnershipFocused } from '../../lib/agencies';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, formatDate, initials, matches, type Tone } from '../../lib/utils';
@@ -15,7 +16,9 @@ export const partnerStatusTone: Record<PartnerStatus, Tone> = { Active: 'green',
 export const tierTone: Record<PartnerTier, Tone> = { Platinum: 'navy', Gold: 'orange', Silver: 'slate' };
 
 export default function Partners() {
-  const { db, actions } = useStore();
+  const { db, actions, session } = useStore();
+  // Partnership Officers: Clients & Branches is the directory of active, onboarded partners only.
+  const activeOnly = partnershipFocused(session);
   const { realSession } = useAuth();
   const superAdmin = realSession?.userRole === 'super_admin';
   const navigate = useNavigate();
@@ -46,10 +49,11 @@ export default function Partners() {
     () =>
       db.partners
         .filter((p) => !p.archivedAt)
+        .filter((p) => !activeOnly || (p.status === 'Active' && p.portalEnabled !== false))
         .filter((p) => matches(q, p.name, p.code, p.city, p.contactName, p.email))
         .filter((p) => !status || p.status === status)
         .filter((p) => !tier || p.tier === tier),
-    [db.partners, q, status, tier],
+    [db.partners, q, status, tier, activeOnly],
   );
 
   const stats = (id: string) => ({
@@ -59,7 +63,7 @@ export default function Partners() {
   });
 
   const menu = (p: Partner) => [
-    { label: 'Open workspace', icon: Eye, onClick: () => navigate(`/admin/partners/${p.id}`) },
+    { label: 'Open workspace', icon: Eye, onClick: () => navigate(p.id) },
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
     ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
   ];
@@ -68,7 +72,7 @@ export default function Partners() {
     <>
       <PageHeader
         title="Clients & Branches"
-        subtitle="Consultancy partners and their branch workspaces."
+        subtitle={activeOnly ? 'Active, onboarded partners with portal access. Prospects and earlier stages are in the Agency List.' : 'Consultancy partners and their branch workspaces.'}
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
@@ -105,7 +109,7 @@ export default function Partners() {
             const s = stats(p.id);
             return (
               <Card key={p.id} hover className="group relative animate-fade-up cursor-pointer overflow-hidden" >
-                <div style={{ animationDelay: `${i * 40}ms` }} onClick={() => navigate(`/admin/partners/${p.id}`)} className="p-5">
+                <div style={{ animationDelay: `${i * 40}ms` }} onClick={() => navigate(p.id)} className="p-5">
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rust to-brand opacity-0 transition group-hover:opacity-100" />
                   <div className="relative flex items-start gap-3.5">
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl font-display text-base font-semibold text-white shadow-card" style={{ background: avatarColor(p.name) }}>
@@ -155,11 +159,12 @@ export default function Partners() {
         </div>
       ) : (
         <Card>
-          <Table head={['Partner', 'Contact', 'Location', 'Tier', 'Students', 'Applications', 'Status', 'Joined', '']}>
+          <Table head={activeOnly ? ['Partner', 'Primary contact', 'Location', 'Branches', 'Account', 'Onboarded', 'Partnership Officer', '']
+            : ['Partner', 'Contact', 'Location', 'Tier', 'Students', 'Applications', 'Status', 'Joined', '']}>
             {rows.map((p) => {
               const s = stats(p.id);
               return (
-                <tr key={p.id} className="cursor-pointer hover:bg-brand-50/30" onClick={() => navigate(`/admin/partners/${p.id}`)}>
+                <tr key={p.id} className="cursor-pointer hover:bg-brand-50/30" onClick={() => navigate(p.id)}>
                   <td className="px-5 py-3.5">
                     <div className="font-semibold text-heading">{p.name}</div>
                     <div className="text-xs text-ink-mute">{p.code}</div>
@@ -169,11 +174,22 @@ export default function Partners() {
                     <div className="text-xs text-ink-mute">{p.email}</div>
                   </td>
                   <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{p.city}, {p.country}</td>
-                  <td className="px-5 py-3.5"><Badge tone={tierTone[p.tier]}>{p.tier}</Badge></td>
-                  <td className="px-5 py-3.5 font-semibold text-heading">{s.students}</td>
-                  <td className="px-5 py-3.5 font-semibold text-heading">{s.apps}</td>
-                  <td className="px-5 py-3.5"><Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge></td>
-                  <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{formatDate(p.joinedAt)}</td>
+                  {activeOnly ? (
+                    <>
+                      <td className="px-5 py-3.5 text-ink-soft">{p.branches.length ? p.branches.join(', ') : '—'}</td>
+                      <td className="px-5 py-3.5"><Badge tone="green" dot>Active · portal on</Badge></td>
+                      <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{formatDate(p.joinedAt)}</td>
+                      <td className="px-5 py-3.5 text-ink-soft">{(p.partnershipOfficerId && db.staff.find((x) => x.id === p.partnershipOfficerId)?.fullName) || '—'}</td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-5 py-3.5"><Badge tone={tierTone[p.tier]}>{p.tier}</Badge></td>
+                      <td className="px-5 py-3.5 font-semibold text-heading">{s.students}</td>
+                      <td className="px-5 py-3.5 font-semibold text-heading">{s.apps}</td>
+                      <td className="px-5 py-3.5"><Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge></td>
+                      <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{formatDate(p.joinedAt)}</td>
+                    </>
+                  )}
                   <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                     <Menu trigger={() => <button type="button" aria-label="Partner actions" className="rounded-lg p-1.5 text-ink-mute hover:bg-canvas"><MoreHorizontal className="h-4 w-4" /></button>} items={menu(p)} />
                   </td>
@@ -184,7 +200,7 @@ export default function Partners() {
         </Card>
       )}
 
-      <PartnerForm open={formOpen} onClose={() => setFormOpen(false)} partner={editing} onCreated={(id) => navigate(`/admin/partners/${id}`)} />
+      <PartnerForm open={formOpen} onClose={() => setFormOpen(false)} partner={editing} onCreated={(id) => navigate(id)} />
       <PartnerDialog
         open={accountOpen}
         onClose={() => setAccountOpen(false)}

@@ -31,7 +31,7 @@ export default function PartnerDetail() {
   if (!p)
     return (
       <Card>
-        <EmptyState icon={Building2} title="Partner not found" action={<Button onClick={() => navigate('/admin/partners')}>Back to partners</Button>} />
+        <EmptyState icon={Building2} title="Partner not found" action={<Button onClick={() => navigate('..', { relative: 'path' })}>Back to partners</Button>} />
       </Card>
     );
 

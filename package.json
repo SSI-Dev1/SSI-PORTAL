@@ -13,7 +13,8 @@
     "demo:sql": "esbuild scripts/gen-demo-sql.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gen-demo-sql.mjs --log-level=warning && node node_modules/.cache/gen-demo-sql.mjs",
     "test:catalogue": "node --test scripts/catalogue.test.ts",
     "test:roles": "node --test scripts/roles.test.ts",
-    "test:commission": "node --test scripts/commission.test.ts"
+    "test:commission": "node --test scripts/commission.test.ts",
+    "test:agencies": "node --test scripts/agencyImport.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "5.3.0",

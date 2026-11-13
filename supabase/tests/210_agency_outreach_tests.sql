@@ -74,7 +74,7 @@ begin; select pg_temp.act_as(:po);
 select public.create_agency_prospect('{"contact_name":"Ravi Kumar"}', '11111111-0000-0000-0000-000000000001') ->> 'id' as ag_name \gset
 select public.create_agency_prospect('{"phone":"+91 98470 00000"}', '11111111-0000-0000-0000-000000000002') ->> 'id' as ag_phone \gset
 select pg_temp.check((select email is null and company_name is null and reference ~ '^AG-\d{2}-[0-9A-F]{6}$' from public.agency_prospects where id = :'ag_name'), 'contact name only: saved with a reference, no email needed (TEST 1)');
-select pg_temp.check((select phone = '+91 98470 00000' and reference like 'AG-%' and contact_status = 'not_connected' and stage = 'new_prospect' from public.agency_prospects where id = :'ag_phone'), 'phone only: saved with a reference (TEST 2)');
+select pg_temp.check((select phone = '+91 98470 00000' and reference like 'AG-%' and contact_status = 'unknown' and stage = 'new_prospect' from public.agency_prospects where id = :'ag_phone'), 'phone only: saved with a reference, contact status not yet recorded (TEST 2)');
 select pg_temp.check((public.create_agency_prospect('{"contact_name":"Ravi Kumar"}', '11111111-0000-0000-0000-000000000001') ->> 'duplicate')::boolean, 'double click does not create a second agency');
 select pg_temp.denied($$select public.create_agency_prospect('{"email":"x@y.com","notes":"hi"}', gen_random_uuid())$$, 'email or notes alone are not enough', '%at least%');
 select pg_temp.denied($$select public.create_agency_prospect('{"contact_name":"A","email":"not-an-email"}', gen_random_uuid())$$, 'a typed email must be valid', '%valid email%');

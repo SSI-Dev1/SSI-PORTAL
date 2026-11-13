@@ -3,18 +3,19 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, Plus, Settings2 } from 'lucide-react';
+import { Building2, FileSignature, FileUp, Plus, Settings2 } from 'lucide-react';
 import { Alert, Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { matches } from '../../lib/utils';
 import {
-  CONTACT, FILTERS, PROPOSAL, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, latestProposal, matchesFilter, rpc, useAgencyData,
+  CONTACT, FILTERS, PROPOSAL, STAGE, agencyAccess, stageLabel, agencyManager, agencyName, fmtDate, latestProposal, matchesFilter, rpc, useAgencyData,
   type AgencyFilter, type ContactStatus, type Terms,
 } from '../../lib/agencies';
 import { supabase } from '../../auth/auth';
+import { ImportAgencies } from './AgencyImport';
 
-export default function Agencies() {
+export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const { session, db } = useStore();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -23,8 +24,10 @@ export default function Agencies() {
   const { data, error } = useAgencyData(allowed);
   const [q, setQ] = useState('');
   const [officer, setOfficer] = useState('');
-  const [adding, setAdding] = useState(params.get('add') === '1');
+  const [adding, setAdding] = useState(addNew || params.get('add') === '1');
+  useEffect(() => { if (addNew) setAdding(true); }, [addNew]);
   const [settings, setSettings] = useState(false);
+  const [importing, setImporting] = useState(false);
   const filter = (params.get('f') as AgencyFilter) || 'all';
   const setFilter = (f: string) => setParams((p) => { const n = new URLSearchParams(p); if (f && f !== 'all') n.set('f', f); else n.delete('f'); n.delete('add'); return n; }, { replace: true });
   const staffName = (id: string | null) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Officer') : '—');
@@ -41,8 +44,9 @@ export default function Agencies() {
   if (!allowed) return <Card><EmptyState icon={Building2} title="Agencies are not available" description="Ask an administrator for the Agencies & proposals permission." /></Card>;
   return (
     <>
-      <PageHeader title="Agencies" subtitle="Agencies you are approaching for a partnership — from first contact to onboarding."
+      <PageHeader title="Agency List" subtitle="Every agency in the partnership pipeline — from first contact to onboarding. Active partners are in Clients & Branches."
         actions={<>
+          {manager && <Button variant="secondary" icon={FileUp} onClick={() => setImporting(true)}>Import from Excel</Button>}
           {manager && <Button variant="secondary" icon={Settings2} onClick={() => setSettings(true)}>Proposal terms & settings</Button>}
           <Button icon={Plus} onClick={() => setAdding(true)}>Add Agency</Button>
         </>} />
@@ -70,11 +74,11 @@ export default function Agencies() {
                     <td className="min-w-[180px]"><div className="font-medium text-heading">{agencyName(a)}</div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}</div></td>
                     <td className="min-w-[160px] text-sm">{a.contact_name ?? '—'}<div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
-                    <td><Badge tone={STAGE[a.stage].tone}>{STAGE[a.stage].label}</Badge></td>
-                    <td className="text-sm">{staffName(a.assigned_officer)}</td>
+                    <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>
+                    <td className="text-sm">{a.assigned_officer ? staffName(a.assigned_officer) : <span className="text-ink-mute">Unassigned</span>}</td>
                     <td className="whitespace-nowrap text-sm">{fmtDate(a.last_contact_at)}</td>
                     <td className={`whitespace-nowrap text-sm ${overdue ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(a.next_follow_up)}</td>
-                    <td>{p ? <Badge tone={PROPOSAL[p.status].tone}>{PROPOSAL[p.status].label}</Badge> : <span className="text-xs text-ink-mute">—</span>}</td>
+                    <td>{p ? <Badge tone={PROPOSAL[p.status].tone}>{PROPOSAL[p.status].label}</Badge> : <span className="text-xs text-ink-mute">{a.source === 'import' && ['proposal_sent', 'mou_sent'].includes(a.stage) ? 'Before the CRM' : '—'}</span>}</td>
                     <td className="text-sm">{reg ? reg.reference : a.registration_id ? 'Issued' : '—'}</td>
                     <td><Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(a.id); }}>Open</Button></td>
                   </tr>
@@ -85,8 +89,9 @@ export default function Agencies() {
           </>
         )}
       </Card>
-      <AddAgencyModal open={adding} onClose={() => { setAdding(false); if (params.get('add')) setFilter(filter); }} onCreated={(id) => navigate(id)} />
+      <AddAgencyModal open={adding} onClose={() => { setAdding(false); if (params.get('add')) setFilter(filter); if (addNew) navigate('..', { relative: 'path' }); }} onCreated={(id) => navigate(addNew ? `../${id}` : id, { relative: 'path' })} />
       {manager && <SettingsModal open={settings} onClose={() => setSettings(false)} />}
+      {manager && importing && <ImportAgencies onClose={() => setImporting(false)} onDone={() => setFilter('all')} />}
     </>
   );
 }
@@ -96,7 +101,7 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
   const toast = useToast();
   const empty = { company_name: '', contact_name: '', phone: '', email: '', country: '', notes: '' };
   const [f, setF] = useState(empty);
-  const [status, setStatus] = useState<ContactStatus>('not_connected');
+  const [status, setStatus] = useState<ContactStatus>('unknown');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [req, setReq] = useState(() => crypto.randomUUID());
@@ -104,7 +109,7 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
   const identifiable = !!(f.company_name.trim() || f.contact_name.trim() || f.phone.trim());
   const emailBad = !!f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim());
   const dirty = Object.values(f).some((v) => v.trim());
-  const close = () => { setF(empty); setStatus('not_connected'); setErr(''); setReq(crypto.randomUUID()); onClose(); };
+  const close = () => { setF(empty); setStatus('unknown'); setErr(''); setReq(crypto.randomUUID()); onClose(); };
   const save = async () => {
     if (!identifiable) return setErr('Enter at least the agency name, the contact person or a phone number.');
     if (emailBad) return setErr('Enter a valid email address, or leave it empty.');
@@ -126,7 +131,7 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
         <Field label="Email address" error={emailBad ? 'Enter a valid email, or leave it empty' : undefined}><Input type="email" value={f.email} onChange={set('email')} maxLength={200} invalid={emailBad} /></Field>
         <Field label="Country"><Input value={f.country} onChange={set('country')} maxLength={80} /></Field>
         <Field label="Initial contact status">
-          <Segmented options={[{ value: 'not_connected', label: 'Not connected' }, { value: 'connected', label: 'Connected' }]} value={status} onChange={(v) => setStatus(v as ContactStatus)} />
+          <Segmented options={[{ value: 'unknown', label: 'Not contacted yet' }, { value: 'not_connected', label: 'Not connected' }, { value: 'connected', label: 'Connected' }]} value={status} onChange={(v) => setStatus(v as ContactStatus)} />
         </Field>
         <Field label="Internal notes" className="sm:col-span-2" hint="Only SSI GLOBAL sees these."><Textarea rows={3} value={f.notes} onChange={set('notes')} maxLength={4000} /></Field>
       </div>

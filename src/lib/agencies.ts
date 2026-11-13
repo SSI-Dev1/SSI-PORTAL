@@ -7,7 +7,7 @@ import { serverMessage } from '../data/hr';
 import { canManageRegistrations } from '../auth/roles';
 import type { Session } from '../data/types';
 
-export type ContactStatus = 'not_connected' | 'connected';
+export type ContactStatus = 'unknown' | 'not_connected' | 'connected';
 export type Stage = 'new_prospect' | 'follow_up_required' | 'discussion' | 'proposal_sent' | 'proposal_confirmed' | 'mou_sent' | 'registration_pending'
   | 'registration_submitted' | 'under_review' | 'approved' | 'onboarded' | 'inactive' | 'closed';
 export type ProposalStatus = 'draft' | 'pending_approval' | 'sending' | 'sent' | 'delivery_failed' | 'awaiting_confirmation' | 'confirmed' | 'declined'
@@ -19,6 +19,8 @@ export interface Agency {
   notes: string | null; contact_status: ContactStatus; contact_changed_by: string | null; contact_changed_at: string | null; first_connected_at: string | null;
   stage: Stage; stage_changed_at: string | null; assigned_officer: string | null; last_contact_at: string | null; next_follow_up: string | null;
   selected_tier: string | null; registration_id: string | null; partner_id: string | null; created_by: string | null; created_at: string; updated_at: string;
+  first_contact_at?: string | null; source?: 'manual' | 'import'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
+  source_values?: Record<string, unknown> | null; historical_onboarded?: boolean; needs_reconciliation?: boolean; reconciliation_note?: string | null;
 }
 export interface ProposalUniversity {
   record_id: string; university: string; country: string; study_level: string | null; variant: string | null; intake: string | null;
@@ -38,7 +40,7 @@ export interface Terms { id: number; title: string; body: string; active: boolea
 export interface Registration { id: string; reference: string; status: string; link_status: string; submitted_at: string | null; activated_at: string | null }
 
 export const CONTACT: Record<ContactStatus, { label: string; tone: Tone }> = {
-  not_connected: { label: 'Not connected', tone: 'slate' }, connected: { label: 'Connected', tone: 'green' },
+  unknown: { label: 'Not recorded', tone: 'slate' }, not_connected: { label: 'Not connected', tone: 'amber' }, connected: { label: 'Connected', tone: 'green' },
 };
 export const STAGE: Record<Stage, { label: string; tone: Tone }> = {
   new_prospect: { label: 'New prospect', tone: 'slate' }, follow_up_required: { label: 'Follow-up required', tone: 'amber' },
@@ -75,7 +77,11 @@ export const ACTIVITY: Record<string, string> = {
   registration_submitted: 'Registration submitted', registration_resubmitted: 'Registration corrected', registration_in_review: 'Registration under review',
   registration_changes_requested: 'Registration changes requested', registration_approved: 'Registration approved', registration_rejected: 'Registration rejected',
   registration_activated: 'Partner account activated', registration_in_progress: 'Agency started the registration form',
+  contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
+  reactivated: 'Reopened',
 };
+/** Stage label, marking onboarded agencies that have no verified partner account. */
+export const stageLabel = (a: Agency) => (a.stage === 'onboarded' && !a.partner_id ? 'Onboarded (historical)' : STAGE[a.stage].label);
 
 export const agencyName = (a: Pick<Agency, 'company_name' | 'contact_name' | 'phone' | 'reference'>) => a.company_name || a.contact_name || a.phone || a.reference;
 export const isOpenFollowUp = (a: Agency) => !!a.next_follow_up && !['onboarded', 'closed', 'inactive'].includes(a.stage);
@@ -157,25 +163,31 @@ export const fmtDate = (d: string | null | undefined) => (d ? new Date(d.length 
 export const fmtWhen = (d: string | null | undefined) => (d ? new Date(d).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
 /** Filters used by the dashboard cards and the list. */
-export type AgencyFilter = 'all' | 'connected' | 'not_connected' | 'new_contacted' | 'proposal_sent' | 'proposal_confirmed' | 'mou_sent' | 'onboarded' | 'inactive'
+export type AgencyFilter = 'all' | 'connected' | 'not_connected' | 'unknown' | 'new_added' | 'reconcile' | 'new_contacted' | 'proposal_sent' | 'proposal_confirmed' | 'mou_sent' | 'onboarded' | 'inactive'
   | 'closed' | 'follow_up' | 'registration_pending';
 export const FILTERS: { value: AgencyFilter; label: string }[] = [
   { value: 'all', label: 'All agencies' }, { value: 'connected', label: 'Connected' }, { value: 'not_connected', label: 'Not connected' },
-  { value: 'new_contacted', label: 'Newly contacted (this month)' }, { value: 'follow_up', label: 'Follow-up required' },
+  { value: 'unknown', label: 'Contact not recorded' }, { value: 'new_added', label: 'Added this month' },
+  { value: 'new_contacted', label: 'Contacted this month' }, { value: 'follow_up', label: 'Follow-up required' },
   { value: 'proposal_sent', label: 'Proposal sent' }, { value: 'proposal_confirmed', label: 'Proposal confirmed' }, { value: 'mou_sent', label: 'MOU sent' },
   { value: 'registration_pending', label: 'Registration in progress' }, { value: 'onboarded', label: 'Onboarded' }, { value: 'inactive', label: 'Inactive' },
-  { value: 'closed', label: 'Closed / Rejected' },
+  { value: 'closed', label: 'Closed' }, { value: 'reconcile', label: 'Needs reconciliation' },
 ];
+const inMonth = (d: string | null | undefined, month: string) => !!d && new Date(new Date(d).getTime() + 5.5 * 3_600_000).toISOString().slice(0, 7) === month;
 export function matchesFilter(a: Agency, f: AgencyFilter, d: AgencyData): boolean {
   const month = today().slice(0, 7);
   switch (f) {
     case 'all': return true;
     case 'connected': return a.contact_status === 'connected';
     case 'not_connected': return a.contact_status === 'not_connected';
-    case 'new_contacted': return !!a.first_connected_at && new Date(new Date(a.first_connected_at).getTime() + 5.5 * 3_600_000).toISOString().slice(0, 7) === month;
-    case 'proposal_sent': return d.proposals.some((p) => p.prospect_id === a.id && !!p.sent_at);
-    case 'proposal_confirmed': return d.proposals.some((p) => p.prospect_id === a.id && p.status === 'confirmed');
-    case 'mou_sent': return d.mous.some((m) => m.prospect_id === a.id && m.status !== 'cancelled');
+    case 'unknown': return a.contact_status === 'unknown';
+    case 'new_added': return a.source !== 'import' && inMonth(a.created_at, month);
+    case 'new_contacted': return inMonth(a.first_contact_at ?? a.first_connected_at, month);
+    case 'reconcile': return !!a.needs_reconciliation;
+    // Pipeline filters: agencies currently at that stage (imported or live), not actions taken today.
+    case 'proposal_sent': return a.stage === 'proposal_sent';
+    case 'proposal_confirmed': return a.stage === 'proposal_confirmed' || d.proposals.some((p) => p.prospect_id === a.id && p.status === 'confirmed' && a.stage === 'proposal_confirmed');
+    case 'mou_sent': return a.stage === 'mou_sent';
     case 'registration_pending': return ['registration_pending', 'registration_submitted', 'under_review', 'approved'].includes(a.stage);
     case 'onboarded': return a.stage === 'onboarded';
     case 'inactive': return a.stage === 'inactive';

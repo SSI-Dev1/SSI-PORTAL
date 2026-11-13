@@ -95,3 +95,12 @@ test('Agencies: Partnership Officers and registration managers; Messages only wi
   assert.equal(canOpenPath(appTeam, 'messages'), true, 'application team keeps Messages');
   assert.equal(canOpenPath(officer, 'partners/registrations'), false, 'officers cannot approve registrations');
 });
+
+test('Clients & Branches in the Staff Portal: Partnership Officers only', () => {
+  const staffOfficer = { role: 'staff' as const, userRole: 'support_staff' as const, permissions: ['partners', 'agency_outreach'], partnerModules: [] };
+  const staffNoOutreach = { role: 'staff' as const, userRole: 'support_staff' as const, permissions: ['partners'], partnerModules: [] };
+  assert.equal(canOpenPath(staffOfficer, 'partners'), true);
+  assert.equal(canOpenPath(staffOfficer, 'agencies/proposals'), true);
+  assert.equal(canOpenPath(staffNoOutreach, 'partners'), false, 'unchanged for other staff');
+  assert.equal(canOpenPath(staffOfficer, 'users'), false);
+});

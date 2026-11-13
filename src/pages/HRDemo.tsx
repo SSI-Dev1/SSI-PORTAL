@@ -171,7 +171,13 @@ const AGENCY_SAMPLE: AgencyData = {
     { id: 'ag3', reference: 'AG-26-DEMO03', company_name: 'Sample Agency C (demo)', contact_name: 'Other Contact', phone: null, email: 'c@example.test', country: 'Sampleland', notes: null,
       contact_status: 'connected', contact_changed_by: ME, contact_changed_at: d(20), first_connected_at: d(20), stage: 'onboarded', stage_changed_at: d(4), assigned_officer: ME,
       last_contact_at: d(6), next_follow_up: null, selected_tier: 'Tier 2', registration_id: 'reg-demo', partner_id: 'demo-partner', created_by: ME, created_at: d(30), updated_at: d(4) } as never,
-  ],
+  ].concat([
+    { id: 'ag4', reference: 'AG-26-DEMO04', company_name: 'Sample Imported Agency (demo)', contact_name: null, phone: '9876500000', email: null, country: null, notes: null,
+      contact_status: 'unknown', contact_changed_by: null, contact_changed_at: null, first_connected_at: null, stage: 'onboarded', stage_changed_at: null, assigned_officer: null,
+      last_contact_at: null, next_follow_up: null, selected_tier: null, registration_id: null, partner_id: null, created_by: ME, created_at: d(0), updated_at: d(0),
+      source: 'import', source_row: 7, source_status: 'Onboarded', historical_onboarded: true, needs_reconciliation: true,
+      reconciliation_note: 'Onboarded in the sheet; no matching partner account — check before treating as active' } as never,
+  ]),
   proposals: [{ id: 'pp1', reference: 'PP-26-DEMO01', prospect_id: 'ag1', status: 'awaiting_confirmation', company_name: 'Sample Agency A (demo)', recipient_name: 'Sample Contact',
     recipient_email: 'a@example.test', country: 'Sampleland', arrangement: { kind: 'tier', tier_id: 'tier_1', tier_label: 'Tier 1', universities: [
       { record_id: 'cr1', university: 'Sample University (demo)', country: 'Sampleland', study_level: null, variant: null, intake: null, commission_kind: 'percent', commission_value: '10', currency: null, conditions: null }] },

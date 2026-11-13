@@ -131,6 +131,15 @@ export default function AgencyDetail() {
           </dl>
           {a.notes && <div className="mx-5 mb-5 whitespace-pre-wrap rounded-xl bg-canvas p-3 text-sm text-ink-soft">{a.notes}</div>}
           <OfficerHistory prospectId={a.id} nameOf={staffName} refreshKey={a.assigned_officer} />
+          {a.source === 'linkedin' && (
+            <div className="mx-5 mb-5 rounded-xl border border-line p-3 text-xs text-ink-soft">
+              <div className="font-semibold text-heading">Source: LinkedIn Outreach</div>
+              Prospect {String((a.source_values as { linkedin_reference?: string } | null)?.linkedin_reference ?? '—')} · moved {fmtWhen(a.created_at)}.
+              {(a.source_values as { linkedin_id?: string } | null)?.linkedin_id && (
+                <> <Link className="font-semibold text-rust underline" to={`../linkedin?p=${(a.source_values as { linkedin_id: string }).linkedin_id}`} relative="path">Open LinkedIn history</Link></>
+              )}
+            </div>
+          )}
           {a.source === 'import' && (
             <div className="mx-5 mb-5 rounded-xl border border-line p-3 text-xs text-ink-soft">
               <div className="font-semibold text-heading">Imported from a spreadsheet</div>

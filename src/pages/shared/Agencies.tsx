@@ -100,7 +100,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                           onCheckedChange={(v) => setSelected((cur) => { const n = new Set(cur); if (v) n.add(a.id); else n.delete(a.id); return n; })} />
                       </td>
                     )}
-                    <td className="min-w-[180px]"><div className="font-medium text-heading">{agencyName(a)}</div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}</div></td>
+                    <td className="min-w-[180px]"><div className="font-medium text-heading">{agencyName(a)}</div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}{a.source === 'linkedin' ? ' · Source: LinkedIn Outreach' : a.source === 'import' ? ' · Imported' : ''}</div></td>
                     <td className="min-w-[160px] text-sm">{a.contact_name ?? '—'}<div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
                     <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>

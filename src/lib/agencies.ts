@@ -19,7 +19,7 @@ export interface Agency {
   notes: string | null; contact_status: ContactStatus; contact_changed_by: string | null; contact_changed_at: string | null; first_connected_at: string | null;
   stage: Stage; stage_changed_at: string | null; assigned_officer: string | null; last_contact_at: string | null; next_follow_up: string | null;
   selected_tier: string | null; registration_id: string | null; partner_id: string | null; created_by: string | null; created_at: string; updated_at: string;
-  first_contact_at?: string | null; source?: 'manual' | 'import'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
+  first_contact_at?: string | null; source?: 'manual' | 'import' | 'linkedin'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
   source_values?: Record<string, unknown> | null; historical_onboarded?: boolean; needs_reconciliation?: boolean; reconciliation_note?: string | null;
 }
 export interface ProposalUniversity {
@@ -77,7 +77,7 @@ export const ACTIVITY: Record<string, string> = {
   registration_submitted: 'Registration submitted', registration_resubmitted: 'Registration corrected', registration_in_review: 'Registration under review',
   registration_changes_requested: 'Registration changes requested', registration_approved: 'Registration approved', registration_rejected: 'Registration rejected',
   registration_activated: 'Partner account activated', registration_in_progress: 'Agency started the registration form',
-  contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', converted_from_linkedin: 'Created from a LinkedIn prospect',
+  contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', converted_from_linkedin: 'Moved from LinkedIn Outreach',
   linked_from_linkedin: 'LinkedIn prospect linked to this agency', mou_email_accepted: 'MOU emailed', mou_email_failed: 'MOU email failed',
   mou_email_not_configured: 'MOU not emailed — no MOU published', registration_email_accepted: 'Registration form emailed',
   registration_email_failed: 'Registration email failed', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
@@ -231,6 +231,8 @@ export interface LinkedInProspect {
   id: string; reference: string; name: string; company_name: string | null; phone: string | null; email: string | null; linkedin_url: string | null; notes: string | null;
   status: LinkedInStatus; last_contact_at: string | null; next_follow_up: string | null; assigned_to: string | null; agency_id: string | null; converted_at: string | null;
   created_by: string | null; created_at: string; updated_at: string;
+  /** 0041: recorded only by an explicit choice; separate from the outreach progress and any agency stage. */
+  contact_status?: ContactStatus; contact_changed_by?: string | null; contact_changed_at?: string | null; converted_by?: string | null;
 }
 export interface LinkedInActivity { id: number; prospect_id: string; kind: string; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
 export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = {
@@ -239,7 +241,8 @@ export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = 
 };
 export const LI_ACTIVITY: Record<string, string> = {
   created: 'Prospect added', edited: 'Details edited', contacted: 'Connection contacted', follow_up: 'Follow-up message sent', response: 'Response received',
-  interested: 'Positive response', not_interested: 'Not interested', note: 'Note', follow_up_date: 'Follow-up scheduled', converted: 'Converted to agency',
+  interested: 'Positive response', not_interested: 'Not interested', note: 'Note', follow_up_date: 'Follow-up scheduled', converted: 'Moved to the Agency List',
+  contact_status: 'Contact status changed',
 };
 
 export function useLinkedIn(enabled = true) {

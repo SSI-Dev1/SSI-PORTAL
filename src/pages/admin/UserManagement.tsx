@@ -1017,15 +1017,24 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
   );
 }
 
-function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { open: boolean; partnerId?: string; partners: Partner[]; onClose: () => void; onCreated: OnCreated }) {
+export function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated, initial, activation }: {
+  open: boolean; partnerId?: string; partners: Partner[]; onClose: () => void; onCreated: OnCreated;
+  /** Prefill (e.g. a historical client's contact). */
+  initial?: { fullName?: string; email?: string; role?: UserRole };
+  /** Historical client activation: offers to open the partner's portal once the account exists. */
+  activation?: boolean;
+}) {
   const [f, setF] = useState({ partnerId: '', fullName: '', email: '', role: 'partner_staff' as UserRole, password: '', mustChange: false, send: true });
+  const [openPortal, setOpenPortal] = useState(true);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const s = useSubmit();
   useEffect(() => {
     if (!open) return;
-    setF({ partnerId: partnerId ?? '', fullName: '', email: '', role: 'partner_staff', password: '', mustChange: false, send: true });
+    setF({ partnerId: partnerId ?? '', fullName: initial?.fullName ?? '', email: initial?.email ?? '', role: initial?.role ?? 'partner_staff', password: '', mustChange: false, send: true });
+    setOpenPortal(true);
     setErrors({});
     s.setError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, partnerId]);
   const save = () => {
     const e = {
@@ -1039,6 +1048,8 @@ function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { 
     void s.run(async () => {
       const email = f.email.trim().toLowerCase();
       const r = await adminApi.createPartnerUser({ partnerId: f.partnerId, email, fullName: f.fullName.trim(), role: f.role, password: f.password, mustChangePassword: f.send || f.mustChange, sendCredentials: f.send });
+      // The account exists now; opening the portal is a separate, explicit choice.
+      if (activation && openPortal) await setPartnerAccess(f.partnerId, { portalEnabled: true, status: 'Active' });
       await onCreated(email, f.password, r.delivery);
     });
   };
@@ -1047,8 +1058,8 @@ function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { 
       open={open}
       onClose={onClose}
       dirty={!!(f.fullName || f.email || f.password)}
-      title="Add partner user"
-      subtitle="Partner users only ever see their own organisation's data."
+      title={activation ? 'Create / activate partner account' : 'Add partner user'}
+      subtitle={activation ? 'Creates the first login for this existing client — no new organisation is created.' : "Partner users only ever see their own organisation's data."}
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Save & create account</Button></>}
     >
       <div className="grid gap-4 sm:grid-cols-2">
@@ -1069,6 +1080,11 @@ function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated }: { 
         <div className="sm:col-span-2"><PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} email={f.email} error={errors.password} /></div>
         <div className="sm:col-span-2"><SendCredentialsOption checked={f.send} onChange={(v) => setF({ ...f, send: v })} /></div>
         {!f.send && <div className="sm:col-span-2"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" /></div>}
+        {activation && (
+          <div className="rounded-xl bg-canvas p-3 sm:col-span-2">
+            <Checkbox checked={openPortal} onCheckedChange={setOpenPortal} label="Also turn on Client Portal access for this client" description="Leave off to create the login now and open the portal later in User Management." />
+          </div>
+        )}
       </div>
     </Modal>
   );

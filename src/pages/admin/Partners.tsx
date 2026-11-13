@@ -1,19 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table } from '../../components/ui';
+import { Building2, Eye, Globe, History, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
 import { canManageRegistrations } from '../../auth/roles';
 import { partnershipFocused } from '../../lib/agencies';
+import { LinkPartnerModal, useOfficerCandidates, useOnboardedDirectory, type OnboardedAgency } from '../shared/AgencyBulk';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, formatDate, initials, matches, type Tone } from '../../lib/utils';
 
 export const partnerStatusTone: Record<PartnerStatus, Tone> = { Active: 'green', Onboarding: 'amber', Inactive: 'slate' };
 export const tierTone: Record<PartnerTier, Tone> = { Platinum: 'navy', Gold: 'orange', Silver: 'slate' };
+
+type DirTab = 'active' | 'pending' | 'suspended' | 'provisioning' | 'all';
+/** Partner account status as Clients & Branches shows it. */
+export const accountState = (p: Partner): { key: Exclude<DirTab, 'pending' | 'all'>; label: string; tone: Tone } =>
+  p.status === 'Active' && p.portalEnabled !== false ? { key: 'active', label: 'Active · portal on', tone: 'green' }
+    : p.status === 'Onboarding' ? { key: 'provisioning', label: 'Provisioning · portal off', tone: 'amber' }
+      : { key: 'suspended', label: p.status === 'Inactive' ? 'Suspended' : 'Portal off', tone: 'red' };
 
 export default function Partners() {
   const { db, actions, session } = useStore();
@@ -34,6 +42,19 @@ export default function Partners() {
   const [status, setStatus] = useState('');
   const [tier, setTier] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('grid');
+  const [tab, setTab] = useState<DirTab>('active');
+  const [country, setCountry] = useState('');
+  const [officerF, setOfficerF] = useState('');
+  const [linking, setLinking] = useState<OnboardedAgency | null>(null);
+  const canVerify = canManageRegistrations(realSession);
+  const { rows: onboarded } = useOnboardedDirectory(true);
+  const candidates = useOfficerCandidates(true);
+  const officerName = (id: string | null | undefined) => (id ? candidates.find((c) => c.id === id)?.full_name ?? db.staff.find((x) => x.id === id)?.fullName ?? '—' : '—');
+  const agencyOf = useMemo(() => new Map((onboarded ?? []).filter((a) => a.partner_id).map((a) => [a.partner_id as string, a])), [onboarded]);
+  const pending = useMemo(() => (onboarded ?? []).filter((a) => a.verification === 'pending')
+    .filter((a) => matches(q, a.company_name ?? '', a.contact_name ?? '', a.email ?? '', a.phone ?? '', a.reference))
+    .filter((a) => !country || (a.country ?? '') === country)
+    .filter((a) => !officerF || a.assigned_officer === officerF), [onboarded, q, country, officerF]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Partner>();
 
@@ -45,16 +66,23 @@ export default function Partners() {
     }
   }, [params, setParams]);
 
+  const live = db.partners.filter((p) => !p.archivedAt);
+  const count = (k: DirTab) => (k === 'pending' ? (onboarded ?? []).filter((a) => a.verification === 'pending').length : k === 'all' ? live.length : live.filter((p) => accountState(p).key === k).length);
   const rows = useMemo(
     () =>
-      db.partners
-        .filter((p) => !p.archivedAt)
-        .filter((p) => !activeOnly || (p.status === 'Active' && p.portalEnabled !== false))
+      live
+        // Partnership Officers never see partners still being provisioned.
+        .filter((p) => (tab === 'all' ? !activeOnly || accountState(p).key !== 'provisioning' : accountState(p).key === tab))
         .filter((p) => matches(q, p.name, p.code, p.city, p.contactName, p.email))
         .filter((p) => !status || p.status === status)
-        .filter((p) => !tier || p.tier === tier),
-    [db.partners, q, status, tier, activeOnly],
+        .filter((p) => !tier || p.tier === tier)
+        .filter((p) => !country || p.country === country)
+        .filter((p) => !officerF || p.partnershipOfficerId === officerF),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [db.partners, q, status, tier, activeOnly, tab, country, officerF],
   );
+  const countries = [...new Set([...live.map((p) => p.country), ...(onboarded ?? []).map((a) => a.country ?? '')].filter(Boolean))].sort();
+  const officers = [...new Set([...live.map((p) => p.partnershipOfficerId), ...(onboarded ?? []).map((a) => a.assigned_officer)].filter(Boolean) as string[])];
 
   const stats = (id: string) => ({
     students: db.students.filter((s) => s.partnerId === id).length,
@@ -72,7 +100,7 @@ export default function Partners() {
     <>
       <PageHeader
         title="Clients & Branches"
-        subtitle={activeOnly ? 'Active, onboarded partners with portal access. Prospects and earlier stages are in the Agency List.' : 'Consultancy partners and their branch workspaces.'}
+        subtitle="Onboarded partners: verified accounts and historically onboarded agencies awaiting verification. Prospects and earlier stages stay in the Agency List."
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
@@ -89,17 +117,29 @@ export default function Partners() {
           </>
         }
       />
+      <Tabs className="mb-4" value={tab} onChange={setTab} tabs={[
+        { value: 'active', label: 'Active partners', count: count('active') },
+        { value: 'pending', label: 'Pending verification', count: count('pending') },
+        { value: 'suspended', label: 'Suspended', count: count('suspended') },
+        ...(activeOnly ? [] : [{ value: 'provisioning' as const, label: 'Provisioning', count: count('provisioning') }]),
+        { value: 'all', label: 'All partners', count: activeOnly ? live.filter((p) => accountState(p).key !== 'provisioning').length : count('all') },
+      ]} />
       <Card className="mb-6">
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
           <SearchInput value={q} onChange={setQ} placeholder="Search partner, city, contact…" className="lg:w-96" />
           <div className="flex flex-wrap gap-2.5 lg:ml-auto">
-            <FilterSelect label="All tiers" value={tier} onChange={setTier} options={['Platinum', 'Gold', 'Silver']} />
-            <FilterSelect label="All statuses" value={status} onChange={setStatus} options={['Active', 'Onboarding', 'Inactive']} />
+            <FilterSelect label="Country" value={country} onChange={setCountry} options={[{ value: '', label: 'All countries' }, ...countries.map((c) => ({ value: c, label: c }))]} />
+            <FilterSelect label="Officer" value={officerF} onChange={setOfficerF} options={[{ value: '', label: 'Any officer' }, ...officers.map((o) => ({ value: o, label: officerName(o) }))]} />
+            {tab !== 'pending' && <FilterSelect label="All tiers" value={tier} onChange={setTier} options={['Platinum', 'Gold', 'Silver']} />}
+            {tab === 'all' && <FilterSelect label="All statuses" value={status} onChange={setStatus} options={['Active', 'Onboarding', 'Inactive']} />}
           </div>
         </div>
       </Card>
 
-      {rows.length === 0 ? (
+      {tab === 'pending' ? (
+        <PendingVerification rows={pending} loading={!onboarded} canVerify={canVerify} officerName={officerName} onLink={setLinking}
+          onOpen={(a) => navigate(`../agencies/${a.agency_id}`, { relative: 'path' })} />
+      ) : rows.length === 0 ? (
         <Card>
           <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={superAdmin ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
         </Card>
@@ -127,7 +167,8 @@ export default function Partners() {
                     </div>
                   </div>
                   <div className="relative mt-4 flex flex-wrap gap-1.5">
-                    <Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge>
+                    <Badge tone={accountState(p).tone} dot>{accountState(p).label}</Badge>
+                    {agencyOf.get(p.id) && <Badge tone="navy">Verified · {agencyOf.get(p.id)!.reference}</Badge>}
                     <Badge tone={tierTone[p.tier]}>{p.tier}</Badge>
                     <Badge tone="slate">{p.branches.length} branch{p.branches.length > 1 ? 'es' : ''}</Badge>
                   </div>
@@ -140,7 +181,7 @@ export default function Partners() {
                     ))}
                   </div>
                   <div className="relative mt-4 flex items-center justify-between text-xs text-ink-soft">
-                    <span className="truncate">{p.contactName} · {p.email}</span>
+                    <span className="truncate">{p.contactName} · {p.email}{p.partnershipOfficerId ? ` · Officer: ${officerName(p.partnershipOfficerId)}` : ''}</span>
                     <span className="shrink-0 font-semibold text-rust opacity-0 transition group-hover:opacity-100">Open →</span>
                   </div>
                 </div>
@@ -160,7 +201,7 @@ export default function Partners() {
       ) : (
         <Card>
           <Table head={activeOnly ? ['Partner', 'Primary contact', 'Location', 'Branches', 'Account', 'Onboarded', 'Partnership Officer', '']
-            : ['Partner', 'Contact', 'Location', 'Tier', 'Students', 'Applications', 'Status', 'Joined', '']}>
+            : ['Partner', 'Contact', 'Location', 'Tier', 'Students', 'Applications', 'Account', 'Partnership Officer', 'Joined', '']}>
             {rows.map((p) => {
               const s = stats(p.id);
               return (
@@ -177,16 +218,17 @@ export default function Partners() {
                   {activeOnly ? (
                     <>
                       <td className="px-5 py-3.5 text-ink-soft">{p.branches.length ? p.branches.join(', ') : '—'}</td>
-                      <td className="px-5 py-3.5"><Badge tone="green" dot>Active · portal on</Badge></td>
+                      <td className="px-5 py-3.5"><Badge tone={accountState(p).tone} dot>{accountState(p).label}</Badge></td>
                       <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{formatDate(p.joinedAt)}</td>
-                      <td className="px-5 py-3.5 text-ink-soft">{(p.partnershipOfficerId && db.staff.find((x) => x.id === p.partnershipOfficerId)?.fullName) || '—'}</td>
+                      <td className="px-5 py-3.5 text-ink-soft">{officerName(p.partnershipOfficerId)}</td>
                     </>
                   ) : (
                     <>
                       <td className="px-5 py-3.5"><Badge tone={tierTone[p.tier]}>{p.tier}</Badge></td>
                       <td className="px-5 py-3.5 font-semibold text-heading">{s.students}</td>
                       <td className="px-5 py-3.5 font-semibold text-heading">{s.apps}</td>
-                      <td className="px-5 py-3.5"><Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge></td>
+                      <td className="px-5 py-3.5"><Badge tone={accountState(p).tone} dot>{accountState(p).label}</Badge></td>
+                      <td className="px-5 py-3.5 text-ink-soft">{officerName(p.partnershipOfficerId)}</td>
                       <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{formatDate(p.joinedAt)}</td>
                     </>
                   )}
@@ -211,7 +253,43 @@ export default function Partners() {
         }}
       />
       <CredentialsOnce data={created} onClose={() => setCreated(null)} />
+      {linking && <LinkPartnerModal agency={linking} onClose={() => setLinking(null)}
+        partners={live.filter((p) => !agencyOf.has(p.id)).map((p) => ({ id: p.id, name: p.name, status: p.status, portalEnabled: p.portalEnabled }))} />}
     </>
+  );
+}
+
+// Historically onboarded agencies without a verified partner account: listed, never given portal access.
+function PendingVerification({ rows, loading, canVerify, officerName, onLink, onOpen }: {
+  rows: OnboardedAgency[]; loading: boolean; canVerify: boolean; officerName: (id: string | null) => string;
+  onLink: (a: OnboardedAgency) => void; onOpen: (a: OnboardedAgency) => void;
+}) {
+  if (loading) return <Card><div className="p-6 text-sm text-ink-soft" role="status">Loading onboarded agencies…</div></Card>;
+  if (rows.length === 0) return <Card><EmptyState icon={History} title="Nothing waiting for verification" description="Onboarded agencies without a verified partner account appear here." /></Card>;
+  return (
+    <Card>
+      <p className="border-b border-line px-5 py-3 text-xs text-ink-soft">Onboarded before the CRM (or without a linked account). They have <b className="text-heading">no portal access</b> until an administrator links them to an existing partner or completes their registration and activation.</p>
+      <Table head={['Agency', 'Contact', 'Country', 'Partnership Officer', 'Verification', 'Suggested match', '']}>
+        {rows.map((a) => (
+          <tr key={a.agency_id}>
+            <td className="px-5 py-3.5"><div className="font-semibold text-heading">{a.company_name ?? a.reference}</div><div className="text-xs text-ink-mute">{a.reference}{a.source_status ? ` · sheet: “${a.source_status}”` : ''}</div></td>
+            <td className="px-5 py-3.5"><div className="text-heading">{a.contact_name ?? '—'}</div><div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
+            <td className="px-5 py-3.5 text-ink-soft">{a.country ?? '—'}</td>
+            <td className="px-5 py-3.5 text-ink-soft">{a.officer_name ?? officerName(a.assigned_officer)}</td>
+            <td className="px-5 py-3.5">
+              <Badge tone="amber" dot>Historically onboarded · pending verification</Badge>
+              {a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}
+              {a.registration_status && <div className="mt-1 text-[11px] text-ink-mute">Registration: {a.registration_status.replace(/_/g, ' ')}</div>}
+            </td>
+            <td className="px-5 py-3.5 text-sm">{a.suggested_partner_name ? <span className="text-heading">{a.suggested_partner_name}</span> : <span className="text-ink-mute">—</span>}</td>
+            <td className="whitespace-nowrap px-5 py-3.5 text-right">
+              {canVerify && <Button size="sm" className="mr-1.5" onClick={() => onLink(a)}>Verify…</Button>}
+              <Button size="sm" variant="secondary" onClick={() => onOpen(a)}>Open agency</Button>
+            </td>
+          </tr>
+        ))}
+      </Table>
+    </Card>
   );
 }
 

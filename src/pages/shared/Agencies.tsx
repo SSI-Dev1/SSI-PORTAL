@@ -3,8 +3,8 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, FileUp, Plus, Settings2 } from 'lucide-react';
-import { Alert, Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
+import { Building2, FileSignature, FileUp, Plus, Settings2, UserCheck, UserCog, X } from 'lucide-react';
+import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { matches } from '../../lib/utils';
@@ -14,6 +14,7 @@ import {
 } from '../../lib/agencies';
 import { supabase } from '../../auth/auth';
 import { ImportAgencies } from './AgencyImport';
+import { AssignOfficerModal, ContactStatusModal, useOfficerCandidates } from './AgencyBulk';
 
 export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const { session, db } = useStore();
@@ -28,9 +29,14 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   useEffect(() => { if (addNew) setAdding(true); }, [addNew]);
   const [settings, setSettings] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Administrators: selection for bulk officer assignment / contact-status correction.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<'officer' | 'contact' | null>(null);
+  const candidates = useOfficerCandidates(allowed);
   const filter = (params.get('f') as AgencyFilter) || 'all';
   const setFilter = (f: string) => setParams((p) => { const n = new URLSearchParams(p); if (f && f !== 'all') n.set('f', f); else n.delete('f'); n.delete('add'); return n; }, { replace: true });
-  const staffName = (id: string | null) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Officer') : '—');
+  // Full names from the server (eligible officers), then the staff directory.
+  const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
   const regOf = (id: string | null) => (id ? data?.registrations.find((r) => r.id === id) : undefined);
 
   const rows = useMemo(() => {
@@ -55,22 +61,45 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, contact, phone, email…" className="w-full sm:w-72" />
           <FilterSelect label="Status" value={filter} onChange={setFilter} options={FILTERS} />
-          {manager && officers.length > 1 && <FilterSelect label="Officer" value={officer} onChange={setOfficer} options={[{ value: '', label: 'All officers' }, ...officers.map((o) => ({ value: o, label: staffName(o) }))]} />}
+          {officers.length > 0 && <FilterSelect label="Officer" value={officer} onChange={setOfficer} options={[{ value: '', label: 'All officers' }, ...officers.map((o) => ({ value: o, label: staffName(o) }))]} />}
           <span className="ml-auto text-xs text-ink-mute">{data ? `${rows.length} of ${data.agencies.length}` : ''}</span>
         </div>
+        {manager && data && rows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas/50 px-4 py-2.5 text-sm">
+            {selected.size === 0 ? (
+              <Button size="sm" variant="secondary" onClick={() => setSelected(new Set(rows.map((a) => a.id)))}>Select all {rows.length} filtered</Button>
+            ) : (
+              <>
+                <b className="text-heading">{selected.size} selected</b>
+                {selected.size < rows.length && <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(rows.map((a) => a.id)))}>Select all {rows.length} filtered</Button>}
+                <Button size="sm" variant="ghost" icon={X} onClick={() => setSelected(new Set())}>Clear</Button>
+                <span className="ml-auto flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>
+                  <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>
+                </span>
+              </>
+            )}
+          </div>
+        )}
         {!data ? <div className="p-6 text-sm text-ink-soft" role="status">Loading agencies…</div> : rows.length === 0 ? (
           <EmptyState icon={Building2} title={data.agencies.length ? 'No agencies match' : 'No agencies yet'}
             description={data.agencies.length ? undefined : 'Add an agency as soon as you have a name or a phone number — the rest can come later.'}
             action={!data.agencies.length ? <Button icon={Plus} onClick={() => setAdding(true)}>Add Agency</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={['Agency', 'Contact', 'Status', 'Stage', 'Officer', 'Last contact', 'Next follow-up', 'Proposal', 'Registration', '']}>
+            <Table className="hr-table" head={[...(manager ? [<span key="sel" className="sr-only">Select</span>] : []), 'Agency', 'Contact', 'Status', 'Stage', 'Officer', 'Last contact', 'Next follow-up', 'Proposal', 'Registration', '']}>
               {paged.rows.map((a) => {
                 const p = latestProposal(data.proposals, a.id);
                 const reg = regOf(a.registration_id);
                 const overdue = a.next_follow_up && a.next_follow_up < new Date().toISOString().slice(0, 10);
                 return (
                   <tr key={a.id} className="cursor-pointer" onClick={() => navigate(a.id)}>
+                    {manager && (
+                      <td onClick={(e) => e.stopPropagation()} className="w-10">
+                        <Checkbox checked={selected.has(a.id)} label={<span className="sr-only">Select {agencyName(a)}</span>}
+                          onCheckedChange={(v) => setSelected((cur) => { const n = new Set(cur); if (v) n.add(a.id); else n.delete(a.id); return n; })} />
+                      </td>
+                    )}
                     <td className="min-w-[180px]"><div className="font-medium text-heading">{agencyName(a)}</div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}</div></td>
                     <td className="min-w-[160px] text-sm">{a.contact_name ?? '—'}<div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
@@ -92,6 +121,8 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
       <AddAgencyModal open={adding} onClose={() => { setAdding(false); if (params.get('add')) setFilter(filter); if (addNew) navigate('..', { relative: 'path' }); }} onCreated={(id) => navigate(addNew ? `../${id}` : id, { relative: 'path' })} />
       {manager && <SettingsModal open={settings} onClose={() => setSettings(false)} />}
       {manager && importing && <ImportAgencies onClose={() => setImporting(false)} onDone={() => setFilter('all')} />}
+      {manager && bulk === 'officer' && <AssignOfficerModal ids={[...selected]} candidates={candidates} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
+      {manager && bulk === 'contact' && <ContactStatusModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
     </>
   );
 }

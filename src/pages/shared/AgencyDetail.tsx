@@ -3,7 +3,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, CalendarPlus, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, Send, StickyNote, UserCheck, UserX, Users, XCircle,
+  ArrowLeft, CalendarPlus, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, Send, StickyNote, UserCheck, UserCog, UserX, Users, XCircle,
 } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Textarea } from '../../components/ui';
 import { useToast } from '../../components/feedback';
@@ -15,6 +15,7 @@ import {
   AgencyDemo, EMAIL_STATE, resendAgencyEmail, useAgencyData, type Agency, type AgencyEmail, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
+import { AssignOfficerModal, OfficerHistory, useOfficerCandidates } from './AgencyBulk';
 
 type LogKind = 'contact_attempt' | 'call' | 'meeting' | 'follow_up_done' | 'note' | 'follow_up';
 const LOG_TITLE: Record<LogKind, string> = { contact_attempt: 'Contact attempt (no answer / not reached)', call: 'Log call', meeting: 'Record meeting', follow_up_done: 'Follow-up completed', note: 'Add note', follow_up: 'Add follow-up' };
@@ -37,7 +38,9 @@ export default function AgencyDetail() {
   const proposals = useMemo(() => (data?.proposals ?? []).filter((p) => p.prospect_id === id), [data, id]);
   const mous = useMemo(() => (data?.mous ?? []).filter((m) => m.prospect_id === id), [data, id]);
   const reg = a?.registration_id ? data?.registrations.find((r) => r.id === a.registration_id) : undefined;
-  const staffName = (uid: string | null) => (uid ? db.staff.find((s) => s.id === uid)?.fullName ?? (uid === session?.userId ? session?.name : 'SSI GLOBAL') : 'The agency');
+  const candidates = useOfficerCandidates(allowed);
+  const [changingOfficer, setChangingOfficer] = useState(false);
+  const staffName = (uid: string | null) => (uid ? candidates.find((c) => c.id === uid)?.full_name ?? db.staff.find((s) => s.id === uid)?.fullName ?? (uid === session?.userId ? session?.name : 'SSI GLOBAL') : 'The agency');
 
   const demo = useContext(AgencyDemo);
   const loadHistory = useCallback(async () => {
@@ -94,6 +97,7 @@ export default function AgencyDetail() {
         actions={<>
           <Button variant="secondary" icon={Pencil} onClick={() => setModal({ kind: 'edit' })}>Edit</Button>
           {!a.assigned_officer && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void run('claim', () => rpc('claim_agency', { p_id: id }), 'You are now the officer for this agency')}>Take this agency</Button>}
+          {manager && <Button variant="secondary" icon={UserCog} onClick={() => setChangingOfficer(true)}>Change officer</Button>}
           {a.contact_status !== 'connected' && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>}
           {a.contact_status !== 'not_connected' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
           <Menu width="w-56" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
@@ -109,6 +113,7 @@ export default function AgencyDetail() {
           <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
         </>}
       />
+      {changingOfficer && <AssignOfficerModal ids={[a.id]} current={a.assigned_officer} candidates={candidates} onClose={() => setChangingOfficer(false)} />}
       {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
 
       <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
@@ -125,6 +130,7 @@ export default function AgencyDetail() {
             ))}
           </dl>
           {a.notes && <div className="mx-5 mb-5 whitespace-pre-wrap rounded-xl bg-canvas p-3 text-sm text-ink-soft">{a.notes}</div>}
+          <OfficerHistory prospectId={a.id} nameOf={staffName} refreshKey={a.assigned_officer} />
           {a.source === 'import' && (
             <div className="mx-5 mb-5 rounded-xl border border-line p-3 text-xs text-ink-soft">
               <div className="font-semibold text-heading">Imported from a spreadsheet</div>
@@ -237,7 +243,7 @@ export default function AgencyDetail() {
         </div>
       </div>
 
-      {modal?.kind === 'edit' && <EditAgency a={a} manager={manager} onClose={() => setModal(null)} onSaved={reload} />}
+      {modal?.kind === 'edit' && <EditAgency a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'log' && <LogActivity a={a} kind={modal.log} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'stage' && <ChangeStage a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'mou' && <RecordMou a={a} onClose={() => setModal(null)} onSaved={reload} />}
@@ -281,17 +287,16 @@ function AskEmail({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onS
   );
 }
 
-function EditAgency({ a, manager, onClose, onSaved }: { a: Agency; manager: boolean; onClose: () => void; onSaved: () => void }) {
+function EditAgency({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
-  const { db } = useStore();
-  const [f, setF] = useState({ company_name: a.company_name ?? '', contact_name: a.contact_name ?? '', phone: a.phone ?? '', email: a.email ?? '', country: a.country ?? '', notes: a.notes ?? '', assigned_officer: a.assigned_officer ?? '' });
+  const [f, setF] = useState({ company_name: a.company_name ?? '', contact_name: a.contact_name ?? '', phone: a.phone ?? '', email: a.email ?? '', country: a.country ?? '', notes: a.notes ?? '' });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const save = async () => {
     if (!f.company_name.trim() && !f.contact_name.trim() && !f.phone.trim()) return toast.error('Keep at least the agency name, contact person or phone number');
     setBusy(true);
-    const { assigned_officer, ...rest } = f;
-    const r = await rpc('update_agency_prospect', { p_id: a.id, p: manager ? { ...rest, assigned_officer } : rest });
+    // The officer is changed with "Change officer" (eligible employees only, kept in the officer history).
+    const r = await rpc('update_agency_prospect', { p_id: a.id, p: f });
     setBusy(false);
     if (!r.ok) return toast.error('Not saved', r.error);
     toast.success('Agency updated'); onSaved(); onClose();
@@ -304,7 +309,6 @@ function EditAgency({ a, manager, onClose, onSaved }: { a: Agency; manager: bool
         <Field label="Phone"><Input value={f.phone} onChange={set('phone')} maxLength={40} /></Field>
         <Field label="Email"><Input type="email" value={f.email} onChange={set('email')} maxLength={200} /></Field>
         <Field label="Country"><Input value={f.country} onChange={set('country')} maxLength={80} /></Field>
-        {manager && <Field label="Assigned officer"><Select value={f.assigned_officer} onChange={set('assigned_officer')}><option value="">—</option>{db.staff.map((s) => <option key={s.id} value={s.id}>{s.fullName}</option>)}</Select></Field>}
         <Field label="Internal notes" className="sm:col-span-2"><Textarea rows={4} value={f.notes} onChange={set('notes')} maxLength={4000} /></Field>
       </div>
     </Modal>

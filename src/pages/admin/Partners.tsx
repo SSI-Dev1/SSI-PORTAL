@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, History, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Building2, Eye, Globe, Globe2, History, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
 import { canManageRegistrations } from '../../auth/roles';
-import { partnershipFocused } from '../../lib/agencies';
-import { BUSINESS, LinkPartnerModal, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
+import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
+import { AgencyTypeBadge, BUSINESS, LinkPartnerModal, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
 import { PartnerUserDialog } from './UserManagement';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
@@ -51,6 +51,11 @@ export default function Partners() {
   const [activating, setActivating] = useState<Partner | null>(null);
   const [country, setCountry] = useState('');
   const [officerF, setOfficerF] = useState('');
+  // Agency Type (0043): ?t=domestic | international | unclassified, the same rule as the Agency List and dashboard.
+  const typeF = (['domestic', 'international', 'unclassified'].includes(params.get('t') ?? '') ? params.get('t') : '') as AgencyTypeFilter;
+  const setTypeF = (t: string) => setParams((x) => { const n = new URLSearchParams(x); if (t) n.set('t', t); else n.delete('t'); return n; }, { replace: true });
+  const [classifying, setClassifying] = useState<Partner | null>(null);
+  const canClassify = superAdmin || agencyAccess(session);
   const [linking, setLinking] = useState<OnboardedAgency | null>(null);
   const canVerify = canManageRegistrations(realSession);
   const { rows: onboarded } = useOnboardedDirectory(true);
@@ -60,7 +65,8 @@ export default function Partners() {
   const pending = useMemo(() => (onboarded ?? []).filter((a) => a.verification === 'pending')
     .filter((a) => matches(q, a.company_name ?? '', a.contact_name ?? '', a.email ?? '', a.phone ?? '', a.reference))
     .filter((a) => !country || (a.country ?? '') === country)
-    .filter((a) => !officerF || a.assigned_officer === officerF), [onboarded, q, country, officerF]);
+    .filter((a) => !officerF || a.assigned_officer === officerF)
+    .filter((a) => matchesType(a.agency_type, typeF)), [onboarded, q, country, officerF, typeF]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Partner>();
 
@@ -77,6 +83,7 @@ export default function Partners() {
   const business = (p: Partner): BusinessStatus => statusMap?.get(p.id)?.business_status ?? (accountState(p).key === 'provisioning' ? 'not_onboarded' : 'verified');
   const portal = (p: Partner): PortalStatus => statusMap?.get(p.id)?.portal_status ?? (accountState(p).key === 'active' ? 'active' : accountState(p).key === 'suspended' ? 'suspended' : 'no_account');
   const onboardedBiz = (p: Partner) => business(p) !== 'not_onboarded';
+  const ptype = (p: Partner) => statusMap?.get(p.id)?.agency_type ?? null;
   const inTab = (p: Partner, t: DirTab) => {
     switch (t) {
       case 'onboarded': return onboardedBiz(p);
@@ -89,10 +96,10 @@ export default function Partners() {
       default: return false;
     }
   };
-  const reviewAll = (onboarded ?? []).filter((a) => a.verification === 'pending');
+  const reviewAll = (onboarded ?? []).filter((a) => a.verification === 'pending' && matchesType(a.agency_type, typeF));
   const reviewMine = reviewAll.filter((a) => a.assigned_officer === session?.userId);
   // Onboarded = onboarded organisations + onboarded agencies still to be linked: the dashboard KPI.
-  const count = (k: DirTab) => (k === 'review' ? reviewAll.length : live.filter((p) => inTab(p, k)).length + (k === 'onboarded' ? reviewAll.length : k === 'mine' ? reviewMine.length : 0));
+  const count = (k: DirTab) => (k === 'review' ? reviewAll.length : live.filter((p) => inTab(p, k) && matchesType(ptype(p), typeF)).length + (k === 'onboarded' ? reviewAll.length : k === 'mine' ? reviewMine.length : 0));
   const rows = useMemo(
     () =>
       live
@@ -101,9 +108,10 @@ export default function Partners() {
         .filter((p) => !status || p.status === status)
         .filter((p) => !tier || p.tier === tier)
         .filter((p) => !country || p.country === country)
-        .filter((p) => !officerF || p.partnershipOfficerId === officerF),
+        .filter((p) => !officerF || p.partnershipOfficerId === officerF)
+        .filter((p) => matchesType(ptype(p), typeF)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [db.partners, q, status, tier, activeOnly, tab, country, officerF, statusMap, session?.userId],
+    [db.partners, q, status, tier, activeOnly, tab, country, officerF, typeF, statusMap, session?.userId],
   );
   const countries = [...new Set([...live.map((p) => p.country), ...(onboarded ?? []).map((a) => a.country ?? '')].filter(Boolean))].sort();
   const officers = [...new Set([...live.map((p) => p.partnershipOfficerId), ...(onboarded ?? []).map((a) => a.assigned_officer)].filter(Boolean) as string[])];
@@ -117,6 +125,7 @@ export default function Partners() {
   const menu = (p: Partner) => [
     { label: 'Open workspace', icon: Eye, onClick: () => navigate(p.id) },
     ...(superAdmin && portal(p) === 'no_account' && onboardedBiz(p) ? [{ label: 'Create / activate partner account', icon: KeyRound, onClick: () => setActivating(p) }] : []),
+    ...(canClassify && onboardedBiz(p) ? [{ label: 'Set agency type', icon: Globe2, onClick: () => setClassifying(p) }] : []),
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
     ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
   ];
@@ -156,6 +165,7 @@ export default function Partners() {
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
           <SearchInput value={q} onChange={setQ} placeholder="Search partner, city, contact…" className="lg:w-96" />
           <div className="flex flex-wrap gap-2.5 lg:ml-auto">
+            <FilterSelect label="Agency type" value={typeF} onChange={setTypeF} options={TYPE_FILTERS} />
             <FilterSelect label="Country" value={country} onChange={setCountry} options={[{ value: '', label: 'All countries' }, ...countries.map((c) => ({ value: c, label: c }))]} />
             <FilterSelect label="Officer" value={officerF} onChange={setOfficerF} options={[{ value: '', label: 'Any officer' }, ...officers.map((o) => ({ value: o, label: officerName(o) }))]} />
             {tab !== 'review' && <FilterSelect label="All tiers" value={tier} onChange={setTier} options={['Platinum', 'Gold', 'Silver']} />}
@@ -197,6 +207,7 @@ export default function Partners() {
                   <div className="relative mt-4 flex flex-wrap gap-1.5">
                     <Badge tone={BUSINESS[business(p)].tone} dot>{BUSINESS[business(p)].label}</Badge>
                     <Badge tone={PORTAL[portal(p)].tone}>{PORTAL[portal(p)].label}</Badge>
+                    <AgencyTypeBadge type={ptype(p)} />
                     {agencyOf.get(p.id) && <Badge tone="slate">{statusMap?.get(p.id)?.onboarding_source === 'historical' ? 'Historical import' : 'Agency List'} · {agencyOf.get(p.id)!.reference}</Badge>}
                     <Badge tone={tierTone[p.tier]}>{p.tier}</Badge>
                     <Badge tone="slate">{p.branches.length} branch{p.branches.length > 1 ? 'es' : ''}</Badge>
@@ -234,7 +245,7 @@ export default function Partners() {
               const ag = agencyOf.get(p.id);
               return (
                 <tr key={p.id} className="cursor-pointer hover:bg-brand-50/30" onClick={() => navigate(p.id)}>
-                  <td className="px-5 py-3.5"><div className="font-semibold text-heading">{p.name}</div><div className="text-xs text-ink-mute">{p.code}{p.city ? ` · ${p.city}` : ''}</div></td>
+                  <td className="px-5 py-3.5"><div className="flex flex-wrap items-center gap-1.5 font-semibold text-heading">{p.name}<AgencyTypeBadge type={ptype(p)} /></div><div className="text-xs text-ink-mute">{p.code}{p.city ? ` · ${p.city}` : ''}</div></td>
                   <td className="px-5 py-3.5"><div className="text-heading">{p.contactName}</div><div className="text-xs text-ink-mute">{p.phone || '—'}</div></td>
                   <td className="px-5 py-3.5 text-ink-soft">{p.email || '—'}</td>
                   <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{p.country || '—'}</td>
@@ -259,6 +270,7 @@ export default function Partners() {
             onOpen={(x) => navigate(`../agencies/${x.agency_id}`, { relative: 'path' })} />
         </div>
       )}
+      {classifying && <ClassifyClient partner={classifying} current={ptype(classifying)} onClose={() => setClassifying(null)} />}
       <PartnerForm open={formOpen} onClose={() => setFormOpen(false)} partner={editing} onCreated={(id) => navigate(id)} />
       <PartnerDialog
         open={accountOpen}
@@ -296,7 +308,7 @@ function PendingVerification({ rows, loading, canVerify, officerName, onLink, on
       <Table head={['Agency', 'Contact', 'Country', 'Partnership Officer', 'Verification', 'Suggested match', '']}>
         {rows.map((a) => (
           <tr key={a.agency_id}>
-            <td className="px-5 py-3.5"><div className="font-semibold text-heading">{a.company_name ?? a.reference}</div><div className="text-xs text-ink-mute">{a.reference}{a.source_status ? ` · sheet: “${a.source_status}”` : ''}</div></td>
+            <td className="px-5 py-3.5"><div className="flex flex-wrap items-center gap-1.5 font-semibold text-heading">{a.company_name ?? a.reference}<AgencyTypeBadge type={a.agency_type} /></div><div className="text-xs text-ink-mute">{a.reference}{a.source_status ? ` · sheet: “${a.source_status}”` : ''}</div></td>
             <td className="px-5 py-3.5"><div className="text-heading">{a.contact_name ?? '—'}</div><div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
             <td className="px-5 py-3.5 text-ink-soft">{a.country ?? '—'}</td>
             <td className="px-5 py-3.5 text-ink-soft">{a.officer_name ?? officerName(a.assigned_officer)}</td>
@@ -431,3 +443,26 @@ export function PartnerForm({ open, onClose, partner, onCreated }: { open: boole
   );
 }
 
+
+/** Clients & Branches → Set agency type (the linked agency takes the same type). */
+function ClassifyClient({ partner, current, onClose }: { partner: Partner; current: AgencyType | null; onClose: () => void }) {
+  const toast = useToast();
+  const [type, setType] = useState<AgencyType | ''>(current ?? '');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!type) return;
+    setBusy(true);
+    const r = await rpc('set_partner_agency_type', { p_partner: partner.id, p_type: type });
+    setBusy(false);
+    if (!r.ok) return toast.error('Not saved', r.error);
+    toast.success(`${partner.name} · ${type === 'domestic' ? 'Domestic' : 'International'}`, 'Saved to the client and its Agency List record.');
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title="Agency type" subtitle={partner.name}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || !type || type === current} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button></>}>
+      <Field label="Classify this client as"><Segmented options={[{ value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }]} value={type} onChange={(v) => setType(v as AgencyType)} /></Field>
+      {!current && <p className="mt-3 text-xs text-ink-mute">Currently Not Classified. Nothing is inferred from the country, phone or email.</p>}
+    </Modal>
+  );
+}

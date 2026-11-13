@@ -3,15 +3,15 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Ban, Building2, CalendarClock, CheckCircle2, ClipboardList, FileSignature, Handshake, ListFilter, Moon, PhoneCall, Plus, Send, UserCheck, UserX,
+  Ban, Building2, CalendarClock, CheckCircle2, ClipboardList, FileSignature, Globe2, Handshake, HelpCircle, ListFilter, Moon, PhoneCall, Plus, Send, UserCheck, UserX,
 } from 'lucide-react';
-import { Badge, Button, Card, CardHeader, EmptyState } from '../../components/ui';
+import { Badge, Button, Card, CardHeader, EmptyState, Segmented } from '../../components/ui';
 import { KPI } from '../../components/hr';
 import { useStore } from '../../store/store';
 import { canOpenPath } from '../../auth/roles';
 import { greeting } from '../../lib/utils';
 import {
-  ACTIVITY, PROPOSAL, STAGE, agencyName, fmtDate, fmtWhen, isOpenFollowUp, matchesFilter, today, useAgencyData, type AgencyFilter,
+  ACTIVITY, PROPOSAL, STAGE, TYPE_FILTERS, agencyName, fmtDate, fmtWhen, isOpenFollowUp, matchesFilter, matchesType, today, useAgencyData, type AgencyFilter, type AgencyTypeFilter,
 } from '../../lib/agencies';
 import { AddAgencyModal } from './Agencies';
 import { useOnboardingSummary } from './AgencyBulk';
@@ -21,14 +21,19 @@ export default function PartnershipDashboard() {
   const navigate = useNavigate();
   const { data, error } = useAgencyData(true);
   const [adding, setAdding] = useState(false);
-  const go = (f: AgencyFilter) => navigate(f === 'all' ? '../agencies' : `../agencies?f=${f}`, { relative: 'path' });
+  // Agency Type filter (0043): every count, list and card link below uses the same rule as the Agency List.
+  const [type, setType] = useState<AgencyTypeFilter>('');
+  const qs = (f?: AgencyFilter) => { const n = new URLSearchParams(); if (f && f !== 'all') n.set('f', f); if (type) n.set('t', type); const s = n.toString(); return s ? `?${s}` : ''; };
+  const go = (f: AgencyFilter) => navigate(`../agencies${qs(f)}`, { relative: 'path' });
+  const agencies = useMemo(() => (data?.agencies ?? []).filter((a) => matchesType(a.agency_type, type)), [data, type]);
   const byId = useMemo(() => new Map((data?.agencies ?? []).map((a) => [a.id, a])), [data]);
 
-  const count = (f: AgencyFilter) => (data ? data.agencies.filter((a) => matchesFilter(a, f, data)).length : '…');
-  const followUps = useMemo(() => (data?.agencies ?? []).filter(isOpenFollowUp).sort((a, b) => (a.next_follow_up ?? '').localeCompare(b.next_follow_up ?? '')), [data]);
+  const count = (f: AgencyFilter) => (data ? agencies.filter((a) => matchesFilter(a, f, data)).length : '…');
+  const typeCount = (t: AgencyTypeFilter) => (data ? data.agencies.filter((a) => matchesType(a.agency_type, t)).length : '…');
+  const followUps = useMemo(() => agencies.filter(isOpenFollowUp).sort((a, b) => (a.next_follow_up ?? '').localeCompare(b.next_follow_up ?? '')), [agencies]);
   // Business onboarding (0042): historical clients count without a login; portal access is separate.
-  const summary = useOnboardingSummary(true);
-  const toClients = (tab: string) => navigate(`../partners?tab=${tab}`, { relative: 'path' });
+  const summary = useOnboardingSummary(true, type);
+  const toClients = (tab: string) => navigate(`../partners?tab=${tab}${type ? `&t=${type}` : ''}`, { relative: 'path' });
   // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
   // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
   type Card = { label: string; f: AgencyFilter; icon: typeof Building2; tone: 'navy' | 'orange' | 'green' | 'red' | 'amber'; value?: number | string; hint: string; open?: () => void };
@@ -53,11 +58,16 @@ export default function PartnershipDashboard() {
     { label: 'Proposal confirmed', f: 'proposal_confirmed', icon: CheckCircle2, tone: 'green', hint: 'Agency confirmed, onboarding next' },
     { label: 'Newly added', f: 'new_added', icon: Plus, tone: 'orange', hint: 'Added this month (imports not counted)' },
     { label: 'Agencies contacted', f: 'new_contacted', icon: PhoneCall, tone: 'orange', hint: 'First outreach recorded this month' },
+    // Classification overview (always across every type, so the split is visible while a filter is on).
+    { label: 'Domestic agencies', f: 'all', icon: Building2, tone: 'navy', value: typeCount('domestic'), open: () => navigate('../agencies?t=domestic', { relative: 'path' }), hint: 'Classified Domestic' },
+    { label: 'International agencies', f: 'all', icon: Globe2, tone: 'orange', value: typeCount('international'), open: () => navigate('../agencies?t=international', { relative: 'path' }), hint: 'Classified International' },
+    { label: 'Not classified', f: 'all', icon: HelpCircle, tone: 'amber', value: typeCount('unclassified'), open: () => navigate('../agencies?t=unclassified', { relative: 'path' }), hint: 'Agency Type still to be set' },
   ];
-  const proposals = (data?.proposals ?? []).filter((p) => p.sent_at).slice(0, 6);
-  const pending = (data?.proposals ?? []).filter((p) => p.status === 'awaiting_confirmation');
-  const regs = (data?.agencies ?? []).filter((a) => ['registration_pending', 'registration_submitted', 'under_review', 'approved'].includes(a.stage));
-  const onboarded = (data?.agencies ?? []).filter((a) => a.stage === 'onboarded').sort((a, b) => (b.stage_changed_at ?? '').localeCompare(a.stage_changed_at ?? '')).slice(0, 6);
+  const inType = (id: string) => !type || matchesType(byId.get(id)?.agency_type, type);
+  const proposals = (data?.proposals ?? []).filter((p) => p.sent_at && inType(p.prospect_id)).slice(0, 6);
+  const pending = (data?.proposals ?? []).filter((p) => p.status === 'awaiting_confirmation' && inType(p.prospect_id));
+  const regs = agencies.filter((a) => ['registration_pending', 'registration_submitted', 'under_review', 'approved'].includes(a.stage));
+  const onboarded = agencies.filter((a) => a.stage === 'onboarded').sort((a, b) => (b.stage_changed_at ?? '').localeCompare(a.stage_changed_at ?? '')).slice(0, 6);
   const open = (id: string) => navigate(`../agencies/${id}`, { relative: 'path' });
 
   return (
@@ -75,6 +85,10 @@ export default function PartnershipDashboard() {
         </div>
       </div>
       {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error}</p>}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-ink-mute">Agency type</span>
+        <Segmented options={TYPE_FILTERS.map((t) => ({ value: t.value, label: t.value ? t.label : 'All' }))} value={type} onChange={(v) => setType(v as AgencyTypeFilter)} />
+      </div>
       <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {cards.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={c.open ?? (() => go(c.f))} />)}
       </div>
@@ -116,7 +130,7 @@ export default function PartnershipDashboard() {
         </Card>
         <Card>
           <CardHeader title="Recent agency activity" />
-          <List empty="No activity yet." items={(data?.activities ?? []).slice(0, 8).map((h) => {
+          <List empty="No activity yet." items={(data?.activities ?? []).filter((h) => inType(h.prospect_id)).slice(0, 8).map((h) => {
             const a = byId.get(h.prospect_id);
             return { key: String(h.id), title: ACTIVITY[h.kind] ?? h.kind, sub: `${a ? agencyName(a) : ''} · ${fmtWhen(h.at)}`, onClick: () => open(h.prospect_id) };
           })} />

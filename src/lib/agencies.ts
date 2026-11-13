@@ -21,7 +21,22 @@ export interface Agency {
   selected_tier: string | null; registration_id: string | null; partner_id: string | null; created_by: string | null; created_at: string; updated_at: string;
   first_contact_at?: string | null; source?: 'manual' | 'import' | 'linkedin'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
   source_values?: Record<string, unknown> | null; historical_onboarded?: boolean; needs_reconciliation?: boolean; reconciliation_note?: string | null;
+  agency_type?: AgencyType | null; agency_type_changed_by?: string | null; agency_type_changed_at?: string | null;
 }
+
+// ------------------------------------------------------------------ Agency Type (0043)
+/** Domestic / International, chosen by a user; NULL in the database = Not Classified (never inferred). */
+export type AgencyType = 'domestic' | 'international';
+export type AgencyTypeFilter = '' | AgencyType | 'unclassified';
+export const AGENCY_TYPE: Record<AgencyType | 'unclassified', { label: string; tone: Tone }> = {
+  domestic: { label: 'Domestic', tone: 'navy' }, international: { label: 'International', tone: 'orange' }, unclassified: { label: 'Not Classified', tone: 'slate' },
+};
+export const TYPE_FILTERS: { value: AgencyTypeFilter; label: string }[] = [
+  { value: '', label: 'All types' }, { value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }, { value: 'unclassified', label: 'Not Classified' },
+];
+export const typeKey = (t: string | null | undefined): AgencyType | 'unclassified' => (t === 'domestic' || t === 'international' ? t : 'unclassified');
+/** Same rule as partnership_onboarding_summary(p_type): '' = every agency. */
+export const matchesType = (t: string | null | undefined, f: AgencyTypeFilter) => !f || typeKey(t) === f;
 export interface ProposalUniversity {
   record_id: string; university: string; country: string; study_level: string | null; variant: string | null; intake: string | null;
   commission_kind: 'percent' | 'amount'; commission_value: number | string; currency: string | null; conditions: string | null;
@@ -69,7 +84,7 @@ export const REGISTRATION: Record<string, { label: string; tone: Tone }> = {
 };
 export const ACTIVITY: Record<string, string> = {
   created: 'Agency added', edited: 'Details edited', contact_status: 'Contact status changed', stage: 'Stage changed', call: 'Call logged',
-  meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
+  agency_type: 'Agency Type set', meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
   proposal_prepared: 'Proposal prepared', proposal_needs_approval: 'Proposal waiting for commission approval', proposal_approved: 'Custom commission approved',
   proposal_rejected: 'Custom commission rejected', proposal_sent: 'Proposal emailed', proposal_failed: 'Proposal email failed', proposal_cancelled: 'Proposal cancelled',
   proposal_confirmed: 'Proposal confirmed by the agency', proposal_declined: 'Proposal declined by the agency', proposal_expired: 'Proposal expired',

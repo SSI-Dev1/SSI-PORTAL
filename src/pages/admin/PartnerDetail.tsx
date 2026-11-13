@@ -13,6 +13,7 @@ import { partnerPreviewSession } from '../../data/demo';
 import { avatarColor, countryFlag, formatDate, fullName, initials, money } from '../../lib/utils';
 import { PartnerForm, partnerStatusTone, tierTone } from './Partners';
 import { studentTone } from '../shared/Students';
+import { AgencyTypeBadge, usePartnerStatus } from '../shared/AgencyBulk';
 
 type Tab = 'overview' | 'students' | 'applications' | 'finance';
 
@@ -26,6 +27,7 @@ export default function PartnerDetail() {
   const [tab, setTab] = useState<Tab>('overview');
   const [edit, setEdit] = useState(false);
   const [openApp, setOpenApp] = useState<string>();
+  const statusMap = usePartnerStatus(true);
 
   const p = db.partners.find((x) => x.id === id);
   if (!p)
@@ -63,6 +65,7 @@ export default function PartnerDetail() {
           <div className="relative flex flex-wrap items-center gap-2">
             <Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge>
             <Badge tone={tierTone[p.tier]}>{p.tier} Partner</Badge>
+            {statusMap && <AgencyTypeBadge type={statusMap.get(p.id)?.agency_type} />}
             <span className="text-xs text-white/60">Code {p.code}</span>
           </div>
         </div>

@@ -13,9 +13,10 @@ import { cn, matches } from '../../lib/utils';
 import {
   ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, stageLabel, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
   AgencyDemo, EMAIL_STATE, resendAgencyEmail, useAgencyData, type Agency, type AgencyEmail, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
+  AGENCY_TYPE, typeKey, type AgencyType,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
-import { AssignOfficerModal, OfficerHistory, useOfficerCandidates } from './AgencyBulk';
+import { AgencyTypeBadge, AssignOfficerModal, OfficerHistory, useOfficerCandidates } from './AgencyBulk';
 
 type LogKind = 'contact_attempt' | 'call' | 'meeting' | 'follow_up_done' | 'note' | 'follow_up';
 const LOG_TITLE: Record<LogKind, string> = { contact_attempt: 'Contact attempt (no answer / not reached)', call: 'Log call', meeting: 'Record meeting', follow_up_done: 'Follow-up completed', note: 'Add note', follow_up: 'Add follow-up' };
@@ -93,7 +94,7 @@ export default function AgencyDetail() {
       <Link to=".." relative="path" className="mb-3 inline-flex items-center gap-1 text-sm text-ink-soft hover:text-heading"><ArrowLeft className="h-4 w-4" />Agencies</Link>
       <PageHeader
         title={agencyName(a)}
-        subtitle={<span className="flex flex-wrap items-center gap-2">{a.reference}<Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge></span>}
+        subtitle={<span className="flex flex-wrap items-center gap-2">{a.reference}<Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge><AgencyTypeBadge type={a.agency_type} /></span>}
         actions={<>
           <Button variant="secondary" icon={Pencil} onClick={() => setModal({ kind: 'edit' })}>Edit</Button>
           {!a.assigned_officer && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void run('claim', () => rpc('claim_agency', { p_id: id }), 'You are now the officer for this agency')}>Take this agency</Button>}
@@ -122,6 +123,7 @@ export default function AgencyDetail() {
           <dl className="grid gap-3 px-5 pb-5 text-sm">
             {([
               ['Company', a.company_name], ['Contact person', a.contact_name], ['Phone', a.phone], ['Email', a.email], ['Country', a.country],
+              ['Agency type', AGENCY_TYPE[typeKey(a.agency_type)].label + (a.agency_type_changed_at ? ` · ${fmtWhen(a.agency_type_changed_at)} · ${staffName(a.agency_type_changed_by ?? null)}` : '')],
               ['Assigned officer', a.assigned_officer ? staffName(a.assigned_officer) : 'Unassigned'], ['Contact status changed', a.contact_changed_at ? `${fmtWhen(a.contact_changed_at)} · ${staffName(a.contact_changed_by)}` : null],
               ['Last contact', fmtDate(a.last_contact_at)], ['Next follow-up', fmtDate(a.next_follow_up)], ['Selected commission', a.selected_tier],
               ['Added', `${fmtWhen(a.created_at)} · ${staffName(a.created_by)}`],
@@ -299,13 +301,15 @@ function AskEmail({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onS
 function EditAgency({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [f, setF] = useState({ company_name: a.company_name ?? '', contact_name: a.contact_name ?? '', phone: a.phone ?? '', email: a.email ?? '', country: a.country ?? '', notes: a.notes ?? '' });
+  const [agencyType, setAgencyType] = useState<AgencyType | ''>(a.agency_type ?? '');
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const save = async () => {
     if (!f.company_name.trim() && !f.contact_name.trim() && !f.phone.trim()) return toast.error('Keep at least the agency name, contact person or phone number');
     setBusy(true);
     // The officer is changed with "Change officer" (eligible employees only, kept in the officer history).
-    const r = await rpc('update_agency_prospect', { p_id: a.id, p: f });
+    // Agency Type is sent only when chosen; an edit never clears a classification.
+    const r = await rpc('update_agency_prospect', { p_id: a.id, p: { ...f, ...(agencyType && agencyType !== a.agency_type ? { agency_type: agencyType } : {}) } });
     setBusy(false);
     if (!r.ok) return toast.error('Not saved', r.error);
     toast.success('Agency updated'); onSaved(); onClose();
@@ -318,6 +322,10 @@ function EditAgency({ a, onClose, onSaved }: { a: Agency; onClose: () => void; o
         <Field label="Phone"><Input value={f.phone} onChange={set('phone')} maxLength={40} /></Field>
         <Field label="Email"><Input type="email" value={f.email} onChange={set('email')} maxLength={200} /></Field>
         <Field label="Country"><Input value={f.country} onChange={set('country')} maxLength={80} /></Field>
+        <Field label="Agency type">
+          <Segmented options={[...(a.agency_type ? [] : [{ value: '', label: 'Not classified' }]), { value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }]}
+            value={agencyType} onChange={(v) => setAgencyType(v as AgencyType | '')} />
+        </Field>
         <Field label="Internal notes" className="sm:col-span-2"><Textarea rows={4} value={f.notes} onChange={set('notes')} maxLength={4000} /></Field>
       </div>
     </Modal>

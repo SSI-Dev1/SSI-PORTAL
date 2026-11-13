@@ -7,12 +7,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft, CalendarPlus, ExternalLink, Linkedin, MessageSquare, MoreHorizontal, Pencil, Plus, Send, StickyNote, ThumbsDown, ThumbsUp, UserCheck } from 'lucide-react';
-import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Table, Textarea, usePaged } from '../../components/ui';
+import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Segmented, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
-import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, rpc, today, useLinkedIn, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
+import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
 
 type Kind = 'contacted' | 'follow_up' | 'response' | 'interested' | 'not_interested' | 'note' | 'follow_up_date';
 const KIND: Record<Kind, { title: string; icon: typeof Send; report?: string }> = {
@@ -261,6 +261,7 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
   const toast = useToast();
   const navigate = useNavigate();
   const [f, setF] = useState({ company_name: p.company_name ?? '', contact_name: p.name, phone: p.phone ?? '', email: p.email ?? '', country: '', linkedin_url: p.linkedin_url ?? '', notes: '' });
+  const [agencyType, setAgencyType] = useState<AgencyType | ''>('');
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -278,7 +279,7 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
     setTried(true); setErr('');
     if (missing.length) return;
     setBusy(true);
-    const r = await rpc<{ agency_id: string; linked: boolean; duplicate: boolean }>('convert_linkedin_prospect', { p_id: p.id, p: { ...f, phone: f.phone.trim() } });
+    const r = await rpc<{ agency_id: string; linked: boolean; duplicate: boolean }>('convert_linkedin_prospect', { p_id: p.id, p: { ...f, phone: f.phone.trim(), agency_type: agencyType || null } });
     setBusy(false);
     if (!r.ok) return setErr(r.error);
     toast.success(r.data.linked ? 'Prospect linked to the existing agency' : 'Prospect successfully moved to Agency List.',
@@ -296,6 +297,9 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
         <Field label="Phone number" required error={show('phone')}><Input value={f.phone} onChange={set('phone')} maxLength={40} inputMode="tel" invalid={!!show('phone')} placeholder="+91 98765 43210" /></Field>
         <Field label="Email address" hint="Optional now — needed before a proposal is sent" error={show('email')}><Input type="email" value={f.email} onChange={set('email')} maxLength={200} invalid={!!show('email')} /></Field>
         <Field label="Country"><Input value={f.country} onChange={set('country')} maxLength={80} /></Field>
+        <Field label="Agency type" hint="Optional — leave Not classified if unsure">
+          <Segmented options={[{ value: '', label: 'Not classified' }, { value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }]} value={agencyType} onChange={(v) => setAgencyType(v as AgencyType | '')} />
+        </Field>
         <Field label="LinkedIn profile link" error={show('linkedin_url')}><Input value={f.linkedin_url} onChange={set('linkedin_url')} maxLength={300} invalid={!!show('linkedin_url')} placeholder="linkedin.com/in/…" /></Field>
         <Field label="Additional notes" className="sm:col-span-2"><Textarea rows={3} value={f.notes} onChange={set('notes')} maxLength={2000} /></Field>
       </div>

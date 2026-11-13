@@ -3,18 +3,18 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, FileUp, Plus, Settings2, UserCheck, UserCog, X } from 'lucide-react';
+import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, UserCheck, UserCog, X } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { matches } from '../../lib/utils';
 import {
-  CONTACT, FILTERS, PROPOSAL, STAGE, agencyAccess, stageLabel, agencyManager, agencyName, fmtDate, latestProposal, matchesFilter, rpc, useAgencyData,
-  type AgencyFilter, type ContactStatus, type Terms,
+  CONTACT, FILTERS, PROPOSAL, STAGE, TYPE_FILTERS, agencyAccess, stageLabel, agencyManager, agencyName, fmtDate, latestProposal, matchesFilter, matchesType, rpc, useAgencyData,
+  type AgencyFilter, type AgencyType, type AgencyTypeFilter, type ContactStatus, type Terms,
 } from '../../lib/agencies';
 import { supabase } from '../../auth/auth';
 import { ImportAgencies } from './AgencyImport';
-import { AssignOfficerModal, ContactStatusModal, useOfficerCandidates } from './AgencyBulk';
+import { AgencyTypeBadge, AgencyTypeModal, AssignOfficerModal, ContactStatusModal, useOfficerCandidates } from './AgencyBulk';
 
 export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const { session, db } = useStore();
@@ -31,20 +31,30 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const [importing, setImporting] = useState(false);
   // Administrators: selection for bulk officer assignment / contact-status correction.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<'officer' | 'contact' | null>(null);
+  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | null>(null);
   const candidates = useOfficerCandidates(allowed);
   const filter = (params.get('f') as AgencyFilter) || 'all';
   const setFilter = (f: string) => setParams((p) => { const n = new URLSearchParams(p); if (f && f !== 'all') n.set('f', f); else n.delete('f'); n.delete('add'); return n; }, { replace: true });
+  // Agency Type (0043): ?t=domestic | international | unclassified — combines with every other filter.
+  const type = (['domestic', 'international', 'unclassified'].includes(params.get('t') ?? '') ? params.get('t') : '') as AgencyTypeFilter;
+  const setType = (t: string) => setParams((p) => { const n = new URLSearchParams(p); if (t) n.set('t', t); else n.delete('t'); n.delete('add'); return n; }, { replace: true });
+  const [country, setCountry] = useState('');
   // Full names from the server (eligible officers), then the staff directory.
   const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
   const regOf = (id: string | null) => (id ? data?.registrations.find((r) => r.id === id) : undefined);
 
   const rows = useMemo(() => {
     if (!data) return [];
-    return data.agencies.filter((a) => matchesFilter(a, filter, data) && (!officer || a.assigned_officer === officer)
+    return data.agencies.filter((a) => matchesFilter(a, filter, data) && matchesType(a.agency_type, type) && (!officer || a.assigned_officer === officer)
+      && (!country || (a.country ?? '').trim().toLowerCase() === country)
       && matches(q, a.company_name ?? '', a.contact_name ?? '', a.phone ?? '', a.email ?? '', a.country ?? '', a.reference));
-  }, [data, filter, officer, q]);
-  const paged = usePaged(rows, 15, `${filter}|${q}|${officer}`);
+  }, [data, filter, type, officer, country, q]);
+  const paged = usePaged(rows, 15, `${filter}|${type}|${q}|${officer}|${country}`);
+  const countries = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of data?.agencies ?? []) { const c = (a.country ?? '').trim(); if (c && !m.has(c.toLowerCase())) m.set(c.toLowerCase(), c); }
+    return [...m.entries()].sort((x, y) => x[1].localeCompare(y[1]));
+  }, [data]);
   const officers = useMemo(() => [...new Set((data?.agencies ?? []).map((a) => a.assigned_officer).filter(Boolean) as string[])], [data]);
 
   if (!allowed) return <Card><EmptyState icon={Building2} title="Agencies are not available" description="Ask an administrator for the Agencies & proposals permission." /></Card>;
@@ -61,7 +71,9 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, contact, phone, email…" className="w-full sm:w-72" />
           <FilterSelect label="Status" value={filter} onChange={setFilter} options={FILTERS} />
+          <FilterSelect label="Agency type" value={type} onChange={setType} options={TYPE_FILTERS} />
           {officers.length > 0 && <FilterSelect label="Officer" value={officer} onChange={setOfficer} options={[{ value: '', label: 'All officers' }, ...officers.map((o) => ({ value: o, label: staffName(o) }))]} />}
+          {countries.length > 1 && <FilterSelect label="Country" value={country} onChange={setCountry} options={[{ value: '', label: 'All countries' }, ...countries.map(([k, v]) => ({ value: k, label: v }))]} />}
           <span className="ml-auto text-xs text-ink-mute">{data ? `${rows.length} of ${data.agencies.length}` : ''}</span>
         </div>
         {manager && data && rows.length > 0 && (
@@ -76,6 +88,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                 <span className="ml-auto flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>
                   <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>
+                  <Button size="sm" variant="secondary" icon={Globe2} onClick={() => setBulk('type')}>Set agency type</Button>
                 </span>
               </>
             )}
@@ -100,7 +113,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                           onCheckedChange={(v) => setSelected((cur) => { const n = new Set(cur); if (v) n.add(a.id); else n.delete(a.id); return n; })} />
                       </td>
                     )}
-                    <td className="min-w-[180px]"><div className="font-medium text-heading">{agencyName(a)}</div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}{a.source === 'linkedin' ? ' · Source: LinkedIn Outreach' : a.source === 'import' ? ' · Imported' : ''}</div></td>
+                    <td className="min-w-[180px]"><div className="flex flex-wrap items-center gap-1.5 font-medium text-heading">{agencyName(a)}<AgencyTypeBadge type={a.agency_type} /></div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}{a.source === 'linkedin' ? ' · Source: LinkedIn Outreach' : a.source === 'import' ? ' · Imported' : ''}</div></td>
                     <td className="min-w-[160px] text-sm">{a.contact_name ?? '—'}<div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
                     <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>
@@ -123,6 +136,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
       {manager && importing && <ImportAgencies onClose={() => setImporting(false)} onDone={() => setFilter('all')} />}
       {manager && bulk === 'officer' && <AssignOfficerModal ids={[...selected]} candidates={candidates} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
       {manager && bulk === 'contact' && <ContactStatusModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
+      {manager && bulk === 'type' && <AgencyTypeModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
     </>
   );
 }
@@ -133,6 +147,7 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
   const empty = { company_name: '', contact_name: '', phone: '', email: '', country: '', notes: '' };
   const [f, setF] = useState(empty);
   const [status, setStatus] = useState<ContactStatus>('unknown');
+  const [agencyType, setAgencyType] = useState<AgencyType | ''>('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [req, setReq] = useState(() => crypto.randomUUID());
@@ -140,12 +155,12 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
   const identifiable = !!(f.company_name.trim() || f.contact_name.trim() || f.phone.trim());
   const emailBad = !!f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim());
   const dirty = Object.values(f).some((v) => v.trim());
-  const close = () => { setF(empty); setStatus('unknown'); setErr(''); setReq(crypto.randomUUID()); onClose(); };
+  const close = () => { setF(empty); setStatus('unknown'); setAgencyType(''); setErr(''); setReq(crypto.randomUUID()); onClose(); };
   const save = async () => {
     if (!identifiable) return setErr('Enter at least the agency name, the contact person or a phone number.');
     if (emailBad) return setErr('Enter a valid email address, or leave it empty.');
     setBusy(true); setErr('');
-    const r = await rpc<{ id: string; reference: string }>('create_agency_prospect', { p: { ...f, contact_status: status }, p_request: req });
+    const r = await rpc<{ id: string; reference: string }>('create_agency_prospect', { p: { ...f, contact_status: status, agency_type: agencyType || null }, p_request: req });
     setBusy(false);
     if (!r.ok) return setErr(r.error);
     toast.success(`Agency added · ${r.data.reference}`);
@@ -161,6 +176,9 @@ export function AddAgencyModal({ open, onClose, onCreated }: { open: boolean; on
         <Field label="Phone number"><Input value={f.phone} onChange={set('phone')} maxLength={40} inputMode="tel" /></Field>
         <Field label="Email address" error={emailBad ? 'Enter a valid email, or leave it empty' : undefined}><Input type="email" value={f.email} onChange={set('email')} maxLength={200} invalid={emailBad} /></Field>
         <Field label="Country"><Input value={f.country} onChange={set('country')} maxLength={80} /></Field>
+        <Field label="Agency type" hint="Leave empty if you are not sure — it stays Not Classified.">
+          <Segmented options={[{ value: '', label: 'Not classified' }, { value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }]} value={agencyType} onChange={(v) => setAgencyType(v as AgencyType | '')} />
+        </Field>
         <Field label="Initial contact status">
           <Segmented options={[{ value: 'unknown', label: 'Not contacted yet' }, { value: 'not_connected', label: 'Not connected' }, { value: 'connected', label: 'Connected' }]} value={status} onChange={(v) => setStatus(v as ContactStatus)} />
         </Field>

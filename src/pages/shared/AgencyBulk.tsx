@@ -7,7 +7,7 @@ import { History, UserCog } from 'lucide-react';
 import { Alert, Badge, Button, Checkbox, Field, Input, Modal, Segmented, SelectMenu } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { supabase } from '../../auth/auth';
-import { CONTACT, fmtWhen, rpc, type ContactStatus } from '../../lib/agencies';
+import { AGENCY_TYPE, CONTACT, fmtWhen, rpc, typeKey, type AgencyType, type AgencyTypeFilter, type ContactStatus } from '../../lib/agencies';
 
 export interface OfficerCandidate { id: string; full_name: string; designation: string | null; department: string | null }
 
@@ -139,6 +139,62 @@ export function ContactStatusModal({ ids, onClose, onDone }: { ids: string[]; on
   );
 }
 
+interface TypePreview { selected: number; found: number; already: number; change: number; from: { unclassified: number; domestic: number; international: number } }
+/** Bulk Domestic / International classification (administrators): preview first, then confirm. */
+export function AgencyTypeModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone?: () => void }) {
+  const toast = useToast();
+  const [type, setType] = useState<AgencyType | ''>('');
+  const [preview, setPreview] = useState<TypePreview | null>(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [request, setRequest] = useState(() => crypto.randomUUID());
+  useEffect(() => {
+    setPreview(null); setErr(''); setRequest(crypto.randomUUID());
+    if (!type) return;
+    let alive = true;
+    void rpc<TypePreview>('preview_agency_type', { p_ids: ids, p_type: type }).then((r) => {
+      if (!alive) return;
+      if (r.ok) setPreview(r.data); else setErr(r.error);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [type, ids]);
+  const save = async () => {
+    if (!type) return;
+    setBusy(true); setErr('');
+    const r = await rpc<{ changed: number }>('bulk_set_agency_type', { p_ids: ids, p_type: type, p_note: note.trim() || null, p_request: request });
+    setBusy(false);
+    if (!r.ok) return setErr(r.error);
+    toast.success(`${r.data.changed} agenc${r.data.changed === 1 ? 'y' : 'ies'} classified ${AGENCY_TYPE[type].label}`, 'Recorded in each agency\'s history.');
+    onDone?.(); onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={`Agency Type · ${ids.length} agencies`} subtitle="Classify the selected agencies. Nothing is inferred from country, phone or email."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || !type || !preview || preview.change === 0} onClick={() => void save()}>{busy ? 'Saving…' : type ? `Confirm: set ${preview?.change ?? ''} to ${AGENCY_TYPE[type].label}` : 'Choose a type'}</Button></>}>
+      <Field label="Set Agency Type to"><Segmented options={[{ value: 'domestic', label: 'Domestic' }, { value: 'international', label: 'International' }]} value={type} onChange={(v) => setType(v as AgencyType)} /></Field>
+      {type && !preview && !err && <p className="mt-4 text-sm text-ink-soft" role="status">Preparing preview…</p>}
+      {preview && type && (
+        <div className="mt-4 space-y-3 text-sm">
+          <p><b className="text-heading">{preview.change}</b> will change{preview.already ? <>, <b className="text-heading">{preview.already}</b> already {AGENCY_TYPE[type].label}</> : null}.</p>
+          {preview.change > 0 && <div className="flex flex-wrap gap-1.5">{(['unclassified', 'domestic', 'international'] as const).filter((k) => preview.from[k] > 0).map((k) => <Badge key={k} tone={AGENCY_TYPE[k].tone}>{preview.from[k]} from {AGENCY_TYPE[k].label}</Badge>)}</div>}
+          <Alert tone="info">Only the Agency Type changes. Stage, contact status, proposals and work reports stay as they are. Linked clients in Clients &amp; Branches take the same type.</Alert>
+          <Field label="Reason (kept in the audit)"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="e.g. Classified from the partnership master sheet" /></Field>
+        </div>
+      )}
+      {err && <Alert tone="error" className="mt-3">{err}</Alert>}
+    </Modal>
+  );
+}
+
+/** Small badge: Domestic / International / Not Classified. */
+export function AgencyTypeBadge({ type, hideUnclassified = false }: { type: string | null | undefined; hideUnclassified?: boolean }) {
+  const k = typeKey(type);
+  if (k === 'unclassified' && hideUnclassified) return null;
+  return <Badge tone={AGENCY_TYPE[k].tone}>{AGENCY_TYPE[k].label}</Badge>;
+}
+
 interface OfficerChange { id: number; from_officer: string | null; to_officer: string | null; changed_by: string | null; change_kind: string; note: string | null; at: string }
 
 export function OfficerHistory({ prospectId, nameOf, refreshKey }: { prospectId: string; nameOf: (id: string | null) => string; refreshKey?: unknown }) {
@@ -176,7 +232,7 @@ export interface OnboardedAgency {
   agency_id: string; reference: string; company_name: string | null; contact_name: string | null; phone: string | null; email: string | null; country: string | null;
   assigned_officer: string | null; officer_name: string | null; partner_id: string | null; verification: 'verified' | 'pending'; historical: boolean;
   needs_reconciliation: boolean; reconciliation_note: string | null; source_status: string | null; registration_id: string | null; registration_status: string | null;
-  suggested_partner_id: string | null; suggested_partner_name: string | null; stage_changed_at: string | null;
+  suggested_partner_id: string | null; suggested_partner_name: string | null; stage_changed_at: string | null; agency_type: AgencyType | null;
 }
 
 /** Onboarded agencies (verified = linked to a partner; pending = historically onboarded), kept live. */
@@ -242,7 +298,7 @@ export function LinkPartnerModal({ agency, partners, onClose }: {
 // ------------------------------------------------------------------ business onboarding vs portal access (0042)
 export type BusinessStatus = 'historical' | 'verified' | 'not_onboarded';
 export type PortalStatus = 'no_account' | 'pending' | 'active' | 'suspended' | 'deactivated';
-export interface PartnerStatusRow { partner_id: string; business_status: BusinessStatus; portal_status: PortalStatus; onboarding_source: 'portal' | 'historical'; users: number; agency_id: string | null; agency_reference: string | null }
+export interface PartnerStatusRow { partner_id: string; business_status: BusinessStatus; portal_status: PortalStatus; onboarding_source: 'portal' | 'historical'; users: number; agency_id: string | null; agency_reference: string | null; agency_type: AgencyType | null }
 export interface OnboardingSummary { total: number; historical: number; verified: number; unlinked: number; portal_active: number; no_account: number; mine: number }
 export const BUSINESS: Record<BusinessStatus, { label: string; tone: 'green' | 'navy' | 'slate' }> = {
   historical: { label: 'Historically onboarded', tone: 'navy' }, verified: { label: 'Verified onboarded', tone: 'green' }, not_onboarded: { label: 'Not onboarded', tone: 'slate' },
@@ -253,14 +309,15 @@ export const PORTAL: Record<PortalStatus, { label: string; tone: 'slate' | 'ambe
 };
 
 /** Server-calculated status per partner and the Onboarded KPI, re-read on any agency, partner or account change. */
-function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T): T | null {
+function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T, args?: Record<string, unknown>): T | null {
+  const key = JSON.stringify(args ?? {});
   const [v, setV] = useState<T | null>(null);
   useEffect(() => {
     if (!supabase || !enabled) return;
     const sb = supabase;
     let alive = true;
     let t: ReturnType<typeof setTimeout> | undefined;
-    const load = () => void sb.rpc(fn).then(({ data, error }) => alive && !error && setV(map(data)));
+    const load = () => void sb.rpc(fn, args).then(({ data, error }) => alive && !error && setV(map(data)));
     const soon = () => { clearTimeout(t); t = setTimeout(load, 300); };
     load();
     const ch = sb.channel(`${fn}-${Math.random().toString(36).slice(2, 8)}`);
@@ -270,9 +327,11 @@ function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T): T | n
     document.addEventListener('visibilitychange', onFocus);
     return () => { alive = false; clearTimeout(t); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fn, enabled]);
+  }, [fn, enabled, key]);
   return v;
 }
-export const useOnboardingSummary = (enabled = true) => useLive<OnboardingSummary>('partnership_onboarding_summary', enabled, (d) => d as OnboardingSummary);
+/** type: '' = all, or 'domestic' / 'international' / 'unclassified' (same rule as the Agency List filter). */
+export const useOnboardingSummary = (enabled = true, type: AgencyTypeFilter = '') =>
+  useLive<OnboardingSummary>('partnership_onboarding_summary', enabled, (d) => d as OnboardingSummary, type ? { p_type: type } : undefined);
 export const usePartnerStatus = (enabled = true) =>
   useLive<Map<string, PartnerStatusRow>>('partner_directory_status', enabled, (d) => new Map(((d ?? []) as PartnerStatusRow[]).map((r) => [r.partner_id, r])));

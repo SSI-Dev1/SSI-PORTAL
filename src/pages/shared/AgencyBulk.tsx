@@ -93,6 +93,113 @@ export function AssignOfficerModal({ ids, current, candidates, onClose, onDone }
   );
 }
 
+// ------------------------------------------------------------------ Sub Officer (0045)
+export interface SubCandidate { id: string; full_name: string; designation: string | null; department: string | null; in_team: boolean }
+/** Employees the signed-in user may choose as Sub Officer under Main Officer `main` (team only, unless administrator). */
+export function useSubOfficerCandidates(main: string | null | undefined) {
+  const [list, setList] = useState<SubCandidate[] | null>(null);
+  useEffect(() => {
+    setList(null);
+    if (!supabase || !main) { setList([]); return; }
+    let alive = true;
+    void supabase.rpc('sub_officer_candidates', { p_main: main }).then(({ data }) => alive && setList((data ?? []) as SubCandidate[]));
+    return () => { alive = false; };
+  }, [main]);
+  return list;
+}
+/** Names of every Main / Sub Officer (live). */
+export function useOfficerNames(enabled = true) {
+  const v = useLive<Map<string, string>>('portfolio_officer_names', enabled, (d) => new Map(((d ?? []) as { id: string; full_name: string }[]).map((r) => [r.id, r.full_name])));
+  return v ?? new Map<string, string>();
+}
+/** Application counts per agency and per client (live). */
+export function useApplicationCounts(enabled = true) {
+  return useLive<{ byAgency: Map<string, number>; byPartner: Map<string, number> }>('agency_application_counts', enabled, (d) => {
+    const rows = (d ?? []) as { agency_id: string | null; partner_id: string; applications: number }[];
+    return { byAgency: new Map(rows.filter((r) => r.agency_id).map((r) => [r.agency_id as string, Number(r.applications)])), byPartner: new Map(rows.map((r) => [r.partner_id, Number(r.applications)])) };
+  }, undefined, ['partners', 'agency_prospects', 'applications']);
+}
+
+interface SubPreview { selected: number; found: number; out_of_scope: number; not_eligible: number; already: number; change: number; replacing: number; sub_name: string | null }
+
+/**
+ * Assign Sub Officer — one agency / client, or many (bulk, with preview). The Main Officer never
+ * changes. Agencies outside the caller's scope, or where the employee is not in that agency's
+ * Main Officer's team, are skipped by the server and reported.
+ */
+export function AssignSubOfficerModal({ ids, partnerId, title, main, mainName, current, currentName, onClose, onDone }: {
+  ids: string[]; partnerId?: string; title: string; main: string | null; mainName: string; current?: string | null; currentName?: string;
+  onClose: () => void; onDone?: () => void;
+}) {
+  const toast = useToast();
+  const single = ids.length <= 1;
+  const candidates = useSubOfficerCandidates(main);
+  const [sub, setSub] = useState('');
+  const [unassign, setUnassign] = useState(false);
+  const [reason, setReason] = useState('');
+  const [preview, setPreview] = useState<SubPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [request] = useState(() => crypto.randomUUID());
+  const target = unassign ? null : sub || null;
+  useEffect(() => {
+    setPreview(null); setErr('');
+    if (single || (!target && !unassign) || !ids.length) return;
+    let alive = true;
+    void rpc<SubPreview>('preview_agency_sub_officer', { p_ids: ids, p_sub: target }).then((r) => {
+      if (!alive) return;
+      if (r.ok) setPreview(r.data); else setErr(r.error);
+    });
+    return () => { alive = false; };
+  }, [target, unassign, ids, single]);
+  const options = useMemo(() => (candidates ?? []).filter((c) => c.id !== current)
+    .map((c) => ({ value: c.id, label: c.full_name, group: c.in_team ? 'Team members' : 'Other eligible employees' })), [candidates, current]);
+  const name = (candidates ?? []).find((c) => c.id === sub)?.full_name ?? '';
+  const save = async () => {
+    if (busy) return;
+    if (!target && !unassign) return setErr('Choose a team member.');
+    setBusy(true); setErr('');
+    const r = partnerId && !ids.length
+      ? await rpc<{ changed: number }>('assign_partner_sub_officer', { p_partner: partnerId, p_sub: target, p_reason: reason.trim() || null })
+      : await rpc<{ changed: number; out_of_scope?: number; not_eligible?: number }>('assign_agency_sub_officer', { p_ids: ids, p_sub: target, p_reason: reason.trim() || null, p_request: request });
+    setBusy(false);
+    if (!r.ok) return setErr(r.error);
+    const skipped = ((r.data as { out_of_scope?: number }).out_of_scope ?? 0) + ((r.data as { not_eligible?: number }).not_eligible ?? 0);
+    toast.success(target ? `Sub Officer: ${name}` : 'Sub Officer removed', single ? 'New applications through this client are credited accordingly. Earlier ones keep their credit.'
+      : `${r.data.changed} assigned${skipped ? ` · ${skipped} skipped (outside your team or scope)` : ''}.`);
+    onDone?.(); onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={single ? 'Assign Sub Officer' : `Assign Sub Officer · ${ids.length} agencies`} subtitle={title} dirty={!!sub || !!reason}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button disabled={busy || (!target && !unassign) || (!single && (!preview || preview.change === 0))} onClick={() => void save()}>
+          {busy ? 'Saving…' : single ? 'Save assignment' : `Confirm: ${preview?.change ?? ''} agencies`}</Button></>}>
+      <dl className="mb-4 grid gap-2 rounded-xl bg-canvas p-3 text-sm sm:grid-cols-2">
+        <div><dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Main Officer</dt><dd className="font-medium text-heading">{mainName || 'Unassigned'}</dd></div>
+        {single && <div><dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Current Sub Officer</dt><dd className="font-medium text-heading">{currentName || 'Unassigned'}</dd></div>}
+      </dl>
+      {!unassign && (
+        <Field label="Team member" required hint="Active employees in the Main Officer's team (administrators may also choose other eligible employees)">
+          {candidates === null ? <p className="text-sm text-ink-soft" role="status">Loading team…</p>
+            : options.length === 0 ? <p className="text-sm text-ink-soft">No eligible team members. Ask HR to set reporting managers, or an administrator to assign.</p>
+            : <SelectMenu value={sub} onChange={setSub} options={options} placeholder="Search team members…" searchable aria-label="Sub Officer" />}
+        </Field>
+      )}
+      {(current || !single) && <div className="mt-3"><Checkbox checked={unassign} onCheckedChange={(v) => { setUnassign(!!v); setSub(''); }} label="Set to Unassigned instead" /></div>}
+      {preview && !single && (
+        <div className="mt-4 grid grid-cols-2 gap-2 text-center text-sm sm:grid-cols-4">
+          {[['Will change', preview.change], ['Already set', preview.already], ['Outside your scope', preview.out_of_scope], ['Not in that team', preview.not_eligible]].map(([l, v]) => (
+            <div key={l as string} className="rounded-xl bg-canvas p-3"><div className="font-display text-xl font-semibold text-heading">{v}</div><div className="truncate text-[11px] text-ink-mute">{l}</div></div>
+          ))}
+        </div>
+      )}
+      {preview && preview.replacing > 0 && <Alert tone="info" className="mt-3">{preview.replacing} already have another Sub Officer. Their earlier applications keep that credit.</Alert>}
+      <Field label="Reason (kept in the assignment history)" className="mt-3"><Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></Field>
+      {err && <Alert tone="error" className="mt-3">{err}</Alert>}
+    </Modal>
+  );
+}
+
 interface ContactPreview { selected: number; found: number; already: number; change: number; from: Partial<Record<ContactStatus, number>> }
 
 export function ContactStatusModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone?: () => void }) {
@@ -298,7 +405,7 @@ export function LinkPartnerModal({ agency, partners, onClose }: {
 // ------------------------------------------------------------------ business onboarding vs portal access (0042)
 export type BusinessStatus = 'historical' | 'verified' | 'not_onboarded';
 export type PortalStatus = 'no_account' | 'pending' | 'active' | 'suspended' | 'deactivated';
-export interface PartnerStatusRow { partner_id: string; business_status: BusinessStatus; portal_status: PortalStatus; onboarding_source: 'portal' | 'historical'; users: number; agency_id: string | null; agency_reference: string | null; agency_type: AgencyType | null }
+export interface PartnerStatusRow { partner_id: string; business_status: BusinessStatus; portal_status: PortalStatus; onboarding_source: 'portal' | 'historical'; users: number; agency_id: string | null; agency_reference: string | null; agency_type: AgencyType | null; main_officer_id: string | null; sub_officer_id: string | null }
 export interface OnboardingSummary { total: number; historical: number; verified: number; unlinked: number; portal_active: number; no_account: number; mine: number }
 export const BUSINESS: Record<BusinessStatus, { label: string; tone: 'green' | 'navy' | 'slate' }> = {
   historical: { label: 'Historically onboarded', tone: 'navy' }, verified: { label: 'Verified onboarded', tone: 'green' }, not_onboarded: { label: 'Not onboarded', tone: 'slate' },
@@ -309,7 +416,7 @@ export const PORTAL: Record<PortalStatus, { label: string; tone: 'slate' | 'ambe
 };
 
 /** Server-calculated status per partner and the Onboarded KPI, re-read on any agency, partner or account change. */
-function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T, args?: Record<string, unknown>): T | null {
+function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T, args?: Record<string, unknown>, tables: string[] = ['agency_prospects', 'partners', 'profiles']): T | null {
   const key = JSON.stringify(args ?? {});
   const [v, setV] = useState<T | null>(null);
   useEffect(() => {
@@ -321,7 +428,7 @@ function useLive<T>(fn: string, enabled: boolean, map: (d: unknown) => T, args?:
     const soon = () => { clearTimeout(t); t = setTimeout(load, 300); };
     load();
     const ch = sb.channel(`${fn}-${Math.random().toString(36).slice(2, 8)}`);
-    for (const table of ['agency_prospects', 'partners', 'profiles']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
+    for (const table of tables) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
     ch.subscribe();
     const onFocus = () => document.visibilityState === 'visible' && soon();
     document.addEventListener('visibilitychange', onFocus);

@@ -16,7 +16,7 @@ import {
   AGENCY_TYPE, typeKey, type AgencyType, TASK_KIND, fmtTime, type AgencyTask,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
-import { AgencyTypeBadge, AssignOfficerModal, OfficerHistory, useOfficerCandidates } from './AgencyBulk';
+import { AgencyTypeBadge, AssignOfficerModal, AssignSubOfficerModal, OfficerHistory, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 // The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
 // agency_action() and drives the Daily Work Report and the task queue from the saved event.
@@ -57,7 +57,10 @@ export default function AgencyDetail() {
   const reg = a?.registration_id ? data?.registrations.find((r) => r.id === a.registration_id) : undefined;
   const candidates = useOfficerCandidates(allowed);
   const [changingOfficer, setChangingOfficer] = useState(false);
-  const staffName = (uid: string | null) => (uid ? candidates.find((c) => c.id === uid)?.full_name ?? db.staff.find((s) => s.id === uid)?.fullName ?? (uid === session?.userId ? session?.name : 'SSI GLOBAL') : 'The agency');
+  const [changingSub, setChangingSub] = useState(false);
+  const names = useOfficerNames(allowed);
+  const counts = useApplicationCounts(allowed);
+  const staffName = (uid: string | null) => (uid ? candidates.find((c) => c.id === uid)?.full_name ?? names.get(uid) ?? db.staff.find((s) => s.id === uid)?.fullName ?? (uid === session?.userId ? session?.name : 'SSI GLOBAL') : 'The agency');
 
   const demo = useContext(AgencyDemo);
   const loadHistory = useCallback(async () => {
@@ -115,6 +118,7 @@ export default function AgencyDetail() {
           <Button variant="secondary" icon={Pencil} onClick={() => setModal({ kind: 'edit' })}>Edit</Button>
           {!a.assigned_officer && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void run('claim', () => rpc('claim_agency', { p_id: id }), 'You are now the officer for this agency')}>Take this agency</Button>}
           {manager && <Button variant="secondary" icon={UserCog} onClick={() => setChangingOfficer(true)}>Change officer</Button>}
+          {(manager || session?.userRole === 'super_admin' || a.assigned_officer === session?.userId) && <Button variant="secondary" icon={UserCheck} onClick={() => setChangingSub(true)}>Assign Sub Officer</Button>}
           {a.contact_status !== 'connected' && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>}
           {a.contact_status !== 'not_connected' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
           <Menu width="w-60" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
@@ -131,6 +135,8 @@ export default function AgencyDetail() {
           <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
         </>}
       />
+      {changingSub && <AssignSubOfficerModal ids={[a.id]} title={agencyName(a)} main={a.assigned_officer} mainName={a.assigned_officer ? staffName(a.assigned_officer) : ''}
+        current={a.sub_officer} currentName={a.sub_officer ? staffName(a.sub_officer) : ''} onClose={() => setChangingSub(false)} onDone={() => void reload()} />}
       {changingOfficer && <AssignOfficerModal ids={[a.id]} current={a.assigned_officer} candidates={candidates} onClose={() => setChangingOfficer(false)} />}
       {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
 
@@ -141,7 +147,9 @@ export default function AgencyDetail() {
             {([
               ['Company', a.company_name], ['Contact person', a.contact_name], ['Phone', a.phone], ['Email', a.email], ['Country', a.country],
               ['Agency type', AGENCY_TYPE[typeKey(a.agency_type)].label + (a.agency_type_changed_at ? ` · ${fmtWhen(a.agency_type_changed_at)} · ${staffName(a.agency_type_changed_by ?? null)}` : '')],
-              ['Assigned officer', a.assigned_officer ? staffName(a.assigned_officer) : 'Unassigned'], ['Contact status changed', a.contact_changed_at ? `${fmtWhen(a.contact_changed_at)} · ${staffName(a.contact_changed_by)}` : null],
+              ['Main officer', a.assigned_officer ? staffName(a.assigned_officer) : 'Unassigned'],
+              ['Sub officer', a.sub_officer ? `${staffName(a.sub_officer)}${a.sub_officer_since ? ` · since ${fmtDate(a.sub_officer_since)}` : ''}` : 'Unassigned'],
+              ['Applications', a.partner_id ? String(counts?.byAgency.get(a.id) ?? '…') : 'None yet (not a client)'], ['Contact status changed', a.contact_changed_at ? `${fmtWhen(a.contact_changed_at)} · ${staffName(a.contact_changed_by)}` : null],
               ['Last contact', fmtDate(a.last_contact_at)], ['Next follow-up', fmtDate(a.next_follow_up)], ['Selected commission', a.selected_tier],
               ['Added', `${fmtWhen(a.created_at)} · ${staffName(a.created_by)}`],
             ] as [string, string | null][]).map(([k, v]) => (
@@ -288,7 +296,7 @@ export default function AgencyDetail() {
               <ol className="px-5 pb-5">
                 {history.map((h) => (
                   <li key={h.id} className="border-l-2 border-line py-2 pl-4">
-                    <div className="text-sm font-medium text-heading">{ACTIVITY[h.kind] ?? h.kind}{h.kind === 'stage' || h.kind === 'contact_status' ? `: ${label(h)}` : ''}</div>
+                    <div className="text-sm font-medium text-heading">{ACTIVITY[h.kind] ?? h.kind}{h.kind === 'stage' || h.kind === 'contact_status' ? `: ${label(h)}` : ''}{h.kind === 'sub_officer_changed' ? `: ${h.detail?.from ? staffName(String(h.detail.from)) : 'Unassigned'} → ${h.detail?.to ? staffName(String(h.detail.to)) : 'Unassigned'}` : ''}</div>
                     {h.note && <div className="whitespace-pre-wrap text-sm text-ink-soft">{h.note}</div>}
                     {typeof h.detail?.next_follow_up === 'string' && <div className="text-xs text-ink-mute">Next follow-up {fmtDate(h.detail.next_follow_up)}</div>}
                     {typeof h.detail?.due_date === 'string' && <div className="text-xs text-ink-mute">For {fmtDate(h.detail.due_date)}{typeof h.detail.due_time === 'string' ? ` · ${fmtTime(h.detail.due_time)}` : ''}{typeof h.detail.attendee === 'string' ? ` · ${h.detail.attendee}` : ''}</div>}

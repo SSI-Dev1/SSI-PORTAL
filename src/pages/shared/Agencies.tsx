@@ -3,7 +3,7 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, UserCheck, UserCog, X } from 'lucide-react';
+import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, UserCheck, UserCog, UserPlus, X } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -14,7 +14,7 @@ import {
 } from '../../lib/agencies';
 import { supabase } from '../../auth/auth';
 import { ImportAgencies } from './AgencyImport';
-import { AgencyTypeBadge, AgencyTypeModal, AssignOfficerModal, ContactStatusModal, useOfficerCandidates } from './AgencyBulk';
+import { AgencyTypeBadge, AgencyTypeModal, AssignOfficerModal, AssignSubOfficerModal, ContactStatusModal, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const { session, db } = useStore();
@@ -31,7 +31,10 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const [importing, setImporting] = useState(false);
   // Administrators: selection for bulk officer assignment / contact-status correction.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | null>(null);
+  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | 'sub' | null>(null);
+  const names = useOfficerNames(allowed);
+  const counts = useApplicationCounts(allowed);
+  const [subF, setSubF] = useState('');
   const candidates = useOfficerCandidates(allowed);
   const filter = (params.get('f') as AgencyFilter) || 'all';
   const setFilter = (f: string) => setParams((p) => { const n = new URLSearchParams(p); if (f && f !== 'all') n.set('f', f); else n.delete('f'); n.delete('add'); return n; }, { replace: true });
@@ -40,16 +43,21 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const setType = (t: string) => setParams((p) => { const n = new URLSearchParams(p); if (t) n.set('t', t); else n.delete('t'); n.delete('add'); return n; }, { replace: true });
   const [country, setCountry] = useState('');
   // Full names from the server (eligible officers), then the staff directory.
-  const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
+  const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? names.get(id) ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
+  // Bulk Sub Officer: administrators, or a Main Officer for their own agencies (the server enforces it).
+  const ownsSome = !!data?.agencies.some((a) => a.assigned_officer === session?.userId);
+  const canSelect = manager || ownsSome;
   const regOf = (id: string | null) => (id ? data?.registrations.find((r) => r.id === id) : undefined);
 
   const rows = useMemo(() => {
     if (!data) return [];
     return data.agencies.filter((a) => matchesFilter(a, filter, data) && matchesType(a.agency_type, type) && (!officer || a.assigned_officer === officer)
       && (!country || (a.country ?? '').trim().toLowerCase() === country)
+      && (!subF || (subF === 'none' ? !a.sub_officer : a.sub_officer === subF))
       && matches(q, a.company_name ?? '', a.contact_name ?? '', a.phone ?? '', a.email ?? '', a.country ?? '', a.reference));
-  }, [data, filter, type, officer, country, q]);
-  const paged = usePaged(rows, 15, `${filter}|${type}|${q}|${officer}|${country}`);
+  }, [data, filter, type, officer, country, subF, q]);
+  const paged = usePaged(rows, 15, `${filter}|${type}|${q}|${officer}|${country}|${subF}`);
+  const subs = useMemo(() => [...new Set((data?.agencies ?? []).map((a) => a.sub_officer).filter(Boolean) as string[])], [data]);
   const countries = useMemo(() => {
     const m = new Map<string, string>();
     for (const a of data?.agencies ?? []) { const c = (a.country ?? '').trim(); if (c && !m.has(c.toLowerCase())) m.set(c.toLowerCase(), c); }
@@ -73,10 +81,11 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
           <FilterSelect label="Status" value={filter} onChange={setFilter} options={FILTERS} />
           <FilterSelect label="Agency type" value={type} onChange={setType} options={TYPE_FILTERS} />
           {officers.length > 0 && <FilterSelect label="Officer" value={officer} onChange={setOfficer} options={[{ value: '', label: 'All officers' }, ...officers.map((o) => ({ value: o, label: staffName(o) }))]} />}
+          <FilterSelect label="Sub officer" value={subF} onChange={setSubF} options={[{ value: '', label: 'Any sub officer' }, { value: 'none', label: 'Unassigned' }, ...subs.map((o) => ({ value: o, label: staffName(o) }))]} />
           {countries.length > 1 && <FilterSelect label="Country" value={country} onChange={setCountry} options={[{ value: '', label: 'All countries' }, ...countries.map(([k, v]) => ({ value: k, label: v }))]} />}
           <span className="ml-auto text-xs text-ink-mute">{data ? `${rows.length} of ${data.agencies.length}` : ''}</span>
         </div>
-        {manager && data && rows.length > 0 && (
+        {canSelect && data && rows.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas/50 px-4 py-2.5 text-sm">
             {selected.size === 0 ? (
               <Button size="sm" variant="secondary" onClick={() => setSelected(new Set(rows.map((a) => a.id)))}>Select all {rows.length} filtered</Button>
@@ -86,9 +95,10 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                 {selected.size < rows.length && <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(rows.map((a) => a.id)))}>Select all {rows.length} filtered</Button>}
                 <Button size="sm" variant="ghost" icon={X} onClick={() => setSelected(new Set())}>Clear</Button>
                 <span className="ml-auto flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>
-                  <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>
-                  <Button size="sm" variant="secondary" icon={Globe2} onClick={() => setBulk('type')}>Set agency type</Button>
+                  <Button size="sm" variant="secondary" icon={UserPlus} onClick={() => setBulk('sub')}>Assign sub officer</Button>
+                  {manager && <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>}
+                  {manager && <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>}
+                  {manager && <Button size="sm" variant="secondary" icon={Globe2} onClick={() => setBulk('type')}>Set agency type</Button>}
                 </span>
               </>
             )}
@@ -100,14 +110,14 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
             action={!data.agencies.length ? <Button icon={Plus} onClick={() => setAdding(true)}>Add Agency</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={[...(manager ? [<span key="sel" className="sr-only">Select</span>] : []), 'Agency', 'Contact', 'Status', 'Stage', 'Officer', 'Last contact', 'Next follow-up', 'Proposal', 'Registration', '']}>
+            <Table className="hr-table" head={[...(canSelect ? [<span key="sel" className="sr-only">Select</span>] : []), 'Agency', 'Contact', 'Status', 'Stage', 'Officer', 'Sub officer', 'Apps', 'Last contact', 'Next follow-up', 'Proposal', 'Registration', '']}>
               {paged.rows.map((a) => {
                 const p = latestProposal(data.proposals, a.id);
                 const reg = regOf(a.registration_id);
                 const overdue = a.next_follow_up && a.next_follow_up < new Date().toISOString().slice(0, 10);
                 return (
                   <tr key={a.id} className="cursor-pointer" onClick={() => navigate(a.id)}>
-                    {manager && (
+                    {canSelect && (
                       <td onClick={(e) => e.stopPropagation()} className="w-10">
                         <Checkbox checked={selected.has(a.id)} label={<span className="sr-only">Select {agencyName(a)}</span>}
                           onCheckedChange={(v) => setSelected((cur) => { const n = new Set(cur); if (v) n.add(a.id); else n.delete(a.id); return n; })} />
@@ -118,6 +128,8 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
                     <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>
                     <td className="text-sm">{a.assigned_officer ? staffName(a.assigned_officer) : <span className="text-ink-mute">Unassigned</span>}</td>
+                    <td className="text-sm">{a.sub_officer ? staffName(a.sub_officer) : <span className="text-ink-mute">Unassigned</span>}</td>
+                    <td className="text-sm tabular-nums">{counts?.byAgency.get(a.id) ?? (a.partner_id ? '…' : '—')}</td>
                     <td className="whitespace-nowrap text-sm">{fmtDate(a.last_contact_at)}</td>
                     <td className={`whitespace-nowrap text-sm ${overdue ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(a.next_follow_up)}</td>
                     <td>{p ? <Badge tone={PROPOSAL[p.status].tone}>{PROPOSAL[p.status].label}</Badge> : <span className="text-xs text-ink-mute">{a.source === 'import' && ['proposal_sent', 'mou_sent'].includes(a.stage) ? 'Before the CRM' : '—'}</span>}</td>
@@ -136,6 +148,13 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
       {manager && importing && <ImportAgencies onClose={() => setImporting(false)} onDone={() => setFilter('all')} />}
       {manager && bulk === 'officer' && <AssignOfficerModal ids={[...selected]} candidates={candidates} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
       {manager && bulk === 'contact' && <ContactStatusModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
+      {canSelect && bulk === 'sub' && (() => {
+        const chosen = data?.agencies.filter((a) => selected.has(a.id)) ?? [];
+        const mains = [...new Set(chosen.map((a) => a.assigned_officer))];
+        const main = mains.length === 1 ? mains[0] : manager ? null : session?.userId ?? null;
+        return <AssignSubOfficerModal ids={[...selected]} title={`${selected.size} selected agencies`} main={main ?? (manager ? session?.userId ?? null : null)}
+          mainName={mains.length === 1 ? (mains[0] ? staffName(mains[0]) : 'Unassigned') : `${mains.length} different Main Officers`} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />;
+      })()}
       {manager && bulk === 'type' && <AgencyTypeModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
     </>
   );

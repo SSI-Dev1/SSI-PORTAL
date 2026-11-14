@@ -22,6 +22,7 @@ export interface Agency {
   first_contact_at?: string | null; source?: 'manual' | 'import' | 'linkedin'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
   source_values?: Record<string, unknown> | null; historical_onboarded?: boolean; needs_reconciliation?: boolean; reconciliation_note?: string | null;
   agency_type?: AgencyType | null; agency_type_changed_by?: string | null; agency_type_changed_at?: string | null;
+  sub_officer?: string | null; sub_officer_since?: string | null;
 }
 
 // ------------------------------------------------------------------ Agency Type (0043)
@@ -84,7 +85,7 @@ export const REGISTRATION: Record<string, { label: string; tone: Tone }> = {
 };
 export const ACTIVITY: Record<string, string> = {
   created: 'Agency added', edited: 'Details edited', contact_status: 'Contact status changed', stage: 'Stage changed', call: 'Call done',
-  agency_type: 'Agency Type set', schedule_meeting: 'Meeting scheduled', visit: 'Partner visited', task_cancelled: 'Follow-up / meeting cancelled', meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
+  agency_type: 'Agency Type set', sub_officer_changed: 'Sub Officer changed', schedule_meeting: 'Meeting scheduled', visit: 'Partner visited', task_cancelled: 'Follow-up / meeting cancelled', meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
   proposal_prepared: 'Proposal prepared', proposal_needs_approval: 'Proposal waiting for commission approval', proposal_approved: 'Custom commission approved',
   proposal_rejected: 'Custom commission rejected', proposal_sent: 'Proposal emailed', proposal_failed: 'Proposal email failed', proposal_cancelled: 'Proposal cancelled',
   proposal_confirmed: 'Proposal confirmed by the agency', proposal_declined: 'Proposal declined by the agency', proposal_expired: 'Proposal expired',

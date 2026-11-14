@@ -135,7 +135,8 @@ export function ReportForm({ template, draft, onChange, readOnly, metrics, sourc
                   const m = metrics[f.key];
                   const value = typeof m === 'number' ? m : m?.value ?? 0;
                   const src = sources.find((x) => x.templateId === template.id && x.fieldKey === f.key);
-                  const workload = src?.kind === 'workload';
+                  // Workload and pending figures are current counters, not work done on the day.
+                  const workload = src?.kind === 'workload' || src?.kind === 'pending';
                   const loggable = !workload && (src?.activityTypes ?? []).some((t) => data.activityTypes.find((x) => x.id === t)?.source === 'logged');
                   const fromCrm = !workload && (src?.activityTypes ?? []).some((t) => data.activityTypes.find((x) => x.id === t)?.source === 'crm');
                   return (
@@ -143,7 +144,7 @@ export function ReportForm({ template, draft, onChange, readOnly, metrics, sourc
                       <button type="button" onClick={() => onShow(f.key, f.label)} className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 rounded-md" title="See the work behind this figure">
                         <span className="block text-[13px] font-semibold leading-snug text-heading">{f.label}</span>
                         <span className="mt-1 flex flex-wrap items-center gap-1">
-                          <Badge tone={workload ? 'navy' : 'orange'}>{workload ? 'Current workload' : 'Auto'}</Badge>
+                          <Badge tone={workload ? 'navy' : 'orange'}>{src?.kind === 'pending' ? 'Open now' : workload ? 'Current workload' : 'Auto'}</Badge>
                           {fromCrm && <span className="text-[10.5px] text-ink-mute">from CRM</span>}
                           {loggable && <span className="text-[10.5px] text-ink-mute">{fromCrm ? '+ quick log' : 'quick log'}</span>}
                         </span>
@@ -182,6 +183,13 @@ export function ReportForm({ template, draft, onChange, readOnly, metrics, sourc
   );
 }
 
+const PENDING_HELP: Record<string, string> = {
+  agency_attempts: 'Contact attempts you logged that no call or completed follow-up has resolved yet.',
+  agency_not_connected: 'Your agencies that are not Connected yet (closed, inactive and onboarded agencies excluded).',
+  agency_followups: 'Your follow-ups, meetings and visits due on or before this day and not done yet.',
+  linkedin_pending: 'Your LinkedIn leads not connected yet, or with a follow-up due.',
+};
+
 /** The activities (or assigned applications) behind one report figure, with corrections. */
 export function MetricActivitiesModal({ open, onClose, label, metric, employeeId, canVoid }: {
   open: boolean; onClose: () => void; label: string; metric?: MetricValue; employeeId?: string; canVoid?: boolean;
@@ -199,8 +207,10 @@ export function MetricActivitiesModal({ open, onClose, label, metric, employeeId
   };
   return (
     <Modal open={open} onClose={onClose} size="lg" title={label}
-      subtitle={metric?.kind === 'workload' ? 'Current workload — applications assigned to you right now' : `${metric?.value ?? 0} from the work recorded for this day`}>
-      {metric?.kind === 'workload' ? (
+      subtitle={metric?.kind === 'workload' ? 'Current workload — applications assigned to you right now' : metric?.kind === 'pending' ? 'Open right now — this figure goes down as items are resolved' : `${metric?.value ?? 0} from the work recorded for this day`}>
+      {metric?.kind === 'pending' ? (
+        <p className="text-sm text-ink-soft">{PENDING_HELP[metric.pending ?? ''] ?? 'Open items.'} <b className="text-heading">{metric.value}</b> open now. They are listed in your task queue on the Dashboard and in the Agency List.</p>
+      ) : metric?.kind === 'workload' ? (
         apps.length === 0 ? <EmptyState icon={Inbox} title="Nothing in this stage" /> : (
           <ul className="divide-y divide-line">
             {apps.map((a) => a && (

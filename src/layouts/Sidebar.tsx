@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { partnershipFocused } from '../lib/agencies';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { Linkedin, Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
+import { GraduationCap, Linkedin, Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
   BookOpen,
   Building2,
@@ -74,6 +74,7 @@ const adminNav: NavSection[] = [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
+    { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -107,6 +108,7 @@ const staffNav: NavSection[] = [
   { id: 'work', title: 'My Work', items: [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
+    { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -151,6 +153,7 @@ const employeeNav: NavSection[] = [
   { id: 'w-tools', title: 'Work Tools', items: [
     { to: 'agencies', label: 'Agencies', icon: Handshake },
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
+    { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
     { to: 'students', label: 'Students', icon: Users },
@@ -290,6 +293,8 @@ const partnershipNav: NavSection[] = [
     { to: 'agencies', label: 'Agency List', icon: Handshake },
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
+    { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
+    { to: 'providers', label: 'Education Providers', icon: Landmark },
     { to: 'agencies/proposals', label: 'Proposals', icon: Send },
     { to: 'agencies/registrations', label: 'Partner Registrations', icon: ClipboardCheck },
   ] },

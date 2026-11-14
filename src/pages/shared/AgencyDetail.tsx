@@ -3,9 +3,9 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, CalendarPlus, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, Send, StickyNote, UserCheck, UserCog, UserX, Users, XCircle,
+  ArrowLeft, CalendarClock, CalendarPlus, MapPin, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, PhoneMissed, Send, StickyNote, UserCheck, UserCog, UserX, Users, XCircle,
 } from 'lucide-react';
-import { Alert, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Textarea } from '../../components/ui';
+import { Alert, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Textarea, TimePicker } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
@@ -13,13 +13,28 @@ import { cn, matches } from '../../lib/utils';
 import {
   ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, stageLabel, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
   AgencyDemo, EMAIL_STATE, resendAgencyEmail, useAgencyData, type Agency, type AgencyEmail, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
-  AGENCY_TYPE, typeKey, type AgencyType,
+  AGENCY_TYPE, typeKey, type AgencyType, TASK_KIND, fmtTime, type AgencyTask,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 import { AgencyTypeBadge, AssignOfficerModal, OfficerHistory, useOfficerCandidates } from './AgencyBulk';
 
-type LogKind = 'contact_attempt' | 'call' | 'meeting' | 'follow_up_done' | 'note' | 'follow_up';
-const LOG_TITLE: Record<LogKind, string> = { contact_attempt: 'Contact attempt (no answer / not reached)', call: 'Log call', meeting: 'Record meeting', follow_up_done: 'Follow-up completed', note: 'Add note', follow_up: 'Add follow-up' };
+// The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
+// agency_action() and drives the Daily Work Report and the task queue from the saved event.
+type LogKind = 'call' | 'contact_attempt' | 'follow_up' | 'follow_up_done' | 'meeting' | 'note' | 'schedule_meeting' | 'visit';
+const LOG_TITLE: Record<LogKind, string> = {
+  call: 'Call done', contact_attempt: 'Contact attempt (no answer / not reached)', follow_up: 'Add follow-up', follow_up_done: 'Follow-up completed',
+  meeting: 'Record meeting', note: 'Add note', schedule_meeting: 'Schedule meeting', visit: 'Visited partner',
+};
+const LOG_HINT: Partial<Record<LogKind, string>> = {
+  call: 'Counts as a follow-up call completed and closes one open contact attempt.',
+  contact_attempt: 'Counts as an open follow-up attempt until a call or completed follow-up resolves it.',
+  follow_up: 'Goes to your task queue; if not done by day-end it moves to the next working day.',
+  follow_up_done: 'Counts as a follow-up call completed, clears it from pending and closes one open contact attempt.',
+  meeting: 'Records what happened. It does not count as a new meeting fixed.',
+  note: 'Saved to the history. It does not change any report figure.',
+  schedule_meeting: 'Counts as Meeting Fixed and sends you a reminder on the day.',
+  visit: 'Counts as a visit done and clears the open visit reminder.',
+};
 
 export default function AgencyDetail() {
   const { id = '' } = useParams();
@@ -30,8 +45,9 @@ export default function AgencyDetail() {
   const manager = agencyManager(session);
   const commissionManager = !!session && (session.userRole === 'super_admin' || session.permissions.includes('commission_manage'));
   const { data, reload } = useAgencyData(allowed);
+  const tasks = useAgencyTasks(allowed ? id : '');
   const [history, setHistory] = useState<AgencyActivity[] | null>(null);
-  const [modal, setModal] = useState<null | { kind: 'edit' } | { kind: 'log'; log: LogKind } | { kind: 'proposal' } | { kind: 'email' } | { kind: 'mou' } | { kind: 'stage' }
+  const [modal, setModal] = useState<null | { kind: 'edit' } | { kind: 'log'; log: LogKind; task?: AgencyTask } | { kind: 'proposal' } | { kind: 'email' } | { kind: 'mou' } | { kind: 'stage' }
     | { kind: 'view'; p: Proposal } | { kind: 'sign'; m: Mou }>(null);
   const [busy, setBusy] = useState('');
 
@@ -101,14 +117,15 @@ export default function AgencyDetail() {
           {manager && <Button variant="secondary" icon={UserCog} onClick={() => setChangingOfficer(true)}>Change officer</Button>}
           {a.contact_status !== 'connected' && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>}
           {a.contact_status !== 'not_connected' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
-          <Menu width="w-56" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
-            { label: 'Contact attempt', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'contact_attempt' }) },
-            { label: 'Log call', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'call' }) },
+          <Menu width="w-60" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
+            { label: 'Call done', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'call' }) },
+            { label: 'Contact attempt', icon: PhoneMissed, onClick: () => setModal({ kind: 'log', log: 'contact_attempt' }) },
             { label: 'Add follow-up', icon: CalendarPlus, onClick: () => setModal({ kind: 'log', log: 'follow_up' }) },
             { label: 'Follow-up completed', icon: CheckCircle2, onClick: () => setModal({ kind: 'log', log: 'follow_up_done' }) },
             { label: 'Record meeting', icon: Handshake, onClick: () => setModal({ kind: 'log', log: 'meeting' }) },
             { label: 'Add note', icon: StickyNote, onClick: () => setModal({ kind: 'log', log: 'note' }) },
-            { label: 'Record MOU sent', icon: FileSignature, onClick: () => setModal({ kind: 'mou' }) },
+            { label: 'Schedule meeting', icon: CalendarClock, onClick: () => setModal({ kind: 'log', log: 'schedule_meeting' }) },
+            { label: 'Visited partner', icon: MapPin, onClick: () => setModal({ kind: 'log', log: 'visit' }) },
             { label: 'Change stage', icon: Pencil, onClick: () => setModal({ kind: 'stage' }) },
           ]} />
           <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
@@ -237,6 +254,35 @@ export default function AgencyDetail() {
           )}
 
           <Card>
+            <CardHeader title="Follow-ups, meetings & visits" subtitle="Open items stay in your task queue until done; unfinished ones move to the next working day."
+              action={<Button size="sm" variant="secondary" icon={CalendarPlus} onClick={() => setModal({ kind: 'log', log: 'follow_up' })}>Add follow-up</Button>} />
+            <div className="px-5 pb-5 text-sm">
+              {tasks === null ? <p className="text-ink-soft">Loading…</p> : tasks.filter((t) => t.status === 'open').length === 0 ? <p className="text-ink-soft">Nothing open.</p> : (
+                <ul className="divide-y divide-line">
+                  {tasks.filter((t) => t.status === 'open').map((t) => {
+                    const overdue = t.due_date < today();
+                    return (
+                      <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-1.5 font-medium text-heading">{TASK_KIND[t.kind]}{t.attendee ? ` · ${t.attendee}` : ''}
+                            {overdue && <Badge tone="red">Overdue</Badge>}{t.carry_count > 0 && <Badge tone="amber">Carried over {t.carry_count}×</Badge>}</span>
+                          <span className={cn('block text-xs', overdue ? 'text-red-600 dark:text-red-400' : 'text-ink-mute')}>{fmtDate(t.due_date)}{t.due_time ? ` · ${fmtTime(t.due_time)}` : ''}{t.note ? ` · ${t.note}` : ''}</span>
+                        </span>
+                        <span className="flex gap-1">
+                          <Button size="sm" variant="secondary" icon={CheckCircle2} onClick={() => setModal({ kind: 'log', log: t.kind === 'follow_up' ? 'follow_up_done' : t.kind === 'visit' ? 'visit' : 'meeting', task: t })}>
+                            {t.kind === 'follow_up' ? 'Completed' : t.kind === 'visit' ? 'Visit done' : 'Record meeting'}</Button>
+                          <Button size="sm" variant="ghost" icon={XCircle} aria-label="Cancel" disabled={!!busy}
+                            onClick={() => void run(`cancel:${t.id}`, () => rpc('cancel_agency_task', { p_task: t.id, p_note: null }), `${TASK_KIND[t.kind]} cancelled`)} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </Card>
+
+          <Card>
             <CardHeader title="History" subtitle="Every contact, note, proposal and registration step. Nothing is deleted." />
             {!history ? <p className="px-5 pb-5 text-sm text-ink-soft">Loading…</p> : history.length === 0 ? <p className="px-5 pb-5 text-sm text-ink-soft">Nothing yet.</p> : (
               <ol className="px-5 pb-5">
@@ -245,6 +291,8 @@ export default function AgencyDetail() {
                     <div className="text-sm font-medium text-heading">{ACTIVITY[h.kind] ?? h.kind}{h.kind === 'stage' || h.kind === 'contact_status' ? `: ${label(h)}` : ''}</div>
                     {h.note && <div className="whitespace-pre-wrap text-sm text-ink-soft">{h.note}</div>}
                     {typeof h.detail?.next_follow_up === 'string' && <div className="text-xs text-ink-mute">Next follow-up {fmtDate(h.detail.next_follow_up)}</div>}
+                    {typeof h.detail?.due_date === 'string' && <div className="text-xs text-ink-mute">For {fmtDate(h.detail.due_date)}{typeof h.detail.due_time === 'string' ? ` · ${fmtTime(h.detail.due_time)}` : ''}{typeof h.detail.attendee === 'string' ? ` · ${h.detail.attendee}` : ''}</div>}
+                    {typeof h.detail?.outcome === 'string' && <div className="text-xs text-ink-soft">Outcome: {h.detail.outcome}</div>}
                     <div className="text-xs text-ink-mute">{fmtWhen(h.at)} · {staffName(h.actor)}</div>
                   </li>
                 ))}
@@ -255,8 +303,9 @@ export default function AgencyDetail() {
       </div>
 
       {modal?.kind === 'edit' && <EditAgency a={a} onClose={() => setModal(null)} onSaved={reload} />}
-      {modal?.kind === 'log' && <LogActivity a={a} kind={modal.log} onClose={() => setModal(null)} onSaved={reload} />}
-      {modal?.kind === 'stage' && <ChangeStage a={a} onClose={() => setModal(null)} onSaved={reload} />}
+      {modal?.kind === 'log' && <LogActivity a={a} kind={modal.log} task={modal.task} tasks={tasks ?? []} onClose={() => setModal(null)} onSaved={reload} />}
+      {modal?.kind === 'stage' && <ChangeStage a={a} hasSentMou={mous.some((m) => m.status === 'sent')} onClose={() => setModal(null)} onSaved={reload}
+        onProposal={() => startProposal()} onMou={() => { const m = mous.find((x) => x.status === 'sent'); setModal(m ? { kind: 'sign', m } : { kind: 'mou' }); }} />}
       {modal?.kind === 'mou' && <RecordMou a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'sign' && <UpdateMou m={modal.m} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'view' && <ViewProposal p={modal.p} onClose={() => setModal(null)} />}
@@ -332,51 +381,146 @@ function EditAgency({ a, onClose, onSaved }: { a: Agency; onClose: () => void; o
   );
 }
 
-function LogActivity({ a, kind, onClose, onSaved }: { a: Agency; kind: LogKind; onClose: () => void; onSaved: () => void }) {
+/** Open follow-ups, meetings and visits of one agency (live). */
+function useAgencyTasks(prospectId: string) {
+  const [rows, setRows] = useState<AgencyTask[] | null>(null);
+  useEffect(() => {
+    if (!supabase || !prospectId) return;
+    const sb = supabase;
+    let alive = true;
+    const load = () => void sb.from('agency_tasks').select('*').eq('prospect_id', prospectId).order('due_date').order('due_time', { nullsFirst: false })
+      .then(({ data }) => alive && setRows((data ?? []) as AgencyTask[]));
+    load();
+    const ch = sb.channel(`agency-tasks-${prospectId}-${Math.random().toString(36).slice(2, 7)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agency_tasks', filter: `prospect_id=eq.${prospectId}` }, load).subscribe();
+    return () => { alive = false; void sb.removeChannel(ch); };
+  }, [prospectId]);
+  return rows;
+}
+
+function LogActivity({ a, kind, task, tasks, onClose, onSaved }: { a: Agency; kind: LogKind; task?: AgencyTask; tasks: AgencyTask[]; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [note, setNote] = useState('');
-  const [next, setNext] = useState(kind === 'follow_up' ? '' : '');
+  const [date, setDate] = useState(kind === 'visit' ? today() : '');
+  const [time, setTime] = useState('');
+  const [attendee, setAttendee] = useState('');
+  const [location, setLocation] = useState('');
+  const [mode, setMode] = useState<'meeting' | 'visit'>('meeting');
+  const [outcome, setOutcome] = useState('');
+  const [attendees, setAttendees] = useState('');
+  const taskKinds: AgencyTask['kind'][] = kind === 'follow_up_done' ? ['follow_up'] : kind === 'meeting' ? ['meeting'] : kind === 'visit' ? ['visit', 'meeting'] : [];
+  const open = tasks.filter((t) => t.status === 'open' && taskKinds.includes(t.kind));
+  const [taskId, setTaskId] = useState(task?.id ?? '');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  // One request id per form: a double click or a retry can never save it twice.
   const [req] = useState(() => crypto.randomUUID());
+  const missing = kind === 'note' && !note.trim() ? 'Write the note'
+    : kind === 'follow_up' && !date ? 'Choose the follow-up date'
+    : kind === 'schedule_meeting' && (!attendee.trim() || !date || !time) ? 'Enter the attendee name, date and time'
+    : '';
   const save = async () => {
-    if (kind === 'follow_up' && !next) return toast.error('Choose the follow-up date');
-    if (kind === 'note' && !note.trim()) return toast.error('Write the note');
-    setBusy(true);
-    const r = await rpc('log_agency_activity', { p_id: a.id, p_kind: kind, p_note: note || null, p_next: next || null, p_request: req });
+    if (busy) return;
+    if (missing) return setErr(missing);
+    setBusy(true); setErr('');
+    const p: Record<string, unknown> = { note: note.trim() || null, task_id: taskId || null };
+    if (kind === 'follow_up' || kind === 'schedule_meeting') { p.due_date = date; p.due_time = time || null; }
+    if (kind === 'schedule_meeting') { p.attendee = attendee.trim(); p.location = location.trim() || null; p.mode = mode; }
+    if (kind === 'meeting') { p.outcome = outcome.trim() || null; p.attendees = attendees.trim() || null; }
+    if (kind === 'visit') p.visit_date = date || null;
+    const r = await rpc('agency_action', { p_id: a.id, p_kind: kind, p, p_request: req });
     setBusy(false);
-    if (!r.ok) return toast.error('Not saved', r.error);
-    toast.success(LOG_TITLE[kind] + ' — saved'); onSaved(); onClose();
+    if (!r.ok) return setErr(r.error);
+    toast.success(`${LOG_TITLE[kind]} — saved`); onSaved(); onClose();
   };
+  const dirty = !!(note.trim() || attendee.trim() || outcome.trim());
   return (
-    <Modal open onClose={onClose} title={LOG_TITLE[kind]} subtitle={agencyName(a)} dirty={!!note.trim()}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>Save</Button></>}>
-      <Field label={kind === 'note' ? 'Note' : 'What was discussed'}><Textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus /></Field>
-      <Field label={kind === 'follow_up' ? 'Follow-up date' : 'Next follow-up (optional)'} required={kind === 'follow_up'} className="mt-3">
-        <DatePicker value={next} onChange={setNext} min={today()} />
-      </Field>
-      {(kind === 'call' || kind === 'follow_up_done' || kind === 'meeting') && <p className="mt-3 text-xs text-ink-mute">Counts in your Daily Work Report automatically ({kind === 'meeting' ? 'Meetings fixed' : 'Follow-up calls completed'}).</p>}
+    <Modal open onClose={onClose} title={LOG_TITLE[kind]} subtitle={agencyName(a)} dirty={dirty}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button></>}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {kind === 'schedule_meeting' && (
+          <>
+            <Field label="Type" className="sm:col-span-2"><Segmented options={[{ value: 'meeting', label: 'Meeting' }, { value: 'visit', label: 'Office visit' }]} value={mode} onChange={(v) => setMode(v as 'meeting' | 'visit')} /></Field>
+            <Field label="Attendee name" required><Input value={attendee} onChange={(e) => setAttendee(e.target.value)} maxLength={160} autoFocus /></Field>
+            <Field label="Location / link"><Input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={200} /></Field>
+          </>
+        )}
+        {(kind === 'follow_up' || kind === 'schedule_meeting') && (
+          <>
+            <Field label={kind === 'follow_up' ? 'Follow-up date' : 'Date'} required><DatePicker value={date} onChange={setDate} min={today()} /></Field>
+            <Field label="Time" required={kind === 'schedule_meeting'}><TimePicker value={time} onChange={setTime} /></Field>
+          </>
+        )}
+        {kind === 'visit' && <Field label="Visit date" required><DatePicker value={date} onChange={setDate} max={today()} clearable={false} /></Field>}
+        {open.length > 0 && (
+          <Field label={kind === 'follow_up_done' ? 'Which follow-up' : 'Which scheduled item'} className={kind === 'visit' ? '' : 'sm:col-span-2'}>
+            <Select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
+              <option value="">{kind === 'follow_up_done' ? 'The earliest open follow-up' : 'The one due today (if any)'}</option>
+              {open.map((t) => <option key={t.id} value={t.id}>{TASK_KIND[t.kind]} · {fmtDate(t.due_date)}{t.due_time ? ` ${fmtTime(t.due_time)}` : ''}{t.attendee ? ` · ${t.attendee}` : ''}</option>)}
+            </Select>
+          </Field>
+        )}
+        {kind === 'meeting' && (
+          <>
+            <Field label="Attendees"><Input value={attendees} onChange={(e) => setAttendees(e.target.value)} maxLength={300} /></Field>
+            <Field label="Outcome"><Input value={outcome} onChange={(e) => setOutcome(e.target.value)} maxLength={300} placeholder="e.g. Agreed to review the proposal" /></Field>
+          </>
+        )}
+        <Field label={kind === 'note' ? 'Note' : kind === 'meeting' ? 'Meeting notes' : 'Notes'} required={kind === 'note'} className="sm:col-span-2">
+          <Textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus={kind !== 'schedule_meeting'} />
+        </Field>
+      </div>
+      {LOG_HINT[kind] && <p className="mt-3 text-xs text-ink-mute">{LOG_HINT[kind]}</p>}
+      {err && <Alert tone="error" className="mt-3">{err.replace(/^MISSING: /, '')}</Alert>}
     </Modal>
   );
 }
 
-function ChangeStage({ a, onClose, onSaved }: { a: Agency; onClose: () => void; onSaved: () => void }) {
+// Change Stage: manual stages and Connected are set here. Proposal Sent, MOU Signed and Onboarded
+// follow the real events (proposal email, MOU marked signed, registration activation) — picking
+// them opens that workflow instead of recording a stage nobody completed.
+type StageChoice = Stage | 'connected' | 'go_proposal' | 'go_mou' | 'go_onboarding';
+function ChangeStage({ a, hasSentMou, onClose, onSaved, onProposal, onMou }: { a: Agency; hasSentMou: boolean; onClose: () => void; onSaved: () => void; onProposal: () => void; onMou: () => void }) {
   const toast = useToast();
-  const [stage, setStage] = useState<Stage>(MANUAL_STAGES.includes(a.stage) ? a.stage : 'discussion');
+  const [stage, setStage] = useState<StageChoice>(a.stage === 'onboarded' ? 'inactive' : a.contact_status !== 'connected' ? 'connected' : MANUAL_STAGES.includes(a.stage) ? a.stage : 'discussion');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const options = a.stage === 'onboarded' ? (['inactive'] as Stage[]) : MANUAL_STAGES;
+  const manual = a.stage === 'onboarded' ? (['inactive'] as Stage[]) : MANUAL_STAGES;
+  const go = stage === 'go_proposal' || stage === 'go_mou' || stage === 'go_onboarding';
   const save = async () => {
+    if (stage === 'go_proposal') return onProposal();
+    if (stage === 'go_mou') return onMou();
+    if (stage === 'go_onboarding') return onClose();
     setBusy(true);
-    const r = await rpc('set_agency_stage', { p_id: a.id, p_stage: stage, p_note: note || null });
+    const r = stage === 'connected'
+      ? await rpc('set_agency_contact_status', { p_id: a.id, p_status: 'connected', p_note: note || null })
+      : await rpc('set_agency_stage', { p_id: a.id, p_stage: stage, p_note: note || null });
     setBusy(false);
     if (!r.ok) return toast.error('Not saved', r.error);
-    toast.success(`Stage: ${STAGE[stage].label}`); onSaved(); onClose();
+    toast.success(stage === 'connected' ? 'Marked Connected' : `Stage: ${STAGE[stage].label}`); onSaved(); onClose();
   };
+  const closed = a.stage === 'closed' || a.stage === 'onboarded';
   return (
-    <Modal open onClose={onClose} title="Change stage" subtitle="Proposal, MOU, registration and onboarding stages follow those events automatically."
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>Save</Button></>}>
-      <Field label="Stage"><Select value={stage} onChange={(e) => setStage(e.target.value as Stage)}>{options.map((s) => <option key={s} value={s}>{STAGE[s].label}</option>)}</Select></Field>
-      <Field label="Reason / note" className="mt-3"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>
+    <Modal open onClose={onClose} title="Change stage" subtitle={agencyName(a)}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{stage === 'go_proposal' ? 'Open proposal' : stage === 'go_mou' ? (hasSentMou ? 'Mark MOU signed' : 'Record MOU sent') : stage === 'go_onboarding' ? 'Close' : 'Save'}</Button></>}>
+      <Field label="Stage">
+        <Select value={stage} onChange={(e) => setStage(e.target.value as StageChoice)}>
+          {a.contact_status !== 'connected' && <option value="connected">Connected</option>}
+          {manual.map((s) => <option key={s} value={s}>{STAGE[s].label}</option>)}
+          {!closed && <option value="go_proposal">Proposal sent — send a proposal</option>}
+          {!closed && <option value="go_mou">MOU signed — {hasSentMou ? 'mark the sent MOU signed' : 'record the MOU first'}</option>}
+          {a.stage !== 'onboarded' && <option value="go_onboarding">Onboarded — via registration approval</option>}
+        </Select>
+      </Field>
+      {go ? (
+        <Alert tone="info" className="mt-3">{stage === 'go_proposal' ? 'Proposal Sent is recorded when the proposal email is actually sent, and counts once per agency.'
+          : stage === 'go_mou' ? 'MOU Signed needs the signing date of an MOU that was sent. It is optional in the daily report.'
+          : 'Onboarded is set when the partner registration is approved and activated by an administrator. Selecting it here does not create a partner account.'}</Alert>
+      ) : (
+        <Field label="Reason / note" className="mt-3"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>
+      )}
+      {stage === 'connected' && <p className="mt-2 text-xs text-ink-mute">The first time an agency is Connected it counts as a new partner contacted.</p>}
+      {stage === 'closed' && <p className="mt-2 text-xs text-ink-mute">Counts as Closed in your daily report. The agency and its history are kept.</p>}
     </Modal>
   );
 }

@@ -1,6 +1,6 @@
 // Partnership Officer dashboard: agency outreach figures from saved records only (RLS: the
 // officer's own agencies; administrators see all). Every card opens the filtered agency list.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Ban, Building2, CalendarClock, CheckCircle2, ClipboardList, FileSignature, Globe2, Handshake, HelpCircle, ListFilter, Moon, PhoneCall, Plus, Send, UserCheck, UserX,
@@ -11,10 +11,12 @@ import { useStore } from '../../store/store';
 import { canOpenPath } from '../../auth/roles';
 import { greeting } from '../../lib/utils';
 import {
-  ACTIVITY, PROPOSAL, STAGE, TYPE_FILTERS, agencyName, fmtDate, fmtWhen, isOpenFollowUp, matchesFilter, matchesType, today, useAgencyData, type AgencyFilter, type AgencyTypeFilter,
+  TASK_KIND, fmtTime, type PendingWork,
+  ACTIVITY, PROPOSAL, STAGE, TYPE_FILTERS, agencyName, fmtDate, fmtWhen, matchesFilter, matchesType, today, useAgencyData, type AgencyFilter, type AgencyTypeFilter,
 } from '../../lib/agencies';
 import { AddAgencyModal } from './Agencies';
 import { useOnboardingSummary } from './AgencyBulk';
+import { supabase } from '../../auth/auth';
 
 export default function PartnershipDashboard() {
   const { session } = useStore();
@@ -30,9 +32,9 @@ export default function PartnershipDashboard() {
 
   const count = (f: AgencyFilter) => (data ? agencies.filter((a) => matchesFilter(a, f, data)).length : '…');
   const typeCount = (t: AgencyTypeFilter) => (data ? data.agencies.filter((a) => matchesType(a.agency_type, t)).length : '…');
-  const followUps = useMemo(() => agencies.filter(isOpenFollowUp).sort((a, b) => (a.next_follow_up ?? '').localeCompare(b.next_follow_up ?? '')), [agencies]);
   // Business onboarding (0042): historical clients count without a login; portal access is separate.
   const summary = useOnboardingSummary(true, type);
+  const queue = usePendingWork();
   const toClients = (tab: string) => navigate(`../partners?tab=${tab}${type ? `&t=${type}` : ''}`, { relative: 'path' });
   // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
   // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
@@ -99,10 +101,19 @@ export default function PartnershipDashboard() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader title="Upcoming follow-ups" />
-          <List empty="No follow-ups scheduled." items={followUps.slice(0, 8).map((a) => ({
-            key: a.id, title: agencyName(a), sub: STAGE[a.stage].label, right: <span className={a.next_follow_up! < today() ? 'font-semibold text-red-600 dark:text-red-400' : ''}>{fmtDate(a.next_follow_up)}</span>, onClick: () => open(a.id),
-          }))} />
+          <CardHeader title="My task queue" subtitle={queue ? `${queue.tasks.filter((t) => t.due_date <= today()).length + queue.linkedin.length} due · unfinished items move to the next working day` : undefined} />
+          <List empty="Nothing due. Follow-ups, meetings and visits you schedule appear here." items={[
+            ...(queue?.tasks ?? []).map((t) => ({
+              key: t.id, title: `${TASK_KIND[t.kind]} · ${t.agency}`, sub: `${t.attendee ? `${t.attendee} · ` : ''}${t.carry_count ? `carried over ${t.carry_count}× · ` : ''}${t.reference}`,
+              right: <span className={t.overdue ? 'font-semibold text-red-600 dark:text-red-400' : t.due_date === today() ? 'font-semibold text-heading' : ''}>{fmtDate(t.due_date)}{t.due_time ? ` ${fmtTime(t.due_time)}` : ''}</span>,
+              onClick: () => open(t.prospect_id),
+            })),
+            ...(queue?.linkedin ?? []).map((l) => ({
+              key: `li-${l.id}`, title: `LinkedIn follow-up · ${l.name}`, sub: l.reference,
+              right: <span className={l.overdue ? 'font-semibold text-red-600 dark:text-red-400' : ''}>{fmtDate(l.due_date)}</span>,
+              onClick: () => navigate(`../agencies/linkedin?p=${l.id}`, { relative: 'path' }),
+            })),
+          ].slice(0, 10)} />
         </Card>
         <Card>
           <CardHeader title="Pending confirmations" subtitle="Proposals sent, waiting for the agency" />
@@ -155,4 +166,23 @@ function List({ items, empty }: { items: { key: string; title: string; sub?: str
       ))}
     </ul>
   );
+}
+
+/** The signed-in officer's open follow-ups, meetings, visits and LinkedIn follow-ups (live). */
+function usePendingWork() {
+  const [w, setW] = useState<PendingWork | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    const sb = supabase;
+    let alive = true;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const load = () => void sb.rpc('my_pending_work').then(({ data, error }) => alive && !error && setW(data as PendingWork | null));
+    const soon = () => { clearTimeout(t); t = setTimeout(load, 300); };
+    load();
+    const ch = sb.channel(`pending-work-${Math.random().toString(36).slice(2, 8)}`);
+    for (const table of ['agency_tasks', 'agency_prospects', 'linkedin_prospects']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
+    ch.subscribe();
+    return () => { alive = false; clearTimeout(t); void sb.removeChannel(ch); };
+  }, []);
+  return w;
 }

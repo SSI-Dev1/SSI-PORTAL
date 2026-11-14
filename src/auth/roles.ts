@@ -26,7 +26,7 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -47,11 +47,12 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'commission_manage', label: 'Commission · Manage agreements', hint: 'Assign, change and end agreements, custom commissions, approvals (Super Admin grants)' },
   { id: 'commission_internal', label: 'Commission · Internal values', hint: 'SSI GLOBAL\'s own commission and profit — confidential (Super Admin grants)' },
   { id: 'commission_edit', label: 'Commission · Edit master & import', hint: 'Edit master records, providers and tiers; import sheets (Super Admin grants)' },
+  { id: 'partner_accounts', label: 'Partner accounts · create logins', hint: 'Create partner login accounts for existing onboarded clients. Portal access stays a Super Admin decision (Super Admin grants)' },
   { id: 'partner_onboarding', label: 'Partner registrations', hint: 'Registration links, review and approval of new partners — Admin Staff only (Super Admin grants)' },
   { id: 'agency_outreach', label: 'Agencies & proposals', hint: 'Agency prospects, follow-ups and partnership proposals (Partnership Officers). Not registration approval or partner accounts' },
 ];
 /** Only a Super Admin can grant these. */
-export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding'];
+export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding', 'partner_accounts'];
 
 /** Partner registrations: Super Admins, and Admin Staff given "Partner registrations" (0030). */
 export const canManageRegistrations = (s: { userRole: UserRole; permissions: string[] } | null) =>
@@ -193,6 +194,10 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'team') return !!s.employee && !!s.hasTeam;
     if (segment === 'hr') return isHR(session) || session.permissions.includes('hr_accounts');
     if (segment === 'commissions') return session.userRole === 'super_admin' || COMMISSION_MODULES.some((p) => session.permissions.includes(p));
+    // University Partnerships: the same people as Agencies.
+    if (segment === 'university-partnerships') return session.userRole === 'super_admin' || canManageRegistrations(session) || session.permissions.includes('agency_outreach');
+    // Education Providers / Courses: read-only for Partnership Officers (editing still needs "catalogue").
+    if ((segment === 'providers' || segment === 'courses') && session.permissions.includes('agency_outreach')) return true;
     // Agencies: Partnership Officers (agency_outreach) and registration managers.
     if (segment === 'agencies') return session.userRole === 'super_admin' || canManageRegistrations(session) || session.permissions.includes('agency_outreach');
     // Messages (application chat) belongs to student / application work.

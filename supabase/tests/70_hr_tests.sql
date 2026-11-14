@@ -181,7 +181,7 @@ begin; select pg_temp.act_as(:super);
 update public.employees set designation_id = 'partner_success_officer' where id = :po;
 commit;
 begin; select pg_temp.act_as(:po);
-select pg_temp.check((select designation_id = 'partnership_officer' and template_id = 'partnership_officer' and template_version = 1 from public.daily_reports), 'old report keeps its designation and template');
+select pg_temp.check((select designation_id = 'partnership_officer' and template_id = 'partnership_officer' and template_version = (select max(version) from public.report_templates where id = 'partnership_officer') from public.daily_reports), 'old report keeps its designation and template');
 select pg_temp.check((select string_agg(id, ',') from public.my_report_templates()) = 'partner_success_officer', 'new template for future reports');
 select pg_temp.denied($$select public.save_daily_report('partnership_officer', public.company_today() - 1, '{}', '{}')$$, 'old template no longer usable for new dates');
 select pg_temp.check((select count(*) from public.designation_history where employee_id = '00000000-0000-0000-0000-0000000000f3') = 2, 'designation history recorded');

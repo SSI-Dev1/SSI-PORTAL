@@ -276,9 +276,9 @@ export interface WorkActivity {
   voidedBy: string | null;
   voidReason: string | null;
 }
-export interface MetricSource { templateId: string; fieldKey: string; kind: 'activity' | 'workload'; activityTypes: string[]; workload: string | null }
+export interface MetricSource { templateId: string; fieldKey: string; kind: 'activity' | 'workload' | 'pending'; activityTypes: string[]; workload: string | null; pending?: string | null }
 /** Server-computed figure of a report field. */
-export interface MetricValue { value: number; kind: 'activity' | 'workload'; activity_ids?: number[]; application_ids?: string[] }
+export interface MetricValue { value: number; kind: 'activity' | 'workload' | 'pending'; activity_ids?: number[]; application_ids?: string[]; pending?: string; ids?: string[] }
 export const WORKLOAD_LABEL: Record<string, string> = {
   apps_new: 'Applications assigned to you in Draft or Pending Assessment',
   apps_awaiting: 'Applications assigned to you awaiting a university decision (Submitted, Offer Pending)',

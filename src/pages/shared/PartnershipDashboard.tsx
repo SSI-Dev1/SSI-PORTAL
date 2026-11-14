@@ -35,6 +35,7 @@ export default function PartnershipDashboard() {
   // Business onboarding (0042): historical clients count without a login; portal access is separate.
   const summary = useOnboardingSummary(true, type);
   const queue = usePendingWork();
+  const perf = usePortfolio();
   const toClients = (tab: string) => navigate(`../partners?tab=${tab}${type ? `&t=${type}` : ''}`, { relative: 'path' });
   // Pipeline cards count agencies currently at that stage (imported or live) — not actions taken today.
   // Activity cards (added / contacted) count this month's recorded work. Daily work is in My Daily Work Report.
@@ -98,6 +99,46 @@ export default function PartnershipDashboard() {
       <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {more.map((c) => <KPI key={c.label} label={c.label} value={c.value ?? count(c.f)} hint={c.hint} icon={c.icon} tone={c.tone} onClick={c.open ?? (() => go(c.f))} />)}
       </div>
+
+      {perf && (perf.mine.agencies > 0 || perf.mine.applications > 0 || perf.team.agencies > 0) && (
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {(perf.mine.agencies > 0 || perf.mine.applications > 0) && (
+            <Card>
+              <CardHeader title="My portfolio" subtitle="Applications through the agencies you are Sub Officer for — credited by portfolio, not work you did yourself" />
+              <div className="grid grid-cols-2 gap-2 px-5 pb-5 sm:grid-cols-3">
+                {([['My agencies', perf.mine.agencies], ['Applications', perf.mine.applications], ['Submitted', perf.mine.submitted], ['Pending', perf.mine.pending],
+                   ['Offers', perf.mine.offers], ['Visas granted', perf.mine.visa_granted]] as [string, number][]).map(([l, v]) => (
+                  <div key={l} className="rounded-xl bg-canvas p-3"><div className="font-display text-xl font-semibold text-heading">{v}</div><div className="text-[11px] text-ink-mute">{l}</div></div>
+                ))}
+              </div>
+            </Card>
+          )}
+          {perf.team.agencies > 0 && (
+            <Card>
+              <CardHeader title="Team performance" subtitle={`${perf.team.agencies} agencies as Main Officer · ${perf.team.allocated} allocated · ${perf.team.unassigned} without a Sub Officer`} />
+              <div className="px-5 pb-5">
+                <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+                  {([['Team applications', perf.team.applications], ['Offers', perf.team.offers], ['Onboarded', perf.team.onboarded]] as [string, number][]).map(([l, v]) => (
+                    <div key={l} className="rounded-xl bg-canvas p-3"><div className="font-display text-xl font-semibold text-heading">{v}</div><div className="text-[11px] text-ink-mute">{l}</div></div>
+                  ))}
+                </div>
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-[11px] uppercase tracking-wider text-ink-mute"><th className="py-1.5 font-semibold">Sub Officer</th><th className="py-1.5 text-right font-semibold">Agencies</th><th className="py-1.5 text-right font-semibold">Applications</th><th className="py-1.5 text-right font-semibold">Offers</th></tr></thead>
+                  <tbody>
+                    {perf.team.by_sub.map((r) => (
+                      <tr key={r.sub_officer ?? 'none'} className="border-t border-line"><td className={`py-2 ${r.sub_officer ? 'font-medium text-heading' : 'text-ink-mute'}`}>{r.name}</td>
+                        <td className="py-2 text-right tabular-nums">{r.agencies}</td><td className="py-2 text-right tabular-nums">{r.applications}</td><td className="py-2 text-right tabular-nums">{r.offers}</td></tr>
+                    ))}
+                    <tr className="border-t-2 border-line font-semibold text-heading"><td className="py-2">Team total</td><td className="py-2 text-right tabular-nums">{perf.team.agencies}</td>
+                      <td className="py-2 text-right tabular-nums">{perf.team.applications}</td><td className="py-2 text-right tabular-nums">{perf.team.offers}</td></tr>
+                  </tbody>
+                </table>
+                <p className="mt-2 text-xs text-ink-mute">Each application counts once, for the Sub Officer responsible when it was created. Personal calls, meetings and proposals stay in each person's own daily report.</p>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
@@ -185,4 +226,46 @@ function usePendingWork() {
     return () => { alive = false; clearTimeout(t); void sb.removeChannel(ch); };
   }, []);
   return w;
+}
+
+interface PortfolioStats { applications: number; submitted: number; pending: number; offers: number; visa_granted: number; visa_refused: number }
+interface Portfolio {
+  mine: PortfolioStats & { agencies: number; onboarded: number };
+  team: PortfolioStats & { agencies: number; allocated: number; unassigned: number; onboarded: number; in_progress: number;
+    by_sub: { sub_officer: string | null; name: string; agencies: number; applications: number; offers: number }[] };
+}
+/** My portfolio as Sub Officer and my team's as Main Officer (live; each application counted once). */
+export function usePortfolio() {
+  const [p, setP] = useState<Portfolio | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    const sb = supabase;
+    let alive = true;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const load = () => void sb.rpc('portfolio_performance').then(({ data, error }) => alive && !error && setP(data as Portfolio | null));
+    const soon = () => { clearTimeout(t); t = setTimeout(load, 300); };
+    load();
+    const ch = sb.channel(`portfolio-${Math.random().toString(36).slice(2, 8)}`);
+    for (const table of ['application_attribution', 'agency_prospects', 'applications']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
+    ch.subscribe();
+    return () => { alive = false; clearTimeout(t); void sb.removeChannel(ch); };
+  }, []);
+  return p;
+}
+
+/** "My portfolio" for any Sub Officer (also employees outside the partnership team). */
+export function MyPortfolioCard() {
+  const perf = usePortfolio();
+  if (!perf || (perf.mine.agencies === 0 && perf.mine.applications === 0)) return null;
+  return (
+    <Card className="mb-6">
+      <CardHeader title="My agency portfolio" subtitle="Applications through the agencies you are Sub Officer for — portfolio credit, separate from your own tasks" />
+      <div className="grid grid-cols-2 gap-2 px-5 pb-5 sm:grid-cols-3 lg:grid-cols-6">
+        {([['My agencies', perf.mine.agencies], ['Applications', perf.mine.applications], ['Submitted', perf.mine.submitted], ['Pending', perf.mine.pending],
+           ['Offers', perf.mine.offers], ['Visas granted', perf.mine.visa_granted]] as [string, number][]).map(([l, v]) => (
+          <div key={l} className="rounded-xl bg-canvas p-3"><div className="font-display text-xl font-semibold text-heading">{v}</div><div className="text-[11px] text-ink-mute">{l}</div></div>
+        ))}
+      </div>
+    </Card>
+  );
 }

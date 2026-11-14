@@ -10,6 +10,7 @@ import { useHR } from '../../store/hr';
 import { useStore } from '../../store/store';
 import { companyDate, companyTime, fmtDay } from '../../data/hr';
 import { greeting } from '../../lib/utils';
+import { MyPortfolioCard } from '../shared/PartnershipDashboard';
 
 const OPEN = ['Draft', 'Pending Assessment', 'Submitted', 'Offer Pending', 'Conditional Offer', 'Unconditional Offer', 'Visa Lodged'];
 const STAGES: [string, string[]][] = [
@@ -97,6 +98,7 @@ export default function WorkDashboard() {
           )}
         </Card>
       </div>
+      <MyPortfolioCard />
 
       {/* SECOND: today's work and current workload */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

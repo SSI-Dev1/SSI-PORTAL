@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Globe2, History, Trash2, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Building2, Eye, Globe, Globe2, History, Trash2, UserPlus, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
@@ -8,7 +8,7 @@ import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
 import { canManageRegistrations } from '../../auth/roles';
 import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
-import { AgencyTypeBadge, BUSINESS, LinkPartnerModal, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
+import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, LinkPartnerModal, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
 import { DeletePartnerDialog, PartnerUserDialog } from './UserManagement';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
@@ -59,11 +59,15 @@ export default function Partners() {
   // "Partner accounts" (granted by a Super Admin to named employees): create logins only.
   const canCreateAccounts = superAdmin || (realSession?.permissions ?? []).includes('partner_accounts');
   const [deleting, setDeleting] = useState<Partner | null>(null);
+  const [assigningSub, setAssigningSub] = useState<Partner | null>(null);
+  const [subF, setSubF] = useState('');
+  const names = useOfficerNames(true);
+  const appCounts = useApplicationCounts(true);
   const [linking, setLinking] = useState<OnboardedAgency | null>(null);
   const canVerify = canManageRegistrations(realSession);
   const { rows: onboarded } = useOnboardedDirectory(true);
   const candidates = useOfficerCandidates(true);
-  const officerName = (id: string | null | undefined) => (id ? candidates.find((c) => c.id === id)?.full_name ?? db.staff.find((x) => x.id === id)?.fullName ?? '—' : '—');
+  const officerName = (id: string | null | undefined) => (id ? candidates.find((c) => c.id === id)?.full_name ?? names.get(id) ?? db.staff.find((x) => x.id === id)?.fullName ?? '—' : '—');
   const agencyOf = useMemo(() => new Map((onboarded ?? []).filter((a) => a.partner_id).map((a) => [a.partner_id as string, a])), [onboarded]);
   const pending = useMemo(() => (onboarded ?? []).filter((a) => a.verification === 'pending')
     .filter((a) => matches(q, a.company_name ?? '', a.contact_name ?? '', a.email ?? '', a.phone ?? '', a.reference))
@@ -87,6 +91,10 @@ export default function Partners() {
   const portal = (p: Partner): PortalStatus => statusMap?.get(p.id)?.portal_status ?? (accountState(p).key === 'active' ? 'active' : accountState(p).key === 'suspended' ? 'suspended' : 'no_account');
   const onboardedBiz = (p: Partner) => business(p) !== 'not_onboarded';
   const ptype = (p: Partner) => statusMap?.get(p.id)?.agency_type ?? null;
+  // One shared assignment: the agency's Main / Sub Officer when linked, otherwise the client's own.
+  const mainOf = (p: Partner) => statusMap?.get(p.id)?.main_officer_id ?? p.partnershipOfficerId ?? null;
+  const subOf = (p: Partner) => statusMap?.get(p.id)?.sub_officer_id ?? null;
+  const canAssignSub = (p: Partner) => superAdmin || canManageRegistrations(realSession) || mainOf(p) === realSession?.userId;
   const inTab = (p: Partner, t: DirTab) => {
     switch (t) {
       case 'onboarded': return onboardedBiz(p);
@@ -112,9 +120,10 @@ export default function Partners() {
         .filter((p) => !tier || p.tier === tier)
         .filter((p) => !country || p.country === country)
         .filter((p) => !officerF || p.partnershipOfficerId === officerF)
-        .filter((p) => matchesType(ptype(p), typeF)),
+        .filter((p) => matchesType(ptype(p), typeF))
+        .filter((p) => !subF || (subF === 'none' ? !subOf(p) : subOf(p) === subF)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [db.partners, q, status, tier, activeOnly, tab, country, officerF, typeF, statusMap, session?.userId],
+    [db.partners, q, status, tier, activeOnly, tab, country, officerF, typeF, subF, statusMap, session?.userId],
   );
   const countries = [...new Set([...live.map((p) => p.country), ...(onboarded ?? []).map((a) => a.country ?? '')].filter(Boolean))].sort();
   const officers = [...new Set([...live.map((p) => p.partnershipOfficerId), ...(onboarded ?? []).map((a) => a.assigned_officer)].filter(Boolean) as string[])];
@@ -128,6 +137,7 @@ export default function Partners() {
   const menu = (p: Partner) => [
     { label: 'Open workspace', icon: Eye, onClick: () => navigate(p.id) },
     ...(canCreateAccounts && portal(p) === 'no_account' && onboardedBiz(p) ? [{ label: superAdmin ? 'Create / activate partner account' : 'Create partner account', icon: KeyRound, onClick: () => setActivating(p) }] : []),
+    ...(canAssignSub(p) ? [{ label: 'Assign Sub Officer', icon: UserPlus, onClick: () => setAssigningSub(p) }] : []),
     ...(canClassify && onboardedBiz(p) ? [{ label: 'Set agency type', icon: Globe2, onClick: () => setClassifying(p) }] : []),
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
     ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
@@ -171,6 +181,8 @@ export default function Partners() {
           <div className="flex flex-wrap gap-2.5 lg:ml-auto">
             <FilterSelect label="Agency type" value={typeF} onChange={setTypeF} options={TYPE_FILTERS} />
             <FilterSelect label="Country" value={country} onChange={setCountry} options={[{ value: '', label: 'All countries' }, ...countries.map((c) => ({ value: c, label: c }))]} />
+            <FilterSelect label="Sub officer" value={subF} onChange={setSubF} options={[{ value: '', label: 'Any sub officer' }, { value: 'none', label: 'Unassigned' },
+              ...[...new Set(live.map((p) => subOf(p)).filter(Boolean) as string[])].map((o) => ({ value: o, label: officerName(o) }))]} />
             <FilterSelect label="Officer" value={officerF} onChange={setOfficerF} options={[{ value: '', label: 'Any officer' }, ...officers.map((o) => ({ value: o, label: officerName(o) }))]} />
             {tab !== 'review' && <FilterSelect label="All tiers" value={tier} onChange={setTier} options={['Platinum', 'Gold', 'Silver']} />}
             {tab === 'all' && <FilterSelect label="All statuses" value={status} onChange={setStatus} options={['Active', 'Onboarding', 'Inactive']} />}
@@ -225,7 +237,7 @@ export default function Partners() {
                     ))}
                   </div>
                   <div className="relative mt-4 flex items-center justify-between text-xs text-ink-soft">
-                    <span className="truncate">{p.contactName} · {p.email}{p.partnershipOfficerId ? ` · Officer: ${officerName(p.partnershipOfficerId)}` : ''}</span>
+                    <span className="truncate">{p.contactName} · {p.email}{mainOf(p) ? ` · Officer: ${officerName(mainOf(p))}` : ''} · Sub: {subOf(p) ? officerName(subOf(p)) : 'Unassigned'}</span>
                     <span className="shrink-0 font-semibold text-rust opacity-0 transition group-hover:opacity-100">Open →</span>
                   </div>
                 </div>
@@ -244,7 +256,7 @@ export default function Partners() {
         </div>
       ) : (
         <Card>
-          <Table head={['Company / agency', 'Point of contact', 'Email', 'Country', 'Partnership Officer', 'Business onboarding', 'Portal access', 'Source', '']}>
+          <Table head={['Company / agency', 'Point of contact', 'Email', 'Country', 'Main officer', 'Sub officer', 'Apps', 'Business onboarding', 'Portal access', 'Source', '']}>
             {rows.map((p) => {
               const ag = agencyOf.get(p.id);
               return (
@@ -253,7 +265,9 @@ export default function Partners() {
                   <td className="px-5 py-3.5"><div className="text-heading">{p.contactName}</div><div className="text-xs text-ink-mute">{p.phone || '—'}</div></td>
                   <td className="px-5 py-3.5 text-ink-soft">{p.email || '—'}</td>
                   <td className="whitespace-nowrap px-5 py-3.5 text-ink-soft">{p.country || '—'}</td>
-                  <td className="px-5 py-3.5 text-ink-soft">{officerName(p.partnershipOfficerId)}</td>
+                  <td className="px-5 py-3.5 text-ink-soft">{officerName(mainOf(p))}</td>
+                  <td className="px-5 py-3.5 text-ink-soft">{subOf(p) ? officerName(subOf(p)) : <span className="text-ink-mute">Unassigned</span>}</td>
+                  <td className="px-5 py-3.5 tabular-nums text-ink-soft">{appCounts?.byPartner.get(p.id) ?? '…'}</td>
                   <td className="px-5 py-3.5"><Badge tone={BUSINESS[business(p)].tone} dot>{BUSINESS[business(p)].label}</Badge></td>
                   <td className="px-5 py-3.5"><Badge tone={PORTAL[portal(p)].tone}>{PORTAL[portal(p)].label.replace('Portal: ', '')}</Badge></td>
                   <td className="whitespace-nowrap px-5 py-3.5 text-xs text-ink-soft">{statusMap?.get(p.id)?.onboarding_source === 'historical' ? 'Historical import' : ag ? 'Agency List' : 'Added in the CRM'}{ag ? <div className="text-ink-mute">{ag.reference}</div> : null}</td>
@@ -286,6 +300,9 @@ export default function Partners() {
         }}
       />
       <CredentialsOnce data={created} onClose={() => setCreated(null)} />
+      {assigningSub && <AssignSubOfficerModal ids={statusMap?.get(assigningSub.id)?.agency_id ? [statusMap.get(assigningSub.id)!.agency_id!] : []} partnerId={assigningSub.id}
+        title={assigningSub.name} main={mainOf(assigningSub)} mainName={mainOf(assigningSub) ? officerName(mainOf(assigningSub)) : ''}
+        current={subOf(assigningSub)} currentName={subOf(assigningSub) ? officerName(subOf(assigningSub)) : ''} onClose={() => setAssigningSub(null)} />}
       <DeletePartnerDialog partner={deleting} onClose={() => setDeleting(null)} onDeleted={async () => { await actions.reload(); }} />
       <PartnerUserDialog open={!!activating} activation canOpenPortal={superAdmin} partnerId={activating?.id} partners={activating ? [activating] : []} onClose={() => setActivating(null)}
         initial={activating ? { fullName: activating.contactName, email: activating.email || undefined, role: 'partner_admin' } : undefined}

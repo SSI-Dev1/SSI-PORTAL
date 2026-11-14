@@ -13,7 +13,7 @@ import { partnerPreviewSession } from '../../data/demo';
 import { avatarColor, countryFlag, formatDate, fullName, initials, money } from '../../lib/utils';
 import { PartnerForm, partnerStatusTone, tierTone } from './Partners';
 import { studentTone } from '../shared/Students';
-import { AgencyTypeBadge, usePartnerStatus } from '../shared/AgencyBulk';
+import { AgencyTypeBadge, AssignSubOfficerModal, useOfficerNames, usePartnerStatus } from '../shared/AgencyBulk';
 
 type Tab = 'overview' | 'students' | 'applications' | 'finance';
 
@@ -28,6 +28,8 @@ export default function PartnerDetail() {
   const [edit, setEdit] = useState(false);
   const [openApp, setOpenApp] = useState<string>();
   const statusMap = usePartnerStatus(true);
+  const officerNames = useOfficerNames(true);
+  const [assigningSub, setAssigningSub] = useState(false);
 
   const p = db.partners.find((x) => x.id === id);
   if (!p)
@@ -66,6 +68,21 @@ export default function PartnerDetail() {
             <Badge tone={partnerStatusTone[p.status]} dot>{p.status}</Badge>
             <Badge tone={tierTone[p.tier]}>{p.tier} Partner</Badge>
             {statusMap && <AgencyTypeBadge type={statusMap.get(p.id)?.agency_type} />}
+            {statusMap && (() => {
+              const st = statusMap.get(p.id);
+              const main = st?.main_officer_id ?? p.partnershipOfficerId ?? null;
+              const sub = st?.sub_officer_id ?? null;
+              const can = realSession?.userRole === 'super_admin' || (realSession?.permissions ?? []).includes('partner_onboarding') || main === realSession?.userId;
+              return (
+                <>
+                  <Badge tone="slate">Main: {main ? officerNames.get(main) ?? '—' : 'Unassigned'}</Badge>
+                  <Badge tone="slate">Sub: {sub ? officerNames.get(sub) ?? '—' : 'Unassigned'}</Badge>
+                  {can && <button type="button" className="text-xs font-semibold text-rust hover:underline" onClick={() => setAssigningSub(true)}>Assign Sub Officer</button>}
+                  {assigningSub && <AssignSubOfficerModal ids={st?.agency_id ? [st.agency_id] : []} partnerId={p.id} title={p.name} main={main}
+                    mainName={main ? officerNames.get(main) ?? '' : ''} current={sub} currentName={sub ? officerNames.get(sub) ?? '' : ''} onClose={() => setAssigningSub(false)} />}
+                </>
+              );
+            })()}
             <span className="text-xs text-white/60">Code {p.code}</span>
           </div>
         </div>

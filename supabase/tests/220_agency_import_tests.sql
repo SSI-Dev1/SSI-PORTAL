@@ -104,9 +104,9 @@ select public.log_agency_activity(:'pi', 'contact_attempt', 'No answer', null, g
 select pg_temp.check((select contact_status = 'not_connected' and first_contact_at is not null from public.agency_prospects where id = :'pi'), 'an attempt records Not connected');
 select public.log_agency_activity(:'pi', 'call', 'Spoke', null, gen_random_uuid());
 commit;
-select pg_temp.check((select count(*) filter (where activity_type = 'partner_contact') - (select c from w2) = 1
+select pg_temp.check((select count(*) filter (where activity_type = 'partner_contact') - (select c from w2) = 0
   and count(*) filter (where activity_type = 'partner_call') - (select k from w2) = 2 from public.work_activities where employee_id = :po),
-  'one new contact, two follow-up calls — each counted once');
+  'two follow-up calls counted once each; a contact attempt is not New Partner Contacted (only Connected is, 0044)');
 
 \echo '== closing and reopening (TEST 11)'
 begin; select pg_temp.act_as(:po);

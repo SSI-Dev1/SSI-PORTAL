@@ -95,8 +95,11 @@ select public.log_agency_activity(:'ag_name', 'call', 'Discussed UK intake', nul
 select public.log_agency_activity(:'ag_name', 'call', 'Discussed UK intake', null, '22222222-0000-0000-0000-000000000001');
 select public.log_agency_activity(:'ag_name', 'meeting', 'Office visit', null, '22222222-0000-0000-0000-000000000002');
 select public.log_agency_activity(:'ag_name', 'follow_up', 'Send rates', public.company_today() + 3, '22222222-0000-0000-0000-000000000003');
-select pg_temp.check(pg_temp.metric(:po, 'po_followup_calls') = 1 and pg_temp.metric(:po, 'po_meetings_fixed') = 1, 'call and meeting counted once each (retry ignored)');
-select pg_temp.check((select next_follow_up = public.company_today() + 3 and stage = 'follow_up_required' and last_contact_at is not null from public.agency_prospects where id = :'ag_name'), 'follow-up date and stage set');
+select pg_temp.check(pg_temp.metric(:po, 'po_followup_calls') = 1 and pg_temp.metric(:po, 'po_meetings_fixed') = 0, 'call counted once (retry ignored); recording a meeting is not Meeting Fixed (0044)');
+select public.agency_action(:'ag_name', 'schedule_meeting', jsonb_build_object('attendee', 'Ravi', 'due_date', public.company_today() + 1, 'due_time', '11:00'), '22222222-0000-0000-0000-000000000009');
+select public.agency_action(:'ag_name', 'schedule_meeting', jsonb_build_object('attendee', 'Ravi', 'due_date', public.company_today() + 1, 'due_time', '11:00'), '22222222-0000-0000-0000-000000000009');
+select pg_temp.check(pg_temp.metric(:po, 'po_meetings_fixed') = 1, 'scheduling a meeting counts Meeting Fixed once (retry ignored)');
+select pg_temp.check((select next_follow_up = public.company_today() + 1 and stage = 'follow_up_required' and last_contact_at is not null from public.agency_prospects where id = :'ag_name'), 'follow-up date and stage set');
 select pg_temp.denied(format($$select public.log_agency_activity(%L, 'follow_up', null, public.company_today() - 1, gen_random_uuid())$$, :'ag_name'), 'follow-up date cannot be in the past', '%past%');
 select pg_temp.denied(format($$select public.set_agency_stage(%L, 'onboarded')$$, :'ag_name'), 'onboarded cannot be set by hand', '%workflow%');
 commit;

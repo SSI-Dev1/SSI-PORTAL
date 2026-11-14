@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Globe2, History, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Building2, Eye, Globe, Globe2, History, Trash2, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
@@ -9,7 +9,7 @@ import { useAuth } from '../../auth/AuthProvider';
 import { canManageRegistrations } from '../../auth/roles';
 import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
 import { AgencyTypeBadge, BUSINESS, LinkPartnerModal, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
-import { PartnerUserDialog } from './UserManagement';
+import { DeletePartnerDialog, PartnerUserDialog } from './UserManagement';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, initials, matches, type Tone } from '../../lib/utils';
@@ -56,6 +56,9 @@ export default function Partners() {
   const setTypeF = (t: string) => setParams((x) => { const n = new URLSearchParams(x); if (t) n.set('t', t); else n.delete('t'); return n; }, { replace: true });
   const [classifying, setClassifying] = useState<Partner | null>(null);
   const canClassify = superAdmin || agencyAccess(session);
+  // "Partner accounts" (granted by a Super Admin to named employees): create logins only.
+  const canCreateAccounts = superAdmin || (realSession?.permissions ?? []).includes('partner_accounts');
+  const [deleting, setDeleting] = useState<Partner | null>(null);
   const [linking, setLinking] = useState<OnboardedAgency | null>(null);
   const canVerify = canManageRegistrations(realSession);
   const { rows: onboarded } = useOnboardedDirectory(true);
@@ -124,10 +127,11 @@ export default function Partners() {
 
   const menu = (p: Partner) => [
     { label: 'Open workspace', icon: Eye, onClick: () => navigate(p.id) },
-    ...(superAdmin && portal(p) === 'no_account' && onboardedBiz(p) ? [{ label: 'Create / activate partner account', icon: KeyRound, onClick: () => setActivating(p) }] : []),
+    ...(canCreateAccounts && portal(p) === 'no_account' && onboardedBiz(p) ? [{ label: superAdmin ? 'Create / activate partner account' : 'Create partner account', icon: KeyRound, onClick: () => setActivating(p) }] : []),
     ...(canClassify && onboardedBiz(p) ? [{ label: 'Set agency type', icon: Globe2, onClick: () => setClassifying(p) }] : []),
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
     ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
+    ...(superAdmin ? [{ label: 'Delete partner account details', icon: Trash2, danger: true, onClick: () => setDeleting(p) }] : []),
   ];
 
   return (
@@ -282,7 +286,8 @@ export default function Partners() {
         }}
       />
       <CredentialsOnce data={created} onClose={() => setCreated(null)} />
-      <PartnerUserDialog open={!!activating} activation partnerId={activating?.id} partners={activating ? [activating] : []} onClose={() => setActivating(null)}
+      <DeletePartnerDialog partner={deleting} onClose={() => setDeleting(null)} onDeleted={async () => { await actions.reload(); }} />
+      <PartnerUserDialog open={!!activating} activation canOpenPortal={superAdmin} partnerId={activating?.id} partners={activating ? [activating] : []} onClose={() => setActivating(null)}
         initial={activating ? { fullName: activating.contactName, email: activating.email || undefined, role: 'partner_admin' } : undefined}
         onCreated={async (email, password, delivery) => {
           setActivating(null);

@@ -3,7 +3,7 @@
 // only writes the summaries and submits. Submitted reports are frozen snapshots.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ClipboardList, Lock, PenLine, Save, Send } from 'lucide-react';
+import { ClipboardList, ListPlus, Lock, PenLine, Save, Send } from 'lucide-react';
 import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, PageHeader, Segmented } from '../../components/ui';
 import { MetricActivitiesModal, QuickLogModal, ReportForm, reportTone, type ReportDraft } from '../../components/hr';
 import { useConfirm } from '../../components/feedback';
@@ -12,6 +12,7 @@ import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { companyDate, fmtDay, type MetricValue } from '../../data/hr';
 import { chosenDesignation } from '../../layouts/Sidebar';
+import { TASK_KIND, agencyAccess, fmtDate, fmtTime, type PendingWork } from '../../lib/agencies';
 
 const blank = (): ReportDraft => ({ notes: {} });
 
@@ -85,6 +86,29 @@ export default function MyReport() {
     if (r.ok) setSaved(JSON.stringify(draft));
   };
 
+  // Key Update: add the open task queue (carried-over follow-ups, meetings, visits, LinkedIn
+  // follow-ups) to "Pending Follow-ups". It is appended — written text is never replaced.
+  const hasPendingField = !!template?.sections.some((s) => s.fields.some((f) => f.key === 'pending_followups'));
+  const addPending = async () => {
+    if (!supabase) return;
+    const { data: w, error } = await supabase.rpc('my_pending_work', { p_date: date });
+    if (error || !w) return;
+    const pw = w as PendingWork;
+    const lines = [
+      ...pw.tasks.filter((t) => t.due_date <= date).map((t) => `• ${TASK_KIND[t.kind]} · ${t.agency} · ${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}${t.overdue ? ' (overdue)' : ''}${t.attendee ? ` · ${t.attendee}` : ''}`),
+      ...pw.linkedin.map((l) => `• LinkedIn follow-up · ${l.name} · ${fmtDate(l.due_date)}${l.overdue ? ' (overdue)' : ''}`),
+      ...(pw.not_connected ? [`• ${pw.not_connected} agenc${pw.not_connected === 1 ? 'y' : 'ies'} not connected yet`] : []),
+      ...(pw.open_attempts ? [`• ${pw.open_attempts} open contact attempt${pw.open_attempts === 1 ? '' : 's'}`] : []),
+    ];
+    const text = lines.length ? lines.join('\n') : '• Nothing pending';
+    const cur = (draft.notes.pending_followups ?? '').trim();
+    if (cur) {
+      const ok = await confirm({ title: 'Add pending items?', message: 'Your text stays as it is; the open items are added below it.', confirmLabel: 'Add below' });
+      if (!ok) return;
+    }
+    setDraft({ ...draft, notes: { ...draft.notes, pending_followups: cur ? `${cur}\n${text}` : text } });
+  };
+
   const set = (k: 'template' | 'date', v: string) => {
     const p = new URLSearchParams(params);
     p.set(k, v);
@@ -113,6 +137,7 @@ export default function MyReport() {
         subtitle={template?.name}
         actions={<>
           {editable && date === today && <Button variant="secondary" icon={PenLine} onClick={() => setLogFor(allLoggable)}>Log work</Button>}
+          {editable && hasPendingField && agencyAccess(session ?? null) && <Button variant="secondary" icon={ListPlus} onClick={() => void addPending()}>Add pending items</Button>}
           <Button variant="secondary" onClick={() => navigate(`/${session?.role === 'admin' ? 'admin' : 'staff'}/work/reports`)}>Report history</Button>
         </>}
       />

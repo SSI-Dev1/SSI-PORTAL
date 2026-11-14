@@ -6,20 +6,28 @@
 // duplicating it, and keeps the LinkedIn history.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRightLeft, CalendarPlus, ExternalLink, Linkedin, MessageSquare, MoreHorizontal, Pencil, Plus, Send, StickyNote, ThumbsDown, ThumbsUp, UserCheck } from 'lucide-react';
-import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Segmented, Table, Textarea, usePaged } from '../../components/ui';
+import { ArrowRightLeft, ExternalLink, Linkedin, MessageSquare, MoreHorizontal, Pencil, Plus, Send, StickyNote, UserCheck } from 'lucide-react';
+import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Segmented, Select, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
 import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
 
-type Kind = 'contacted' | 'follow_up' | 'response' | 'interested' | 'not_interested' | 'note' | 'follow_up_date';
+// LinkedIn log activity: exactly three actions (Abigail's Portal Development Specification).
+type Kind = 'follow_up' | 'note' | 'stage';
 const KIND: Record<Kind, { title: string; icon: typeof Send; report?: string }> = {
-  contacted: { title: 'Record contact', icon: Send, report: 'LinkedIn connections contacted' }, follow_up: { title: 'Follow-up message sent', icon: MessageSquare, report: 'Follow-up messages' },
-  response: { title: 'Record response', icon: MessageSquare }, interested: { title: 'Positive response', icon: ThumbsUp, report: 'Positive responses' },
-  not_interested: { title: 'Not interested', icon: ThumbsDown, report: 'Closed' }, note: { title: 'Add note', icon: StickyNote }, follow_up_date: { title: 'Set follow-up date', icon: CalendarPlus },
+  follow_up: { title: 'Follow-up completed', icon: MessageSquare, report: 'Follow-up messages sent' },
+  note: { title: 'Add note', icon: StickyNote },
+  stage: { title: 'Change stage', icon: Pencil },
 };
+type LiStage = 'contacted' | 'responded' | 'interested' | 'not_interested';
+const LI_STAGES: { value: LiStage; label: string; hint: string }[] = [
+  { value: 'contacted', label: 'Contacted', hint: 'Outreach message sent.' },
+  { value: 'responded', label: 'Responded', hint: 'They replied.' },
+  { value: 'interested', label: 'Positive response', hint: 'Counts as a positive response and moves the contact to the Agency List — missing details are asked for.' },
+  { value: 'not_interested', label: 'Closed', hint: 'Counts as Closed. The lead and its history are kept.' },
+];
 
 export default function LinkedInOutreach() {
   const { session, db } = useStore();
@@ -90,8 +98,10 @@ export default function LinkedInOutreach() {
       {profile && <ProspectProfile p={profile} staffName={staffName} onClose={() => setProfileId(null)}
         onEdit={() => setModal({ kind: 'edit', p: profile })} onLog={(k) => setModal({ kind: 'log', p: profile, log: k })}
         onConvert={() => setModal({ kind: 'convert', p: profile })} onOpenAgency={(id) => navigate(`../${id}`, { relative: 'path' })} onChanged={reload} />}
+      {modal?.kind === 'log' && modal.log === 'stage' && <LinkedInStage p={modal.p} onClose={() => setModal(null)} onSaved={reload}
+        onNeedsDetails={() => setModal({ kind: 'convert', p: modal.p })} onConverted={(id) => { setModal(null); setProfileId(null); navigate(`../${id}`, { relative: 'path' }); }} />}
       {(modal?.kind === 'add' || modal?.kind === 'edit') && <ProspectForm p={modal.kind === 'edit' ? modal.p : undefined} onClose={() => setModal(null)} onSaved={reload} />}
-      {modal?.kind === 'log' && <LogLinkedIn p={modal.p} kind={modal.log} onClose={() => setModal(null)} onSaved={reload} />}
+      {modal?.kind === 'log' && modal.log !== 'stage' && <LogLinkedIn p={modal.p} kind={modal.log} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'convert' && <MoveToAgency p={modal.p} onClose={() => setModal(null)} onDone={() => void reload()} />}
     </>
   );
@@ -166,6 +176,9 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
             ))}
           </dl>
           {p.notes && <div><h3 className="mb-1 text-sm font-semibold text-heading">Contact notes</h3><p className="whitespace-pre-wrap rounded-2xl bg-canvas p-3 text-sm text-ink-soft">{p.notes}</p></div>}
+          {p.conversion_pending && !converted && (
+            <Alert tone="warning" title="Positive response — Agency List pending">Add the agency name and a phone number to finish moving this contact. <Button size="sm" variant="secondary" className="ml-1" onClick={onConvert}>Complete details</Button></Alert>
+          )}
           <section className="rounded-2xl border border-line p-4">
             <h3 className="text-sm font-semibold text-heading">Agency conversion</h3>
             {converted ? <p className="mt-1 text-sm text-ink-soft">Moved to the Agency List{p.converted_at ? ` on ${fmtWhen(p.converted_at)}` : ''}. Proposals, registration and onboarding continue there.</p>
@@ -175,10 +188,8 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
         <div className="md:col-span-2">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-heading">Activity history</h3>
-            <Menu width="w-56" trigger={() => <Button size="sm" variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
-              ...(!converted ? (['contacted', 'follow_up', 'response', 'interested', 'not_interested', 'follow_up_date'] as Kind[]).map((k) => ({ label: KIND[k].title, icon: KIND[k].icon, onClick: () => onLog(k) })) : []),
-              { label: 'Add note', icon: StickyNote, onClick: () => onLog('note') },
-            ]} />
+            <Menu width="w-56" trigger={() => <Button size="sm" variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={
+              (converted ? (['note'] as Kind[]) : (['follow_up', 'note', 'stage'] as Kind[])).map((k) => ({ label: KIND[k].title, icon: KIND[k].icon, onClick: () => onLog(k) }))} />
           </div>
           {!rows ? <p className="text-sm text-ink-soft">Loading…</p> : rows.length === 0 ? <p className="text-sm text-ink-soft">No activity yet.</p> : (
             <ol className="max-h-[420px] overflow-y-auto pr-1">{rows.map((h) => (
@@ -234,7 +245,7 @@ function LogLinkedIn({ p, kind, onClose, onSaved }: { p: LinkedInProspect; kind:
   const [busy, setBusy] = useState(false);
   const [req] = useState(() => crypto.randomUUID());
   const save = async () => {
-    if (kind === 'follow_up_date' && !next) return toast.error('Choose the follow-up date');
+    if (busy) return;
     if (kind === 'note' && !note.trim()) return toast.error('Write the note');
     setBusy(true);
     const r = await rpc('log_linkedin_activity', { p_id: p.id, p_kind: kind, p_note: note || null, p_next: next || null, p_request: req });
@@ -244,9 +255,47 @@ function LogLinkedIn({ p, kind, onClose, onSaved }: { p: LinkedInProspect; kind:
   };
   return (
     <Modal open onClose={onClose} title={KIND[kind].title} subtitle={p.name} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>Save</Button></>}>
-      {kind !== 'follow_up_date' && <Field label="Note"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus /></Field>}
-      <Field label={kind === 'follow_up_date' ? 'Follow-up date' : 'Next follow-up (optional)'} required={kind === 'follow_up_date'} className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>
-      {KIND[kind].report && <p className="mt-3 text-xs text-ink-mute">Counts in your Daily Work Report ({KIND[kind].report}).</p>}
+      <Field label="Note" required={kind === 'note'}><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus /></Field>
+      {kind === 'follow_up' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
+      <p className="mt-3 text-xs text-ink-mute">{KIND[kind].report ? `Counts in your Daily Work Report (${KIND[kind].report}).` : 'Saved to the history. It does not change any report figure.'}</p>
+    </Modal>
+  );
+}
+
+function LinkedInStage({ p, onClose, onSaved, onNeedsDetails, onConverted }: {
+  p: LinkedInProspect; onClose: () => void; onSaved: () => void; onNeedsDetails: () => void; onConverted: (agencyId: string) => void;
+}) {
+  const toast = useToast();
+  const [stage, setStage] = useState<LiStage>(p.status === 'not_contacted' ? 'contacted' : p.status === 'contacted' ? 'responded' : 'interested');
+  const [note, setNote] = useState('');
+  const [next, setNext] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [req] = useState(() => crypto.randomUUID());
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    const r = await rpc<{ status: string; agency_id?: string; conversion_pending?: boolean; missing?: string[] }>('set_linkedin_stage',
+      { p_id: p.id, p_stage: stage, p_note: note || null, p_next: next || null, p_request: req });
+    setBusy(false);
+    if (!r.ok) return toast.error('Not saved', r.error);
+    onSaved();
+    if (r.data.status === 'converted' && r.data.agency_id) {
+      toast.success('Positive response — moved to the Agency List', 'The LinkedIn record and its history are kept.');
+      return onConverted(r.data.agency_id);
+    }
+    if (r.data.conversion_pending) {
+      toast.info('Positive response recorded', `To finish moving to the Agency List, add: ${(r.data.missing ?? []).join(', ')}.`);
+      return onNeedsDetails();
+    }
+    toast.success(`Stage: ${LI_STAGES.find((s) => s.value === stage)?.label}`); onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title="Change stage" subtitle={p.name}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button></>}>
+      <Field label="Stage"><Select value={stage} onChange={(e) => setStage(e.target.value as LiStage)}>{LI_STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</Select></Field>
+      <p className="mt-2 text-xs text-ink-mute">{LI_STAGES.find((s) => s.value === stage)?.hint}</p>
+      <Field label="Note" className="mt-3"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>
+      {stage !== 'not_interested' && stage !== 'interested' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
     </Modal>
   );
 }

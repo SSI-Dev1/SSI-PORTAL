@@ -289,6 +289,23 @@ function useGuardedClose(onClose: () => void, dirty?: boolean) {
   };
 }
 
+/**
+ * Dialog backdrop. It closes only when the press both started and ended on it. A menu item that
+ * opens a dialog fires on pointer-up; the same gesture's click then landed on the freshly mounted
+ * backdrop and closed the dialog at once — the "log action does nothing on the first click" bug.
+ */
+function Backdrop({ className, onClose }: { className: string; onClose: () => void }) {
+  const pressed = useRef(false);
+  return (
+    <div
+      className={cn('absolute inset-0 animate-fade-in', className)}
+      onPointerDown={(e) => { pressed.current = e.target === e.currentTarget; }}
+      onClick={(e) => { if (pressed.current && e.target === e.currentTarget) onClose(); pressed.current = false; }}
+      aria-hidden
+    />
+  );
+}
+
 export function Modal({
   open,
   onClose,
@@ -320,7 +337,7 @@ export function Modal({
   const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl', wide: 'max-w-[960px]' }[size];
   return createPortal(
     <div ref={setContainer} onClick={stopPortalBubble} className={cn('fixed inset-0 z-[60] flex justify-center p-0 sm:items-center sm:p-6', wide ? 'items-stretch' : 'items-end')}>
-      <div className="absolute inset-0 animate-fade-in bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClick={requestClose} aria-hidden />
+      <Backdrop className="bg-navy/40 backdrop-blur-[3px] dark:bg-black/60" onClose={requestClose} />
       <PortalContainerContext.Provider value={container}>
         <FocusScope
           trapped
@@ -372,7 +389,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer }: { o
   if (!open) return null;
   return createPortal(
     <div ref={setContainer} onClick={stopPortalBubble} className="fixed inset-0 z-[55]">
-      <div className="absolute inset-0 animate-fade-in bg-navy/30 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} aria-hidden />
+      <Backdrop className="bg-navy/30 backdrop-blur-[2px] dark:bg-black/55" onClose={onClose} />
       <PortalContainerContext.Provider value={container}>
         <FocusScope trapped loop asChild>
           <aside role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="absolute right-0 top-0 flex h-full w-full max-w-xl animate-slide-in flex-col bg-surface shadow-2xl outline-none">

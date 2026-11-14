@@ -105,8 +105,12 @@ Deno.serve(async (req) => {
   const { data: isSuper } = await asCaller.rpc('is_super_admin');
   const { data: hrAccounts } = isSuper === true ? { data: false } : await asCaller.rpc('staff_can', { m: 'hr_accounts' });
   const { data: salaryRights } = isSuper === true ? { data: true } : await asCaller.rpc('staff_can', { m: 'hr_salary' });
-  if (isSuper !== true && hrAccounts !== true) return json(403, { error: 'Only a Super Admin or authorised HR can manage accounts.' }, origin);
-  const hrMode = isSuper !== true;
+  // "Partner accounts" (0044): an employee a Super Admin named may create partner logins for
+  // existing onboarded clients — nothing else (no portal access, no other accounts).
+  const { data: partnerAccounts } = isSuper === true || hrAccounts === true ? { data: false } : await asCaller.rpc('staff_can', { m: 'partner_accounts' });
+  if (isSuper !== true && hrAccounts !== true && partnerAccounts !== true) return json(403, { error: 'Only a Super Admin or authorised HR can manage accounts.' }, origin);
+  const partnerMode = isSuper !== true && hrAccounts !== true && partnerAccounts === true;
+  const hrMode = isSuper !== true && !partnerMode;
   const me = who.user.id;
 
   let body: Record<string, unknown>;
@@ -118,7 +122,7 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const audit = (action: string, entity: string, entityId: string, partnerId: string | null, changes: unknown = null) =>
-    admin.from('audit_log').insert({ actor_id: me, actor_role: hrMode ? 'hr' : 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
+    admin.from('audit_log').insert({ actor_id: me, actor_role: partnerMode ? 'partner_accounts' : hrMode ? 'hr' : 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
   // Live Activity entry (Super Admins only); actor details are stamped by the database.
   const activity = (title: string, detail: string | null, refId: string) =>
     admin.from('activities').insert({ kind: 'account', title, detail, ref_id: refId, actor_id: me });
@@ -166,6 +170,7 @@ Deno.serve(async (req) => {
     if (hrMode && !['create_employee', 'update_user', 'set_status', 'reset_password', 'resend_login_access'].includes(String(body.action))) {
       throw new Fail(403, 'Only a Super Admin can do this.');
     }
+    if (partnerMode && body.action !== 'create_partner_user') throw new Fail(403, 'Only a Super Admin can do this.');
     switch (body.action) {
       // ------------------------------------------------------------ employees
       case 'create_employee': {
@@ -299,8 +304,12 @@ Deno.serve(async (req) => {
         const role = body.role;
         if (!partnerId || !email || !fullName || !isPartnerRole(role)) throw bad();
         const password = checkPassword(body.password, email);
-        const { data: org } = await admin.from('partners').select('id, name, archived_at').eq('id', partnerId).maybeSingle();
+        const { data: org } = await admin.from('partners').select('id, name, archived_at, status, onboarding_source').eq('id', partnerId).maybeSingle();
         if (!org || org.archived_at) throw bad('Partner not found or archived.');
+        // Employees with "Partner accounts": onboarded clients only (verified or historically onboarded).
+        if (partnerMode && !(org.status === 'Active' || org.status === 'Inactive' || org.onboarding_source === 'historical')) {
+          throw new Fail(403, 'This client is not onboarded yet. Complete registration and approval first.');
+        }
         await emailBudget();
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
         const id = await createAuthUser(admin, email, password, fullName);
@@ -331,6 +340,8 @@ Deno.serve(async (req) => {
         const { count: invoices } = await admin.from('payments').select('id', { count: 'exact', head: true }).eq('partner_id', partnerId);
         if (students || invoices) throw new Fail(409, 'This partner has students or invoices. Archive it instead — records are kept and access is removed.');
         const { data: users } = await admin.from('profiles').select('id').eq('partner_id', partnerId);
+        // The Agency List record is kept (history, officer, proposals) and flagged for review.
+        await admin.from('agency_prospects').update({ needs_reconciliation: true, reconciliation_note: `Partner record "${org.name}" deleted by a Super Admin` }).eq('partner_id', partnerId);
         for (const u of users ?? []) await admin.auth.admin.deleteUser(u.id);
         const { error } = await admin.from('partners').delete().eq('id', partnerId);
         if (error) throw new Fail(500, 'Could not delete the partner.');

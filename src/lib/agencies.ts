@@ -83,8 +83,8 @@ export const REGISTRATION: Record<string, { label: string; tone: Tone }> = {
   rejected: { label: 'Rejected', tone: 'red' }, activated: { label: 'Activated', tone: 'navy' },
 };
 export const ACTIVITY: Record<string, string> = {
-  created: 'Agency added', edited: 'Details edited', contact_status: 'Contact status changed', stage: 'Stage changed', call: 'Call logged',
-  agency_type: 'Agency Type set', meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
+  created: 'Agency added', edited: 'Details edited', contact_status: 'Contact status changed', stage: 'Stage changed', call: 'Call done',
+  agency_type: 'Agency Type set', schedule_meeting: 'Meeting scheduled', visit: 'Partner visited', task_cancelled: 'Follow-up / meeting cancelled', meeting: 'Meeting recorded', follow_up_done: 'Follow-up completed', follow_up: 'Follow-up scheduled', note: 'Note added',
   proposal_prepared: 'Proposal prepared', proposal_needs_approval: 'Proposal waiting for commission approval', proposal_approved: 'Custom commission approved',
   proposal_rejected: 'Custom commission rejected', proposal_sent: 'Proposal emailed', proposal_failed: 'Proposal email failed', proposal_cancelled: 'Proposal cancelled',
   proposal_confirmed: 'Proposal confirmed by the agency', proposal_declined: 'Proposal declined by the agency', proposal_expired: 'Proposal expired',
@@ -241,6 +241,26 @@ export async function resendAgencyEmail(prospectId: string, kind: 'mou' | 'regis
 }
 
 // ------------------------------------------------------------------ LinkedIn outreach (0039)
+// ------------------------------------------------------------------ agency tasks (0044)
+/** A follow-up, meeting or visit: one row for its whole life (carried to the next working day while open). */
+export interface AgencyTask {
+  id: string; prospect_id: string; kind: 'follow_up' | 'meeting' | 'visit'; due_date: string; due_time: string | null; attendee: string | null;
+  location: string | null; note: string | null; status: 'open' | 'done' | 'cancelled'; assigned_to: string | null; created_by: string | null; created_at: string;
+  completed_at: string | null; completed_by: string | null; carried_over_to: string | null; carry_count: number;
+}
+export const TASK_KIND: Record<AgencyTask['kind'], string> = { follow_up: 'Follow-up', meeting: 'Meeting', visit: 'Visit' };
+export const fmtTime = (t: string | null | undefined) => {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+export interface PendingWork {
+  date: string;
+  tasks: { id: string; kind: AgencyTask['kind']; prospect_id: string; agency: string; reference: string; due_date: string; due_time: string | null; attendee: string | null; note: string | null; overdue: boolean; carry_count: number }[];
+  linkedin: { id: string; name: string; reference: string; due_date: string; overdue: boolean }[];
+  not_connected: number; open_attempts: number;
+}
+
 export type LinkedInStatus = 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
 export interface LinkedInProspect {
   id: string; reference: string; name: string; company_name: string | null; phone: string | null; email: string | null; linkedin_url: string | null; notes: string | null;
@@ -248,11 +268,12 @@ export interface LinkedInProspect {
   created_by: string | null; created_at: string; updated_at: string;
   /** 0041: recorded only by an explicit choice; separate from the outreach progress and any agency stage. */
   contact_status?: ContactStatus; contact_changed_by?: string | null; contact_changed_at?: string | null; converted_by?: string | null;
+  conversion_pending?: boolean;
 }
 export interface LinkedInActivity { id: number; prospect_id: string; kind: string; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
 export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = {
   not_contacted: { label: 'Not contacted', tone: 'slate' }, contacted: { label: 'Contacted', tone: 'blue' }, responded: { label: 'Responded', tone: 'violet' },
-  interested: { label: 'Interested', tone: 'green' }, not_interested: { label: 'Not interested', tone: 'red' }, converted: { label: 'Converted to agency', tone: 'navy' },
+  interested: { label: 'Positive response', tone: 'green' }, not_interested: { label: 'Closed', tone: 'red' }, converted: { label: 'Converted to agency', tone: 'navy' },
 };
 export const LI_ACTIVITY: Record<string, string> = {
   created: 'Prospect added', edited: 'Details edited', contacted: 'Connection contacted', follow_up: 'Follow-up message sent', response: 'Response received',

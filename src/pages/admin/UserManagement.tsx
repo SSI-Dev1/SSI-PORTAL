@@ -645,7 +645,7 @@ function PartnerAccessDialog({ partner, onClose, onSaved }: { partner: Partner |
   );
 }
 
-function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner | null; onClose: () => void; onDeleted: () => Promise<void> }) {
+export function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner | null; onClose: () => void; onDeleted: () => Promise<void> }) {
   const toast = useToast();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -679,7 +679,7 @@ function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner
     >
       <div className="space-y-4">
         <Alert tone="warning">
-          Deletion is only allowed for partners with no students or invoices, and removes all of the partner's login accounts. Use <strong>Archive</strong> to keep records.
+          Deletion is only allowed for partners with no students or invoices, and removes all of the partner's login accounts. A linked Agency List record is kept and flagged for review. Use <strong>Archive</strong> to keep records. The deletion is audit-logged.
         </Alert>
         {error && <Alert tone="error">{error}</Alert>}
         <Field label={`Type “${partner?.name ?? ''}” to confirm`}>
@@ -1017,12 +1017,14 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
   );
 }
 
-export function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated, initial, activation }: {
+export function PartnerUserDialog({ open, partnerId, partners, onClose, onCreated, initial, activation, canOpenPortal = true }: {
   open: boolean; partnerId?: string; partners: Partner[]; onClose: () => void; onCreated: OnCreated;
   /** Prefill (e.g. a historical client's contact). */
   initial?: { fullName?: string; email?: string; role?: UserRole };
   /** Historical client activation: offers to open the partner's portal once the account exists. */
   activation?: boolean;
+  /** Only Super Admins open portal access; employees with "Partner accounts" create the login only. */
+  canOpenPortal?: boolean;
 }) {
   const [f, setF] = useState({ partnerId: '', fullName: '', email: '', role: 'partner_staff' as UserRole, password: '', mustChange: false, send: true });
   const [openPortal, setOpenPortal] = useState(true);
@@ -1049,7 +1051,7 @@ export function PartnerUserDialog({ open, partnerId, partners, onClose, onCreate
       const email = f.email.trim().toLowerCase();
       const r = await adminApi.createPartnerUser({ partnerId: f.partnerId, email, fullName: f.fullName.trim(), role: f.role, password: f.password, mustChangePassword: f.send || f.mustChange, sendCredentials: f.send });
       // The account exists now; opening the portal is a separate, explicit choice.
-      if (activation && openPortal) await setPartnerAccess(f.partnerId, { portalEnabled: true, status: 'Active' });
+      if (activation && canOpenPortal && openPortal) await setPartnerAccess(f.partnerId, { portalEnabled: true, status: 'Active' });
       await onCreated(email, f.password, r.delivery);
     });
   };
@@ -1080,7 +1082,10 @@ export function PartnerUserDialog({ open, partnerId, partners, onClose, onCreate
         <div className="sm:col-span-2"><PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} email={f.email} error={errors.password} /></div>
         <div className="sm:col-span-2"><SendCredentialsOption checked={f.send} onChange={(v) => setF({ ...f, send: v })} /></div>
         {!f.send && <div className="sm:col-span-2"><Checkbox checked={f.mustChange} onCheckedChange={(v) => setF({ ...f, mustChange: v })} label="Require a password change at first sign-in" /></div>}
-        {activation && (
+        {activation && !canOpenPortal && (
+          <Alert tone="info" className="sm:col-span-2">The login is created now. A Super Admin turns on Client Portal access — the client appears under “Portal: Pending” until then.</Alert>
+        )}
+        {activation && canOpenPortal && (
           <div className="rounded-xl bg-canvas p-3 sm:col-span-2">
             <Checkbox checked={openPortal} onCheckedChange={setOpenPortal} label="Also turn on Client Portal access for this client" description="Leave off to create the login now and open the portal later in User Management." />
           </div>

@@ -39,7 +39,7 @@ export default function ResetPassword() {
           </div>
         )}
         {state === 'form' && <NewPasswordForm onDone={() => setDone(true)} />}
-        {state === 'expired' && <Expired />}
+        {state === 'expired' && <Expired network={auth.linkReason === 'network'} />}
         {state === 'done' && <Success />}
       </div>
       <p className="mt-6 flex items-center gap-1.5 text-xs text-ink-mute"><Lock className="h-3 w-3" /> Secure, encrypted password reset · © {new Date().getFullYear()} SSI GLOBAL</p>
@@ -115,13 +115,23 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Expired() {
+function Expired({ network }: { network?: boolean }) {
+  if (network) {
+    return (
+      <div className="text-center">
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"><ShieldAlert className="h-7 w-7" /></span>
+        <h1 className="mt-4 font-display text-[24px] font-semibold tracking-tight text-heading">Couldn’t check your reset link</h1>
+        <p className="mt-2 text-[15px] text-ink-soft">We couldn’t reach SSI GLOBAL to check the link. Check your connection and request a new password reset email.</p>
+        <Button size="lg" className="mt-6 w-full" onClick={() => window.location.assign(`${appRoot()}#/login?forgot=1`)}>Request New Reset Link</Button>
+      </div>
+    );
+  }
   return (
     <div className="text-center">
       <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"><ShieldAlert className="h-7 w-7" /></span>
       <h1 className="mt-4 font-display text-[24px] font-semibold tracking-tight text-heading">Password Reset Link Expired</h1>
-      <p className="mt-2 text-[15px] text-ink-soft">This password reset link is invalid or has expired. Please request a new link.</p>
-      <p className="mt-2 text-xs text-ink-mute">Each link works once and only the most recent email is valid. Request a new one and use it within the time shown in the email.</p>
+      <p className="mt-2 text-[15px] text-ink-soft">This password reset link is no longer valid. Please request a new password reset email.</p>
+      <p className="mt-2 text-xs text-ink-mute">Each link works once and only the most recent email is valid.</p>
       <Button size="lg" className="mt-6 w-full" onClick={() => window.location.assign(`${appRoot()}#/login?forgot=1`)}>Request New Reset Link</Button>
       <button type="button" className="mt-3 text-sm font-semibold text-rust hover:underline" onClick={() => window.location.assign(`${appRoot()}#/login`)}>Back to Login</button>
     </div>

@@ -19,9 +19,14 @@ const remembered = () => {
     return false;
   }
 };
+// The PKCE code verifier (written when a reset link or Google sign-in is requested) must survive
+// until the link is opened — usually from the email in a new tab, where sessionStorage is empty.
+// It is single-use and holds no session, so it always goes to localStorage.
+const isVerifier = (k: string) => k.endsWith('-code-verifier');
+const store = (k: string) => (isVerifier(k) || remembered() ? localStorage : sessionStorage);
 const tokenStorage: SupportedStorage = {
-  getItem: (k) => (remembered() ? localStorage : sessionStorage).getItem(k),
-  setItem: (k, v) => (remembered() ? localStorage : sessionStorage).setItem(k, v),
+  getItem: (k) => store(k).getItem(k) ?? (isVerifier(k) ? sessionStorage.getItem(k) : null),
+  setItem: (k, v) => store(k).setItem(k, v),
   removeItem: (k) => {
     localStorage.removeItem(k);
     sessionStorage.removeItem(k);

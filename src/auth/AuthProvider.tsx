@@ -24,12 +24,30 @@ interface AuthValue {
   linkFailed: boolean;
   /** A reset link's one-time token is being checked with Supabase. */
   verifyingLink: boolean;
+  /** Why the link could not be used: Supabase rejected it, or it could not be checked (network). */
+  linkReason: 'expired' | 'network' | null;
   /** Seconds left before automatic sign-out (only set during the final minute). */
   idleSecondsLeft: number | null;
   stayActive: () => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
+
+// The reset link's one-time token, read once at page load and removed from the address bar at once.
+let recoveryToken: string | null = (() => {
+  if (typeof window === 'undefined' || !isResetPasswordPath()) return null;
+  const q = new URLSearchParams(window.location.search);
+  const t = q.get('type') === 'recovery' ? q.get('token_hash') : null;
+  if (t) window.history.replaceState(null, '', window.location.pathname);
+  return t;
+})();
+const hadRecoveryToken = !!recoveryToken;
+/** Hands the token out once; later calls get null. */
+function takeRecoveryToken() {
+  const t = recoveryToken;
+  recoveryToken = null;
+  return t;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(supabase ? 'loading' : 'signed-out');
@@ -47,18 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [recoveryVerified, setRecoveryVerified] = useState(false);
   // Reset emails link to /reset-password/?token_hash=…&type=recovery. The token is checked here with
   // Supabase (single use, Supabase's expiry), so the link works in any browser or device.
-  const [verifyingLink, setVerifyingLink] = useState(
-    () => isResetPasswordPath() && new URLSearchParams(window.location.search).get('type') === 'recovery' && !!new URLSearchParams(window.location.search).get('token_hash'),
-  );
+  const [verifyingLink, setVerifyingLink] = useState(hadRecoveryToken);
+  const [linkReason, setLinkReason] = useState<'expired' | 'network' | null>(null);
   useEffect(() => {
     if (!verifyingLink || !supabase) return;
-    const q = new URLSearchParams(window.location.search);
-    const tokenHash = q.get('token_hash') ?? '';
-    // Remove the token from the address bar and history before anything else runs.
-    window.history.replaceState(null, '', window.location.pathname);
+    // Verified once per page load (module-level guard): a second check of the same single-use token
+    // — React Strict Mode, a remount — would fail and wrongly report the link as expired.
+    const tokenHash = takeRecoveryToken();
+    if (!tokenHash) return;
     void supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }).then(({ data, error }) => {
-      if (error || !data.session) setLinkFailed(true);
-      else setRecoveryVerified(true);
+      if (error || !data.session) {
+        const status = (error as { status?: number } | null)?.status ?? 0;
+        setLinkReason(status === 0 || status >= 500 ? 'network' : 'expired');
+        setLinkFailed(true);
+      } else setRecoveryVerified(true);
       setVerifyingLink(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,13 +202,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       recoveryVerified,
       linkFailed,
       verifyingLink,
+      linkReason,
       refresh,
       signOut,
       setPreview,
       idleSecondsLeft,
       stayActive: () => resetIdle.current(),
     }),
-    [status, preview, realSession, notice, recoveryVerified, linkFailed, verifyingLink, refresh, signOut, idleSecondsLeft],
+    [status, preview, realSession, notice, recoveryVerified, linkFailed, verifyingLink, linkReason, refresh, signOut, idleSecondsLeft],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

@@ -158,11 +158,21 @@ export const appRoot = () => siteUrl().replace(/reset-password\/?$/, '');
 export const resetPasswordUrl = () => `${appRoot().replace(/\/?$/, '/')}reset-password/`;
 export const isResetPasswordPath = () => /\/reset-password\/?$/.test(window.location.pathname);
 
+let resetOnly: SupabaseClient | null = null;
+const resetClient = () =>
+  (resetOnly ??= createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { flowType: 'implicit', persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'ssi-reset-request' },
+  }));
+
 export async function sendPasswordReset(email: string) {
   if (!supabase) return;
   // Supabase issues a single-use, time-limited link; the response never reveals whether the email
   // exists. Only rate limiting is surfaced (it says nothing about the account).
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: resetPasswordUrl() });
+  // Requested without PKCE: a PKCE reset token can only become a session in the browser that asked
+  // (verifying it elsewhere issues an auth code and uses the link up). Without PKCE the emailed
+  // one-time token is checked by the reset page with verifyOtp — single use, Supabase's expiry,
+  // any device. This client holds no session and stores nothing.
+  const { error } = await resetClient().auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: resetPasswordUrl() });
   if (error && (error.status === 429 || /rate limit/i.test(error.message))) {
     throw new AuthError('Too many reset requests. Please wait a few minutes and try again.');
   }

@@ -88,9 +88,9 @@ select public.set_agency_contact_status(:'ag_name', 'connected', 'Spoke on Whats
 select pg_temp.check((select contact_status = 'connected' and contact_changed_by = :po and contact_changed_at is not null and first_connected_at is not null
   from public.agency_prospects where id = :'ag_name'), 'Connected, with who and when (TEST 3)');
 select pg_temp.check((select count(*) from public.agency_activities where prospect_id = :'ag_name' and kind = 'contact_status' and detail ->> 'to' = 'connected') = 1, 'status change is in the history');
-select public.set_agency_contact_status(:'ag_name', 'not_connected');
+select pg_temp.denied(format($$select public.set_agency_contact_status(%L, 'not_connected')$$, :'ag_name'), 'Connected cannot be changed back by an officer (0048)', '%Super Admin%');
 select public.set_agency_contact_status(:'ag_name', 'connected');
-select pg_temp.check(pg_temp.metric(:po, 'po_new_partners_contacted') = 1, 'first contact counted once, even when toggled again');
+select pg_temp.check(pg_temp.metric(:po, 'po_new_partners_contacted') = 1, 'first contact counted once');
 select public.log_agency_activity(:'ag_name', 'call', 'Discussed UK intake', null, '22222222-0000-0000-0000-000000000001');
 select public.log_agency_activity(:'ag_name', 'call', 'Discussed UK intake', null, '22222222-0000-0000-0000-000000000001');
 select public.log_agency_activity(:'ag_name', 'meeting', 'Office visit', null, '22222222-0000-0000-0000-000000000002');

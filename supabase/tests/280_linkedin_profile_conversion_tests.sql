@@ -64,14 +64,14 @@ select pg_temp.check(pg_temp.work(:po, 'linkedin_connection') = (select conn0 fr
 
 \echo '== TEST 3: contact status'
 select public.set_linkedin_contact_status(:'hari', 'connected', 'Accepted my request', gen_random_uuid());
-select pg_temp.check((select contact_status = 'connected' and contact_changed_by = :po::uuid and contact_changed_at is not null and status = 'contacted' and last_contact_at is not null
-                      from public.linkedin_prospects where id = :'hari'), 'Connected saved with the employee and time');
+select pg_temp.check((select contact_status = 'connected' and contact_changed_by = :po::uuid and contact_changed_at is not null and pipeline_stage = 'pending' and last_contact_at is not null
+                      from public.linkedin_prospects where id = :'hari'), 'Connected saved with the employee and time; the pipeline stage is separate (0048)');
 select pg_temp.check(pg_temp.work(:po, 'linkedin_connection') = (select conn0 from base) + 1, 'first Connected counts once as a LinkedIn connection');
-select public.set_linkedin_contact_status(:'hari', 'not_connected', null, gen_random_uuid());
+select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'not_connected', null, gen_random_uuid())$$, :'hari'), 'Connected cannot be changed back by an officer (0048)', '%Super Admin%');
 select public.set_linkedin_contact_status(:'hari', 'connected', null, gen_random_uuid());
 select public.log_linkedin_activity(:'hari', 'contacted', 'messaged again', null, gen_random_uuid());
-select pg_temp.check(pg_temp.work(:po, 'linkedin_connection') = (select conn0 from base) + 1, 'switching back and forth, or also recording contact, never counts twice');
-select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'hari' and kind = 'contact_status') = 3, 'each status change is in the activity history');
+select pg_temp.check(pg_temp.work(:po, 'linkedin_connection') = (select conn0 from base) + 1, 'recording contact again never counts twice');
+select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'hari' and kind = 'contact_status') = 1, 'the status change is in the activity history');
 select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'interested', null, gen_random_uuid())$$, :'hari'), 'only Connected, Not connected or Not recorded', '%Connected, Not connected or Not recorded%');
 
 \echo '== TEST 4: Move to Agency List needs the mandatory fields'
@@ -91,7 +91,7 @@ select pg_temp.check((select company_name = 'Hari Overseas' and contact_name = '
                       from public.agency_prospects where id = :'ag'), 'agency has name, full POC name, phone as text, no email, source LinkedIn with the prospect id');
 select pg_temp.check((select contact_status = 'connected' and first_connected_at is not null from public.agency_prospects where id = :'ag'), 'the agency carries the prospect''s recorded contact status');
 select pg_temp.check((select status = 'converted' and agency_id = :'ag'::uuid and converted_by = :po::uuid from public.linkedin_prospects where id = :'hari'), 'prospect marked Converted and linked');
-select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'hari') >= 6, 'the LinkedIn history is kept');
+select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'hari') >= 4, 'the LinkedIn history is kept');
 select pg_temp.check(pg_temp.work(:po, 'linkedin_converted') = (select conv0 from base) + 1, 'conversion recorded once for the employee');
 select pg_temp.check(pg_temp.work(:po, 'partner_call') = (select calls0 from base), 'conversion is not counted as a call');
 

@@ -40,3 +40,20 @@ export async function signStandardWebhook(secret: string, id: string, ts: number
   const k = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return `v1,${b64(new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(`${id}.${ts}.${body}`))))}`;
 }
+
+/** Why a check failed, without revealing the secret, body or signature values. */
+export function describeWebhookFailure(secret: string, headers: Headers, now = Date.now()): Record<string, unknown> {
+  const key = secret.replace(/^v1,/, '').replace(/^whsec_/, '');
+  const ts = Number(headers.get('webhook-timestamp'));
+  let decodes = true;
+  try { atob(key); } catch { decodes = false; }
+  return {
+    has_id: !!headers.get('webhook-id'), has_timestamp: !!headers.get('webhook-timestamp'), has_signature: !!headers.get('webhook-signature'),
+    signature_versions: (headers.get('webhook-signature') ?? '').split(' ').map((x) => x.split(',')[0]),
+    skew_seconds: Number.isFinite(ts) ? Math.round(now / 1000 - ts) : null,
+    secret_prefix_ok: /^v1,whsec_/.test(secret),
+    // Shape of the first 12 characters only (letters → a/A, digits → 9; punctuation kept), never the value.
+    secret_shape: secret.slice(0, 12).replace(/[a-z]/g, 'a').replace(/[A-Z]/g, 'A').replace(/[0-9]/g, '9'),
+    secret_length: secret.length, secret_key_length: key.length, secret_has_whitespace: /\s/.test(secret), secret_base64_ok: decodes,
+  };
+}

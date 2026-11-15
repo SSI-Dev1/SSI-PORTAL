@@ -11,7 +11,8 @@
 // Uses:    BREVO_API_KEY, EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, PORTAL_PUBLIC_URL (already set)
 import { mailConfig, sendViaBrevo } from '../_shared/credentials.ts';
 import { buildAuthEmail, verifyLink, type AuthEmailData } from '../_shared/authEmail.ts';
-import { verifyStandardWebhook } from '../_shared/webhookSignature.ts';
+import { describeWebhookFailure, verifyStandardWebhook } from '../_shared/webhookSignature.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const HOOK_SECRET = Deno.env.get('SEND_EMAIL_HOOK_SECRET') ?? '';
@@ -25,7 +26,15 @@ Deno.serve(async (req) => {
   if (!HOOK_SECRET) return fail(500, 'Email hook is not configured');
   const raw = await req.text();
   let payload: { user: { email: string; new_email?: string }; email_data: AuthEmailData };
-  if (!(await verifyStandardWebhook(HOOK_SECRET, req.headers, raw))) return fail(401, 'Invalid signature');
+  if (!(await verifyStandardWebhook(HOOK_SECRET, req.headers, raw))) {
+    // Diagnostics only (no secret, signature, body or address): why the hook call was refused.
+    try {
+      const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
+      await admin.from('audit_log').insert({ actor_id: null, actor_role: 'system', action: 'auth_hook_rejected', entity: 'auth-email', entity_id: 'send_email', partner_id: null,
+        changes: describeWebhookFailure(HOOK_SECRET, req.headers) });
+    } catch { /* never block on diagnostics */ }
+    return fail(401, 'Invalid signature');
+  }
   try {
     payload = JSON.parse(raw);
   } catch {

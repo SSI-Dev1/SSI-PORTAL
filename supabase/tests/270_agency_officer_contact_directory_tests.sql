@@ -114,6 +114,12 @@ select pg_temp.check((select count(*) from public.agency_activities where kind =
 select pg_temp.check((select count(*) from public.agency_activities where prospect_id = any ((select all_ids from ids)::uuid[]) and kind in ('call', 'meeting', 'contact_attempt', 'follow_up_done')) = 0, 'no calls or outreach are logged');
 select pg_temp.check((select (r ->> 'replayed')::boolean from public.bulk_set_agency_contact((select all_ids from ids), 'connected', null, 'cccccccc-0000-4000-8000-000000000001') r), 'the same correction again is replayed');
 select pg_temp.check((select count(*) from public.agency_bulk_operations where request_key in ('bbbbbbbb-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000002', 'cccccccc-0000-4000-8000-000000000001')) = 3, 'every bulk operation is recorded once');
+select pg_temp.denied($$select public.bulk_set_agency_contact((select all_ids from ids), 'not_connected', 'mistake', gen_random_uuid())$$, 'a manager cannot move Connected agencies back in bulk', '%Super Admin%');
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.denied($$select public.bulk_set_agency_contact((select all_ids from ids), 'not_connected', null, gen_random_uuid())$$, 'a Super Admin bulk reversal needs a reason', '%reason%');
+select public.bulk_set_agency_contact(array['a0000000-0000-4000-8000-000000000001']::uuid[], 'not_connected', 'Wrong agency marked', gen_random_uuid());
+select pg_temp.check((select contact_status = 'not_connected' from public.agency_prospects where id = 'a0000000-0000-4000-8000-000000000001'), 'a Super Admin can correct with a reason');
+select pg_temp.act_as(:admin);
 select pg_temp.trusted();
 select pg_temp.check((select count(*) from public.work_activities) = (select work from before), 'no daily work-report activity was created by assignments or corrections');
 

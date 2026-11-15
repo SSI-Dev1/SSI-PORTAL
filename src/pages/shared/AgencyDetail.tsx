@@ -13,9 +13,10 @@ import { cn, matches } from '../../lib/utils';
 import {
   ACTIVITY, CONTACT, EMAIL, MANUAL_STAGES, stageLabel, PROPOSAL, REGISTRATION, STAGE, agencyAccess, agencyManager, agencyName, fmtDate, fmtWhen, rpc, sendProposal, today,
   AgencyDemo, EMAIL_STATE, resendAgencyEmail, useAgencyData, type Agency, type AgencyEmail, type AgencyActivity, type Mou, type Proposal, type Stage, type Terms,
-  AGENCY_TYPE, typeKey, type AgencyType, TASK_KIND, fmtTime, type AgencyTask,
+  AGENCY_TYPE, typeKey, type AgencyType, TASK_KIND, fmtTime, type AgencyTask, type ContactStatus,
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
+import { ContactCorrection } from '../../components/ContactCorrection';
 import { AgencyTypeBadge, AssignOfficerModal, AssignSubOfficerModal, OfficerHistory, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 // The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
@@ -94,6 +95,13 @@ export default function AgencyDetail() {
     void reload();
   };
   const contact = (s: 'connected' | 'not_connected') => run('contact', () => rpc('set_agency_contact_status', { p_id: id, p_status: s, p_note: null }), s === 'connected' ? 'Marked Connected' : 'Marked Not connected');
+  // Contact status only moves forward (0048); a Super Admin can correct a mistake with a reason.
+  const [correcting, setCorrecting] = useState(false);
+  const correct = async (to: ContactStatus, reason: string) => {
+    const r = await rpc('set_agency_contact_status', { p_id: id, p_status: to, p_note: reason });
+    if (!r.ok) { toast.error('Not saved', r.error); return false; }
+    toast.success(`Contact status corrected to ${CONTACT[to].label}`); void reload(); return true;
+  };
   const send = async (p: Proposal) => {
     setBusy(`send:${p.id}`);
     const r = await sendProposal(p.id);
@@ -120,7 +128,8 @@ export default function AgencyDetail() {
           {manager && <Button variant="secondary" icon={UserCog} onClick={() => setChangingOfficer(true)}>Change officer</Button>}
           {(manager || session?.userRole === 'super_admin' || a.assigned_officer === session?.userId) && <Button variant="secondary" icon={UserCheck} onClick={() => setChangingSub(true)}>Assign Sub Officer</Button>}
           {a.contact_status !== 'connected' && <Button variant="secondary" icon={UserCheck} disabled={!!busy} onClick={() => void contact('connected')}>Mark Connected</Button>}
-          {a.contact_status !== 'not_connected' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
+          {a.contact_status === 'unknown' && <Button variant="secondary" icon={UserX} disabled={!!busy} onClick={() => void contact('not_connected')}>Mark Not connected</Button>}
+          {session?.userRole === 'super_admin' && a.contact_status !== 'unknown' && <Button variant="ghost" disabled={!!busy} onClick={() => setCorrecting(true)}>Correct contact status…</Button>}
           <Menu width="w-60" trigger={() => <Button variant="secondary" icon={MoreHorizontal}>Log activity</Button>} items={[
             { label: 'Call done', icon: PhoneCall, onClick: () => setModal({ kind: 'log', log: 'call' }) },
             { label: 'Contact attempt', icon: PhoneMissed, onClick: () => setModal({ kind: 'log', log: 'contact_attempt' }) },
@@ -135,6 +144,7 @@ export default function AgencyDetail() {
           <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
         </>}
       />
+      {correcting && <ContactCorrection name={agencyName(a)} current={a.contact_status} onClose={() => setCorrecting(false)} onSave={correct} />}
       {changingSub && <AssignSubOfficerModal ids={[a.id]} title={agencyName(a)} main={a.assigned_officer} mainName={a.assigned_officer ? staffName(a.assigned_officer) : ''}
         current={a.sub_officer} currentName={a.sub_officer ? staffName(a.sub_officer) : ''} onClose={() => setChangingSub(false)} onDone={() => void reload()} />}
       {changingOfficer && <AssignOfficerModal ids={[a.id]} current={a.assigned_officer} candidates={candidates} onClose={() => setChangingOfficer(false)} />}

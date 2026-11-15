@@ -52,8 +52,8 @@ select pg_temp.trusted();
 update public.employees set designation_id = 'partnership_officer' where id = :po;
 update public.profiles set permissions = array_append(coalesce(permissions, public.role_default_permissions(role)), 'agency_outreach')
 where id in (:po, :mgr) and not ('agency_outreach' = any (coalesce(permissions, public.role_default_permissions(role))));
-create temp table b as select k, pg_temp.m(k) v from unnest(array['li_new_connections', 'li_followup_messages', 'li_pending', 'li_pending_followups', 'li_closed']) k;
-create or replace function pg_temp.d(key text) returns integer language sql as $$ select pg_temp.m(key) - (select v from b where k = key) $$;
+create temp table b as select k, pg_temp.m(k) v from unnest(array['li_new_connections', 'li_followup_messages', 'li_pending', 'li_pending_followups', 'li_closed', 'li_not_responded']) k;
+create or replace function pg_temp.d(key text) returns integer language sql as $$ select coalesce(pg_temp.m(key), 0) - coalesce((select v from b where k = key), 0) $$;
 grant select on b to authenticated;
 
 \echo '== TEST 1 / 5: name only'
@@ -70,8 +70,8 @@ select pg_temp.check(pg_temp.d('li_pending') = 1 and pg_temp.d('li_new_connectio
 \echo '== TEST 3: Follow-up Completed never means Connected'
 select public.log_linkedin_activity(:'dan', 'follow_up', 'sent message, no reply', null, gen_random_uuid());
 select pg_temp.check((select contact_status = 'not_connected' from public.linkedin_prospects where id = :'dan'), 'contact status stays Not connected');
-select pg_temp.check(pg_temp.d('li_followup_messages') = 1 and pg_temp.d('li_new_connections') = 0 and pg_temp.d('li_pending') = 1,
-  'follow-up message +1; connections unchanged; Dan still a pending contact');
+select pg_temp.check(pg_temp.d('li_followup_messages') = 1 and pg_temp.d('li_new_connections') = 0 and pg_temp.d('li_pending') = 0 and pg_temp.d('li_not_responded') = 1,
+  'follow-up message +1; connections unchanged; Dan moves Pending → Not responded (0048)');
 select (public.create_linkedin_prospect('{"name": "Never Contacted"}'::jsonb, gen_random_uuid()) ->> 'id') as nc \gset
 select public.log_linkedin_activity(:'nc', 'follow_up', null, null, gen_random_uuid());
 select pg_temp.check((select contact_status = 'unknown' from public.linkedin_prospects where id = :'nc') and pg_temp.d('li_new_connections') = 0,
@@ -83,8 +83,9 @@ select pg_temp.check(pg_temp.d('li_new_connections') = 0, 'stage Contacted (outr
 select public.log_linkedin_activity(:'dan', 'follow_up_date', null, public.company_today(), gen_random_uuid());
 select pg_temp.check(pg_temp.d('li_pending_followups') = 1, 'a follow-up due today is a pending follow-up');
 select public.log_linkedin_activity(:'dan', 'follow_up', 'tried again', null, gen_random_uuid());
-select pg_temp.check(pg_temp.d('li_pending_followups') = 0 and pg_temp.d('li_pending') = 2 and (select next_follow_up is null from public.linkedin_prospects where id = :'dan'),
-  'completed: the follow-up leaves the queue; Dan (not connected) stays a pending contact');
+select pg_temp.check(pg_temp.d('li_pending_followups') = 0 and pg_temp.d('li_pending') = 0 and pg_temp.d('li_not_responded') = 2 and pg_temp.d('li_followup_messages') = 2
+  and (select next_follow_up is null from public.linkedin_prospects where id = :'dan'),
+  'completed: the follow-up leaves the queue; a second follow-up on Dan today still counts once (Dan + Never Contacted = 2)');
 select public.log_linkedin_activity(:'dan', 'follow_up', 'next try booked', public.company_today() + 2, gen_random_uuid());
 select pg_temp.check((select next_follow_up = public.company_today() + 2 from public.linkedin_prospects where id = :'dan') and pg_temp.d('li_pending_followups') = 0,
   'a new next follow-up is one date on the same prospect (no duplicate tasks)');
@@ -108,19 +109,24 @@ select pg_temp.check((select count(*) from public.notifications where user_id = 
 \echo '== TEST 6: Connected'
 select pg_temp.act_as(:po);
 select public.set_linkedin_contact_status(:'dan', 'connected', 'replied on LinkedIn', gen_random_uuid());
-select public.set_linkedin_contact_status(:'dan', 'not_connected', null, gen_random_uuid());
+select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'not_connected', null, gen_random_uuid())$$, :'dan'), 'Connected cannot be changed back by an officer (0048)', '%Super Admin%');
 select public.set_linkedin_contact_status(:'dan', 'connected', null, gen_random_uuid());
-select pg_temp.check(pg_temp.d('li_new_connections') = 1 and pg_temp.d('li_pending') = 1, 'Connected counted once; pending contacts down by one');
+select pg_temp.check(pg_temp.d('li_new_connections') = 1 and pg_temp.d('li_not_responded') = 2, 'Connected counted once; the pipeline stage is separate (Dan stays Not responded)');
 select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'dan' and kind = 'follow_up') = 4, 'follow-up history kept');
 
 \echo '== TEST 7: back to Not recorded'
+select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'unknown', 'marked by mistake', gen_random_uuid())$$, :'dan'), 'an officer cannot reset Connected to Not recorded', '%Super Admin%');
+select pg_temp.act_as(:super);
+select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'unknown', null, gen_random_uuid())$$, :'dan'), 'a Super Admin correction needs a reason', '%reason%');
 select public.set_linkedin_contact_status(:'dan', 'unknown', 'marked by mistake', gen_random_uuid());
-select pg_temp.check(pg_temp.d('li_pending') = 2 and pg_temp.d('li_new_connections') = 1, 'Not recorded again: Pending at once; the earlier connection event stays in history');
+select pg_temp.act_as(:po);
+select pg_temp.check(pg_temp.d('li_new_connections') = 0 and (select count(*) from public.linkedin_activities where prospect_id = :'dan' and kind = 'contact_correction' and detail ->> 'from' = 'connected') = 1,
+  'Super Admin correction: audited with the previous value, and the connection credit is reversed (kept, voided)');
 
 \echo '== closed'
 select public.set_linkedin_stage(:'nc', 'not_interested', 'no', null, gen_random_uuid());
-select pg_temp.check(pg_temp.d('li_closed') = 1 and pg_temp.d('li_pending') = 1 and (select next_follow_up is null from public.linkedin_prospects where id = :'nc'),
-  'closed: counted, out of pending and out of the follow-up queue');
+select pg_temp.check(pg_temp.d('li_closed') = 1 and pg_temp.d('li_not_responded') = 1 and (select next_follow_up is null from public.linkedin_prospects where id = :'nc'),
+  'closed: counted, out of Not responded and out of the follow-up queue');
 
 \echo '== TEST 11: agency Follow-up Completed / Call Done never mean Connected'
 select (public.create_agency_prospect('{"company_name": "Pending Agency"}'::jsonb, gen_random_uuid()) ->> 'id') as ag \gset
@@ -133,7 +139,7 @@ select pg_temp.check((select contact_status = 'not_connected' from public.agency
 
 \echo '== TEST 12: Senior IRM report'
 select pg_temp.check((select (sections::text like '%li_pending_followups%') from public.report_templates where id = 'senior_recruitment_manager' order by version desc limit 1)
-  and (select count(*) from public.report_metric_sources where template_id = 'senior_recruitment_manager' and field_key like 'li_%') = 6,
+  and (select count(*) from public.report_metric_sources where template_id = 'senior_recruitment_manager' and field_key like 'li_%') = 7,
   'Senior IRM report has the LinkedIn section with the same definitions');
 select pg_temp.act_as(:mgr);
 select (public.create_linkedin_prospect('{"name": "Anson Lead"}'::jsonb, gen_random_uuid()) ->> 'id') as al \gset

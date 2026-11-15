@@ -12,7 +12,8 @@ import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
-import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, liFollowUpDue, liPendingContact, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
+import { CONTACT, LI_ACTIVITY, LI_STAGE, agencyAccess, contactAllowed, fmtDate, fmtWhen, liFollowUpDue, liNotResponded, liPendingContact, liStage, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStage } from '../../lib/agencies';
+import { ContactCorrection } from '../../components/ContactCorrection';
 
 // LinkedIn log activity: exactly three actions (Abigail's Portal Development Specification).
 type Kind = 'follow_up' | 'note' | 'stage';
@@ -21,12 +22,12 @@ const KIND: Record<Kind, { title: string; icon: typeof Send; report?: string }> 
   note: { title: 'Add note', icon: StickyNote },
   stage: { title: 'Change stage', icon: Pencil },
 };
-type LiStage = 'contacted' | 'responded' | 'interested' | 'not_interested';
-const LI_STAGES: { value: LiStage; label: string; hint: string }[] = [
-  { value: 'contacted', label: 'Contacted', hint: 'Outreach message sent.' },
-  { value: 'responded', label: 'Responded', hint: 'They replied.' },
-  { value: 'interested', label: 'Positive response', hint: 'Counts as a positive response and moves the contact to the Agency List — missing details are asked for.' },
-  { value: 'not_interested', label: 'Closed', hint: 'Counts as Closed. The lead and its history are kept.' },
+// One current stage per prospect (0048). Pending is where every prospect starts; moving back to it is a Super Admin correction.
+const LI_STAGES: { value: LinkedInStage; label: string; hint: string }[] = [
+  { value: 'not_responded', label: 'Not responded', hint: 'Attempted, no response yet. Stays open for follow-ups.' },
+  { value: 'positive', label: 'Positive response', hint: 'Counts as a positive response and moves the contact to the Agency List — missing details are asked for.' },
+  { value: 'closed', label: 'Closed', hint: 'Counts as Closed. The lead and its history are kept and it can be reopened.' },
+  { value: 'pending', label: 'Pending (Super Admin only)', hint: 'Back to not attempted — a correction.' },
 ];
 
 export default function LinkedInOutreach() {
@@ -47,13 +48,14 @@ export default function LinkedInOutreach() {
   }, [params, setParams]);
   const staffName = (id: string | null | undefined) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Employee') : '—');
   // Pending = Not recorded or Not connected and still open — the same rule as the Daily Work Report.
+  // Current stage counts: each prospect is in exactly one stage.
   const counts = useMemo(() => {
     const r = rows ?? [];
-    return { pending: r.filter(liPendingContact).length, connected: r.filter((p) => p.contact_status === 'connected').length,
-      due: r.filter(liFollowUpDue).length, closed: r.filter((p) => p.status === 'not_interested').length };
+    return { pending: r.filter(liPendingContact).length, not_responded: r.filter(liNotResponded).length, positive: r.filter((p) => liStage(p) === 'positive').length,
+      closed: r.filter((p) => liStage(p) === 'closed').length, connected: r.filter((p) => p.contact_status === 'connected').length, due: r.filter(liFollowUpDue).length };
   }, [rows]);
-  const shown = useMemo(() => (rows ?? []).filter((p) => (!status || p.status === status)
-    && (!contact || (contact === 'pending' ? liPendingContact(p) : contact === 'due' ? liFollowUpDue(p) : (p.contact_status ?? 'unknown') === contact))
+  const shown = useMemo(() => (rows ?? []).filter((p) => (!status || liStage(p) === status)
+    && (!contact || (contact === 'due' ? liFollowUpDue(p) : (p.contact_status ?? 'unknown') === contact))
     && matches(q, p.name, p.company_name ?? '', p.phone ?? '', p.email ?? '', p.reference)), [rows, q, status, contact]);
   const paged = usePaged(shown, 20, `${q}|${status}|${contact}`);
   const profile = profileId ? rows?.find((r) => r.id === profileId) ?? null : null;
@@ -65,10 +67,11 @@ export default function LinkedInOutreach() {
         actions={<Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add LinkedIn Prospect</Button>} />
       {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
       {rows && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {([['Pending contacts', counts.pending, 'pending', 'Not recorded or Not connected'], ['Connected', counts.connected, 'connected', 'Recorded as Connected'],
-             ['Follow-ups due', counts.due, 'due', 'Due today or overdue'], ['Closed', counts.closed, '', 'Closed leads']] as [string, number, string, string][]).map(([l, v, f, h]) => (
-            <button key={l} type="button" onClick={() => { if (l === 'Closed') { setContact(''); setStatus('not_interested'); } else { setStatus(''); setContact(f); } }}
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {([['Pending contacts', counts.pending, 'stage:pending', 'Not attempted yet'], ['Not responded', counts.not_responded, 'stage:not_responded', 'Followed up, no response'],
+             ['Positive response', counts.positive, 'stage:positive', 'Interested / moved'], ['Closed', counts.closed, 'stage:closed', 'Current stage Closed'],
+             ['Connected', counts.connected, 'connected', 'Contact status Connected'], ['Follow-ups due', counts.due, 'due', 'Due today or overdue']] as [string, number, string, string][]).map(([l, v, f, h]) => (
+            <button key={l} type="button" onClick={() => { if (f.startsWith('stage:')) { setContact(''); setStatus(f.slice(6)); } else { setStatus(''); setContact(f); } }}
               className="rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
               <span className="block font-display text-xl font-semibold text-heading">{v}</span>
               <span className="block text-xs text-ink-soft">{l}</span><span className="block truncate text-[11px] text-ink-mute">{h}</span>
@@ -79,9 +82,9 @@ export default function LinkedInOutreach() {
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, company, phone, email…" className="w-full sm:w-72" />
-          <FilterSelect label="Contact" value={contact} onChange={setContact} options={[{ value: '', label: 'Any contact status' }, { value: 'pending', label: 'Pending (not connected)' }, { value: 'due', label: 'Follow-up due' },
+          <FilterSelect label="Contact" value={contact} onChange={setContact} options={[{ value: '', label: 'Any contact status' }, { value: 'due', label: 'Follow-up due' },
             ...(Object.keys(CONTACT) as ContactStatus[]).map((k) => ({ value: k, label: CONTACT[k].label }))]} />
-          <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: '', label: 'All statuses' }, ...(Object.keys(LI_STATUS) as LinkedInStatus[]).map((k) => ({ value: k, label: LI_STATUS[k].label }))]} />
+          <FilterSelect label="Stage" value={status} onChange={setStatus} options={[{ value: '', label: 'All stages' }, ...(Object.keys(LI_STAGE) as LinkedInStage[]).map((k) => ({ value: k, label: LI_STAGE[k].label }))]} />
           <span className="ml-auto text-xs text-ink-mute">{rows ? `${shown.length} of ${rows.length}` : ''}</span>
         </div>
         {!rows ? <p className="p-6 text-sm text-ink-soft" role="status">Loading prospects…</p> : shown.length === 0 ? (
@@ -89,7 +92,7 @@ export default function LinkedInOutreach() {
             action={!rows.length ? <Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add LinkedIn Prospect</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={['Prospect', 'Company', 'Contact', 'Outreach', 'Last contact', 'Follow-up', 'Employee', 'Agency', '']}>
+            <Table className="hr-table" head={['Prospect', 'Company', 'Contact', 'Stage', 'Last contact', 'Follow-up', 'Employee', 'Agency', '']}>
               {paged.rows.map((p) => {
                 const due = p.next_follow_up && p.next_follow_up <= today() && p.status !== 'converted';
                 const cs = CONTACT[p.contact_status ?? 'unknown'];
@@ -100,8 +103,9 @@ export default function LinkedInOutreach() {
                       <div className="text-xs text-ink-mute">{p.reference}</div>
                     </td>
                     <td className="text-sm">{p.company_name ?? '—'}<div className="text-xs text-ink-mute">{[p.phone, p.email].filter(Boolean).join(' · ')}</div></td>
-                    <td><Badge tone={cs.tone} dot>{cs.label}</Badge>{liPendingContact(p) && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Pending</div>}</td>
-                    <td><Badge tone={LI_STATUS[p.status].tone}>{LI_STATUS[p.status].label}</Badge></td>
+                    <td><Badge tone={cs.tone} dot>{cs.label}</Badge></td>
+                    <td><Badge tone={LI_STAGE[liStage(p)].tone}>{LI_STAGE[liStage(p)].label}</Badge>{p.status === 'converted' && <div className="mt-1 text-[11px] text-ink-mute">In the Agency List</div>}
+                      {p.conversion_pending && p.status !== 'converted' && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Agency details needed</div>}</td>
                     <td className="whitespace-nowrap text-sm">{fmtDate(p.last_contact_at)}</td>
                     <td className={`whitespace-nowrap text-sm ${due ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(p.next_follow_up)}</td>
                     <td className="text-sm">{staffName(p.assigned_to)}</td>
@@ -133,7 +137,10 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
   onConvert: () => void; onOpenAgency: (id: string) => void; onChanged: () => void;
 }) {
   const toast = useToast();
+  const { session } = useStore();
+  const superAdmin = session?.userRole === 'super_admin';
   const [busy, setBusy] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [rows, setRows] = useState<LinkedInActivity[] | null>(null);
   const load = useCallback(async () => {
     if (!supabase) return setRows([]);
@@ -144,13 +151,13 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
   useEffect(() => { void load(); }, [load, p.updated_at]);
   const cs = p.contact_status ?? 'unknown';
   const converted = p.status === 'converted' || !!p.agency_id;
-  const setContact = async (v: ContactStatus) => {
-    if (v === cs) return;
+  const setContact = async (v: ContactStatus, note: string | null = null) => {
+    if (v === cs) return false;
     setBusy(true);
-    const r = await rpc('set_linkedin_contact_status', { p_id: p.id, p_status: v, p_note: null, p_request: crypto.randomUUID() });
+    const r = await rpc('set_linkedin_contact_status', { p_id: p.id, p_status: v, p_note: note, p_request: crypto.randomUUID() });
     setBusy(false);
-    if (!r.ok) return toast.error('Not saved', r.error);
-    toast.success(`Contact status: ${CONTACT[v].label}`); onChanged();
+    if (!r.ok) { toast.error('Not saved', r.error); return false; }
+    toast.success(`Contact status: ${CONTACT[v].label}`); onChanged(); return true;
   };
   const url = p.linkedin_url ? (p.linkedin_url.startsWith('http') ? p.linkedin_url : `https://${p.linkedin_url}`) : null;
   const rowsOf: [string, React.ReactNode][] = [
@@ -161,7 +168,7 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
   ];
   return (
     <Modal open onClose={onClose} size="lg" title={p.name}
-      subtitle={<span className="flex flex-wrap items-center gap-2">{p.reference}<Badge tone={LI_STATUS[p.status].tone}>{LI_STATUS[p.status].label}</Badge></span>}
+      subtitle={<span className="flex flex-wrap items-center gap-2">{p.reference}<Badge tone={LI_STAGE[liStage(p)].tone}>{LI_STAGE[liStage(p)].label}</Badge>{converted && <Badge tone="navy">In the Agency List</Badge>}</span>}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Close</Button>
         <Button variant="secondary" icon={Pencil} onClick={onEdit}>Edit details</Button>
@@ -178,7 +185,8 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
             </div>
             <div className="flex flex-wrap gap-2" role="group" aria-label="Contact status">
               {(['connected', 'not_connected', 'unknown'] as const).map((v) => (
-                <button key={v} type="button" disabled={busy || converted} aria-pressed={cs === v} onClick={() => void setContact(v)}
+                <button key={v} type="button" disabled={busy || converted || (v !== cs && !contactAllowed(cs, v))} aria-pressed={cs === v}
+                  title={v !== cs && !contactAllowed(cs, v) ? 'Contact status only moves forward. A Super Admin can correct mistakes.' : undefined} onClick={() => void setContact(v)}
                   className={cn('rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-60',
                     cs === v ? 'border-rust bg-brand-50 text-rust dark:bg-brand-500/10' : 'border-line text-ink-soft hover:border-brand-300 hover:text-heading')}>
                   {CONTACT[v].label}
@@ -187,9 +195,11 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
             </div>
             <p className="mt-2 text-xs text-ink-mute">
               {cs === 'unknown' ? 'Not recorded yet — choose one once you know the outcome.' : `Set by ${staffName(p.contact_changed_by)} · ${fmtWhen(p.contact_changed_at)}`}
-              {liPendingContact(p) ? ' · Pending until marked Connected. Completing a follow-up does not change this.' : ''}
+              {' · Only moves forward; completing a follow-up never changes it.'}
               {converted ? ' · Now tracked in the Agency List.' : ''}
             </p>
+            {superAdmin && !converted && cs !== 'unknown' && <Button size="sm" variant="ghost" className="mt-1" onClick={() => setCorrecting(true)}>Correct contact status…</Button>}
+            {correcting && <ContactCorrection name={p.name} current={cs} onClose={() => setCorrecting(false)} onSave={(to, reason) => setContact(to, reason)} />}
           </section>
           <dl className="grid gap-x-6 gap-y-3 rounded-2xl border border-line p-4 text-sm sm:grid-cols-2">
             {rowsOf.map(([k, v]) => (
@@ -215,7 +225,9 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
           {!rows ? <p className="text-sm text-ink-soft">Loading…</p> : rows.length === 0 ? <p className="text-sm text-ink-soft">No activity yet.</p> : (
             <ol className="max-h-[420px] overflow-y-auto pr-1">{rows.map((h) => (
               <li key={h.id} className="border-l-2 border-line py-2 pl-4">
-                <div className="text-sm font-medium text-heading">{LI_ACTIVITY[h.kind] ?? h.kind}{h.kind === 'contact_status' && typeof h.detail?.to === 'string' ? ` · ${CONTACT[h.detail.to as ContactStatus]?.label ?? h.detail.to}` : ''}</div>
+                <div className="text-sm font-medium text-heading">{LI_ACTIVITY[h.kind] ?? h.kind}
+                  {(h.kind === 'contact_status' || h.kind === 'contact_correction') && typeof h.detail?.to === 'string' ? ` · ${CONTACT[h.detail.to as ContactStatus]?.label ?? h.detail.to}` : ''}
+                  {h.kind === 'stage' && typeof h.detail?.to === 'string' ? ` · ${LI_STAGE[h.detail.from as LinkedInStage]?.label ?? h.detail.from} → ${LI_STAGE[h.detail.to as LinkedInStage]?.label ?? h.detail.to}${h.detail.automatic ? ' (follow-up made)' : ''}` : ''}</div>
                 {h.note && <div className="whitespace-pre-wrap text-sm text-ink-soft">{h.note}</div>}
                 <div className="text-xs text-ink-mute">{fmtWhen(h.at)} · {staffName(h.actor)}</div>
               </li>
@@ -279,7 +291,7 @@ function LogLinkedIn({ p, kind, onClose, onSaved }: { p: LinkedInProspect; kind:
       <Field label="Note" required={kind === 'note'}><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus /></Field>
       {kind === 'follow_up' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
       <p className="mt-3 text-xs text-ink-mute">{kind === 'follow_up'
-        ? `Counts as a follow-up message sent. The contact status (${CONTACT[p.contact_status ?? 'unknown'].label}) stays as it is — use Connected on the profile only when they actually connected.`
+        ? `Counts once per prospect per day as a follow-up message sent${liStage(p) === 'pending' ? ', and moves the prospect from Pending to Not responded' : ''}. The contact status (${CONTACT[p.contact_status ?? 'unknown'].label}) stays as it is.`
         : 'Saved to the history. It does not change any report figure.'}</p>
     </Modal>
   );
@@ -289,7 +301,10 @@ function LinkedInStage({ p, onClose, onSaved, onNeedsDetails, onConverted }: {
   p: LinkedInProspect; onClose: () => void; onSaved: () => void; onNeedsDetails: () => void; onConverted: (agencyId: string) => void;
 }) {
   const toast = useToast();
-  const [stage, setStage] = useState<LiStage>(p.status === 'not_contacted' ? 'contacted' : p.status === 'contacted' ? 'responded' : 'interested');
+  const { session } = useStore();
+  const current = liStage(p);
+  const options = LI_STAGES.filter((s) => s.value !== current && (s.value !== 'pending' || session?.userRole === 'super_admin'));
+  const [stage, setStage] = useState<LinkedInStage>(options[0]?.value ?? 'not_responded');
   const [note, setNote] = useState('');
   const [next, setNext] = useState('');
   const [busy, setBusy] = useState(false);
@@ -315,10 +330,11 @@ function LinkedInStage({ p, onClose, onSaved, onNeedsDetails, onConverted }: {
   return (
     <Modal open onClose={onClose} title="Change stage" subtitle={p.name}
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button></>}>
-      <Field label="Stage"><Select value={stage} onChange={(e) => setStage(e.target.value as LiStage)}>{LI_STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</Select></Field>
+      <p className="mb-3 text-sm">Current stage: <Badge tone={LI_STAGE[current].tone}>{LI_STAGE[current].label}</Badge></p>
+      <Field label="New stage"><Select value={stage} onChange={(e) => setStage(e.target.value as LinkedInStage)}>{options.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</Select></Field>
       <p className="mt-2 text-xs text-ink-mute">{LI_STAGES.find((s) => s.value === stage)?.hint}</p>
       <Field label="Note" className="mt-3"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>
-      {stage !== 'not_interested' && stage !== 'interested' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
+      {stage === 'not_responded' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
     </Modal>
   );
 }

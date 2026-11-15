@@ -60,8 +60,8 @@ select public.log_linkedin_activity(:'l1', 'follow_up', 'Second follow-up', null
 select public.log_linkedin_activity(:'l1', 'interested', 'Wants rates', null, gen_random_uuid());
 select public.log_linkedin_activity(:'l1', 'interested', 'Still keen', null, gen_random_uuid());
 commit;
-select pg_temp.check(pg_temp.n(:po, 'linkedin_connection') - (select c from w0) = 0 and pg_temp.n(:po, 'linkedin_followup') - (select f from w0) = 2
-  and pg_temp.n(:po, 'linkedin_positive') - (select p from w0) = 1, 'report: 2 follow-up messages, 1 positive response (once); outreach sent is not a connection — only an explicit Connected is (0046)');
+select pg_temp.check(pg_temp.n(:po, 'linkedin_connection') - (select c from w0) = 0 and pg_temp.n(:po, 'linkedin_followup') - (select f from w0) = 1
+  and pg_temp.n(:po, 'linkedin_positive') - (select p from w0) = 1, 'report: two follow-ups on one prospect the same day count once (0048), 1 positive response; outreach sent is not a connection (0046)');
 begin; select pg_temp.act_as(:mgr);
 select public.create_linkedin_prospect('{"name":"Manager Lead"}', gen_random_uuid()) ->> 'id' as l2 \gset
 select pg_temp.check((select count(*) from public.linkedin_prospects where id in (:'l1', :'l2')) = 2, 'Senior IRM adds prospects too and sees the team member''s (test 2)');
@@ -88,7 +88,7 @@ select public.create_linkedin_prospect('{"name":"Lina again","phone":"98765 4329
 select pg_temp.check((public.convert_linkedin_prospect(:'l3', '{}') ->> 'agency_id') = :'ag', 'same phone: linked to the existing agency, no duplicate (test 6)');
 select pg_temp.check((select count(*) from public.agency_prospects where regexp_replace(phone, '\D', '', 'g') like '%9876543299') = 1, 'still exactly one agency');
 commit;
-select pg_temp.check(pg_temp.n(:po, 'partner_contact') = (select pc from w0), 'conversion is not counted again as a new partner contact');
+select pg_temp.check(pg_temp.n(:po, 'partner_contact') = (select pc from w0) + 1, 'moving to the Agency List counts one New partner contacted — the second LinkedIn record for the same agency adds none (0048)');
 
 \echo '== onboarding emails (service role, as the agency-proposal function)'
 select public.record_agency_email(:'ag', null, 'mou', 'accepted', '<mou-1>', null, null);

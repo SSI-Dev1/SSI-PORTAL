@@ -271,7 +271,21 @@ export interface LinkedInProspect {
   contact_status?: ContactStatus; contact_changed_by?: string | null; contact_changed_at?: string | null; converted_by?: string | null;
   conversion_pending?: boolean;
   next_follow_up_auto?: boolean;
+  /** 0048: the one current pipeline stage (authoritative). */
+  pipeline_stage?: LinkedInStage; stage_changed_by?: string | null; stage_changed_at?: string | null;
 }
+export type LinkedInStage = 'pending' | 'not_responded' | 'positive' | 'closed';
+export const LI_STAGE: Record<LinkedInStage, { label: string; tone: Tone; hint: string }> = {
+  pending: { label: 'Pending', tone: 'slate', hint: 'Not attempted yet' },
+  not_responded: { label: 'Not responded', tone: 'amber', hint: 'Follow-up made, no response yet' },
+  positive: { label: 'Positive response', tone: 'green', hint: 'Interested — moves to the Agency List' },
+  closed: { label: 'Closed', tone: 'red', hint: 'Not proceeding; history kept' },
+};
+/** Stage with a fallback for rows saved before 0048. */
+export const liStage = (p: Pick<LinkedInProspect, 'pipeline_stage' | 'status'>): LinkedInStage => p.pipeline_stage
+  ?? (p.status === 'not_contacted' ? 'pending' : p.status === 'interested' || p.status === 'converted' ? 'positive' : p.status === 'not_interested' ? 'closed' : 'not_responded');
+/** Contact status may only move forward (Not recorded → Not connected → Connected) except for a Super Admin correction. */
+export const contactAllowed = (from: ContactStatus, to: ContactStatus) => from !== 'connected' && !(from === 'not_connected' && to === 'unknown');
 export interface LinkedInActivity { id: number; prospect_id: string; kind: string; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
 export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = {
   not_contacted: { label: 'No outreach yet', tone: 'slate' }, contacted: { label: 'Outreach sent', tone: 'blue' }, responded: { label: 'Responded', tone: 'violet' },
@@ -280,7 +294,7 @@ export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = 
 export const LI_ACTIVITY: Record<string, string> = {
   created: 'Prospect added', edited: 'Details edited', contacted: 'Connection contacted', follow_up: 'Follow-up message sent', response: 'Response received',
   interested: 'Positive response', not_interested: 'Not interested', note: 'Note', follow_up_date: 'Follow-up scheduled', converted: 'Moved to the Agency List',
-  contact_status: 'Contact status changed',
+  contact_status: 'Contact status changed', contact_correction: 'Contact status corrected (Super Admin)', stage: 'Stage changed',
 };
 
 export function useLinkedIn(enabled = true) {
@@ -310,9 +324,10 @@ export function useLinkedIn(enabled = true) {
   return { rows, error, reload: load };
 }
 
-/** LinkedIn Pending contact: Not recorded or Not connected and still open (same rule as the report). */
-export const liPendingContact = (p: { contact_status?: ContactStatus | null; status: LinkedInStatus }) =>
-  (p.contact_status ?? 'unknown') !== 'connected' && p.status !== 'converted' && p.status !== 'not_interested';
+/** LinkedIn Pending contact: not attempted yet (current stage Pending) — same rule as the Daily Work Report. */
+export const liPendingContact = (p: Pick<LinkedInProspect, 'pipeline_stage' | 'status'>) => p.status !== 'converted' && liStage(p) === 'pending';
+/** LinkedIn Not responded: attempted, no response yet (current stage). */
+export const liNotResponded = (p: Pick<LinkedInProspect, 'pipeline_stage' | 'status'>) => p.status !== 'converted' && liStage(p) === 'not_responded';
 /** LinkedIn follow-up due on or before today (one outstanding follow-up per prospect). */
 export const liFollowUpDue = (p: { next_follow_up: string | null; status: LinkedInStatus }) =>
   !!p.next_follow_up && p.next_follow_up <= today() && p.status !== 'converted' && p.status !== 'not_interested';

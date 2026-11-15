@@ -142,7 +142,7 @@ export default function PartnershipDashboard() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader title="My task queue" subtitle={queue ? `${queue.tasks.filter((t) => t.due_date <= today()).length + queue.linkedin.length} due · unfinished items move to the next working day` : undefined} />
+          <CardHeader title="My task queue" subtitle={queue ? `${queue.tasks.filter((t) => t.due_date <= today()).length + queue.linkedin.length} due${queue.linkedin_pending_contacts ? ` · ${queue.linkedin_pending_contacts} LinkedIn contacts pending` : ''} · unfinished items move to the next working day` : undefined} />
           <List empty="Nothing due. Follow-ups, meetings and visits you schedule appear here." items={[
             ...(queue?.tasks ?? []).map((t) => ({
               key: t.id, title: `${TASK_KIND[t.kind]} · ${t.agency}`, sub: `${t.attendee ? `${t.attendee} · ` : ''}${t.carry_count ? `carried over ${t.carry_count}× · ` : ''}${t.reference}`,
@@ -150,7 +150,7 @@ export default function PartnershipDashboard() {
               onClick: () => open(t.prospect_id),
             })),
             ...(queue?.linkedin ?? []).map((l) => ({
-              key: `li-${l.id}`, title: `LinkedIn follow-up · ${l.name}`, sub: l.reference,
+              key: `li-${l.id}`, title: `LinkedIn follow-up · ${l.name}`, sub: `${l.reference}${l.contact_status && l.contact_status !== 'connected' ? ` · ${l.contact_status === 'unknown' ? 'Not recorded' : 'Not connected'}` : ''}${l.auto ? ' · carried over' : ''}`,
               right: <span className={l.overdue ? 'font-semibold text-red-600 dark:text-red-400' : ''}>{fmtDate(l.due_date)}</span>,
               onClick: () => navigate(`../agencies/linkedin?p=${l.id}`, { relative: 'path' }),
             })),

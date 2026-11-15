@@ -12,7 +12,7 @@ import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
 import { cn, matches } from '../../lib/utils';
-import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
+import { CONTACT, LI_ACTIVITY, LI_STATUS, agencyAccess, fmtDate, fmtWhen, liFollowUpDue, liPendingContact, rpc, today, useLinkedIn, type AgencyType, type ContactStatus, type LinkedInActivity, type LinkedInProspect, type LinkedInStatus } from '../../lib/agencies';
 
 // LinkedIn log activity: exactly three actions (Abigail's Portal Development Specification).
 type Kind = 'follow_up' | 'note' | 'stage';
@@ -46,7 +46,14 @@ export default function LinkedInOutreach() {
     if (id) { setProfileId(id); setParams((x) => { const n = new URLSearchParams(x); n.delete('p'); return n; }, { replace: true }); }
   }, [params, setParams]);
   const staffName = (id: string | null | undefined) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Employee') : '—');
-  const shown = useMemo(() => (rows ?? []).filter((p) => (!status || p.status === status) && (!contact || (p.contact_status ?? 'unknown') === contact)
+  // Pending = Not recorded or Not connected and still open — the same rule as the Daily Work Report.
+  const counts = useMemo(() => {
+    const r = rows ?? [];
+    return { pending: r.filter(liPendingContact).length, connected: r.filter((p) => p.contact_status === 'connected').length,
+      due: r.filter(liFollowUpDue).length, closed: r.filter((p) => p.status === 'not_interested').length };
+  }, [rows]);
+  const shown = useMemo(() => (rows ?? []).filter((p) => (!status || p.status === status)
+    && (!contact || (contact === 'pending' ? liPendingContact(p) : contact === 'due' ? liFollowUpDue(p) : (p.contact_status ?? 'unknown') === contact))
     && matches(q, p.name, p.company_name ?? '', p.phone ?? '', p.email ?? '', p.reference)), [rows, q, status, contact]);
   const paged = usePaged(shown, 20, `${q}|${status}|${contact}`);
   const profile = profileId ? rows?.find((r) => r.id === profileId) ?? null : null;
@@ -57,10 +64,23 @@ export default function LinkedInOutreach() {
       <PageHeader title="LinkedIn Outreach" subtitle="People you contact on LinkedIn, tracked by hand. Open a prospect to record the contact status or move them to the Agency List."
         actions={<Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add LinkedIn Prospect</Button>} />
       {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
+      {rows && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {([['Pending contacts', counts.pending, 'pending', 'Not recorded or Not connected'], ['Connected', counts.connected, 'connected', 'Recorded as Connected'],
+             ['Follow-ups due', counts.due, 'due', 'Due today or overdue'], ['Closed', counts.closed, '', 'Closed leads']] as [string, number, string, string][]).map(([l, v, f, h]) => (
+            <button key={l} type="button" onClick={() => { if (l === 'Closed') { setContact(''); setStatus('not_interested'); } else { setStatus(''); setContact(f); } }}
+              className="rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+              <span className="block font-display text-xl font-semibold text-heading">{v}</span>
+              <span className="block text-xs text-ink-soft">{l}</span><span className="block truncate text-[11px] text-ink-mute">{h}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, company, phone, email…" className="w-full sm:w-72" />
-          <FilterSelect label="Contact" value={contact} onChange={setContact} options={[{ value: '', label: 'Any contact status' }, ...(Object.keys(CONTACT) as ContactStatus[]).map((k) => ({ value: k, label: CONTACT[k].label }))]} />
+          <FilterSelect label="Contact" value={contact} onChange={setContact} options={[{ value: '', label: 'Any contact status' }, { value: 'pending', label: 'Pending (not connected)' }, { value: 'due', label: 'Follow-up due' },
+            ...(Object.keys(CONTACT) as ContactStatus[]).map((k) => ({ value: k, label: CONTACT[k].label }))]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: '', label: 'All statuses' }, ...(Object.keys(LI_STATUS) as LinkedInStatus[]).map((k) => ({ value: k, label: LI_STATUS[k].label }))]} />
           <span className="ml-auto text-xs text-ink-mute">{rows ? `${shown.length} of ${rows.length}` : ''}</span>
         </div>
@@ -80,7 +100,7 @@ export default function LinkedInOutreach() {
                       <div className="text-xs text-ink-mute">{p.reference}</div>
                     </td>
                     <td className="text-sm">{p.company_name ?? '—'}<div className="text-xs text-ink-mute">{[p.phone, p.email].filter(Boolean).join(' · ')}</div></td>
-                    <td><Badge tone={cs.tone} dot>{cs.label}</Badge></td>
+                    <td><Badge tone={cs.tone} dot>{cs.label}</Badge>{liPendingContact(p) && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Pending</div>}</td>
                     <td><Badge tone={LI_STATUS[p.status].tone}>{LI_STATUS[p.status].label}</Badge></td>
                     <td className="whitespace-nowrap text-sm">{fmtDate(p.last_contact_at)}</td>
                     <td className={`whitespace-nowrap text-sm ${due ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(p.next_follow_up)}</td>
@@ -124,7 +144,7 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
   useEffect(() => { void load(); }, [load, p.updated_at]);
   const cs = p.contact_status ?? 'unknown';
   const converted = p.status === 'converted' || !!p.agency_id;
-  const setContact = async (v: 'connected' | 'not_connected') => {
+  const setContact = async (v: ContactStatus) => {
     if (v === cs) return;
     setBusy(true);
     const r = await rpc('set_linkedin_contact_status', { p_id: p.id, p_status: v, p_note: null, p_request: crypto.randomUUID() });
@@ -157,7 +177,7 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
               <Badge tone={CONTACT[cs].tone} dot>{CONTACT[cs].label}</Badge>
             </div>
             <div className="flex flex-wrap gap-2" role="group" aria-label="Contact status">
-              {(['connected', 'not_connected'] as const).map((v) => (
+              {(['connected', 'not_connected', 'unknown'] as const).map((v) => (
                 <button key={v} type="button" disabled={busy || converted} aria-pressed={cs === v} onClick={() => void setContact(v)}
                   className={cn('rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-60',
                     cs === v ? 'border-rust bg-brand-50 text-rust dark:bg-brand-500/10' : 'border-line text-ink-soft hover:border-brand-300 hover:text-heading')}>
@@ -167,6 +187,7 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
             </div>
             <p className="mt-2 text-xs text-ink-mute">
               {cs === 'unknown' ? 'Not recorded yet — choose one once you know the outcome.' : `Set by ${staffName(p.contact_changed_by)} · ${fmtWhen(p.contact_changed_at)}`}
+              {liPendingContact(p) ? ' · Pending until marked Connected. Completing a follow-up does not change this.' : ''}
               {converted ? ' · Now tracked in the Agency List.' : ''}
             </p>
           </section>
@@ -257,7 +278,9 @@ function LogLinkedIn({ p, kind, onClose, onSaved }: { p: LinkedInProspect; kind:
     <Modal open onClose={onClose} title={KIND[kind].title} subtitle={p.name} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>Save</Button></>}>
       <Field label="Note" required={kind === 'note'}><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} autoFocus /></Field>
       {kind === 'follow_up' && <Field label="Next follow-up (optional)" className="mt-3"><DatePicker value={next} onChange={setNext} min={today()} /></Field>}
-      <p className="mt-3 text-xs text-ink-mute">{KIND[kind].report ? `Counts in your Daily Work Report (${KIND[kind].report}).` : 'Saved to the history. It does not change any report figure.'}</p>
+      <p className="mt-3 text-xs text-ink-mute">{kind === 'follow_up'
+        ? `Counts as a follow-up message sent. The contact status (${CONTACT[p.contact_status ?? 'unknown'].label}) stays as it is — use Connected on the profile only when they actually connected.`
+        : 'Saved to the history. It does not change any report figure.'}</p>
     </Modal>
   );
 }

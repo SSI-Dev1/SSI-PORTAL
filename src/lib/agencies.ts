@@ -258,8 +258,8 @@ export const fmtTime = (t: string | null | undefined) => {
 export interface PendingWork {
   date: string;
   tasks: { id: string; kind: AgencyTask['kind']; prospect_id: string; agency: string; reference: string; due_date: string; due_time: string | null; attendee: string | null; note: string | null; overdue: boolean; carry_count: number }[];
-  linkedin: { id: string; name: string; reference: string; due_date: string; overdue: boolean }[];
-  not_connected: number; open_attempts: number;
+  linkedin: { id: string; name: string; reference: string; due_date: string; overdue: boolean; contact_status?: ContactStatus; auto?: boolean }[];
+  linkedin_pending_contacts?: number; not_connected: number; open_attempts: number;
 }
 
 export type LinkedInStatus = 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';
@@ -270,10 +270,11 @@ export interface LinkedInProspect {
   /** 0041: recorded only by an explicit choice; separate from the outreach progress and any agency stage. */
   contact_status?: ContactStatus; contact_changed_by?: string | null; contact_changed_at?: string | null; converted_by?: string | null;
   conversion_pending?: boolean;
+  next_follow_up_auto?: boolean;
 }
 export interface LinkedInActivity { id: number; prospect_id: string; kind: string; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
 export const LI_STATUS: Record<LinkedInStatus, { label: string; tone: Tone }> = {
-  not_contacted: { label: 'Not contacted', tone: 'slate' }, contacted: { label: 'Contacted', tone: 'blue' }, responded: { label: 'Responded', tone: 'violet' },
+  not_contacted: { label: 'No outreach yet', tone: 'slate' }, contacted: { label: 'Outreach sent', tone: 'blue' }, responded: { label: 'Responded', tone: 'violet' },
   interested: { label: 'Positive response', tone: 'green' }, not_interested: { label: 'Closed', tone: 'red' }, converted: { label: 'Converted to agency', tone: 'navy' },
 };
 export const LI_ACTIVITY: Record<string, string> = {
@@ -308,3 +309,10 @@ export function useLinkedIn(enabled = true) {
   }, [load, enabled, demo]);
   return { rows, error, reload: load };
 }
+
+/** LinkedIn Pending contact: Not recorded or Not connected and still open (same rule as the report). */
+export const liPendingContact = (p: { contact_status?: ContactStatus | null; status: LinkedInStatus }) =>
+  (p.contact_status ?? 'unknown') !== 'connected' && p.status !== 'converted' && p.status !== 'not_interested';
+/** LinkedIn follow-up due on or before today (one outstanding follow-up per prospect). */
+export const liFollowUpDue = (p: { next_follow_up: string | null; status: LinkedInStatus }) =>
+  !!p.next_follow_up && p.next_follow_up <= today() && p.status !== 'converted' && p.status !== 'not_interested';

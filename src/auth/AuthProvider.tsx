@@ -22,6 +22,8 @@ interface AuthValue {
   recoveryVerified: boolean;
   /** The reset / sign-in link failed (expired, used, invalid). */
   linkFailed: boolean;
+  /** A reset link's one-time token is being checked with Supabase. */
+  verifyingLink: boolean;
   /** Seconds left before automatic sign-out (only set during the final minute). */
   idleSecondsLeft: number | null;
   stayActive: () => void;
@@ -35,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [preview, setPreview] = useState<Session | null>(null);
   // A reset / sign-in link that failed comes back with ?error_code=… (or #error_code=…): explain it
   // on the sign-in page and remove it from the address bar.
-  const [linkFailed] = useState(() => {
+  const [linkFailed, setLinkFailed] = useState(() => {
     const q = new URLSearchParams(window.location.search);
     const h = new URLSearchParams(window.location.hash.replace(/^#\/?/, '').split('?').pop() ?? '');
     return !!(q.get('error_code') ?? h.get('error_code') ?? q.get('error') ?? h.get('error'));
@@ -43,6 +45,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // On the reset page a session only counts once Supabase confirms it came from a recovery link:
   // the PASSWORD_RECOVERY event, or a ?code= exchanged on this page (only reset emails point here).
   const [recoveryVerified, setRecoveryVerified] = useState(false);
+  // Reset emails link to /reset-password/?token_hash=…&type=recovery. The token is checked here with
+  // Supabase (single use, Supabase's expiry), so the link works in any browser or device.
+  const [verifyingLink, setVerifyingLink] = useState(
+    () => isResetPasswordPath() && new URLSearchParams(window.location.search).get('type') === 'recovery' && !!new URLSearchParams(window.location.search).get('token_hash'),
+  );
+  useEffect(() => {
+    if (!verifyingLink || !supabase) return;
+    const q = new URLSearchParams(window.location.search);
+    const tokenHash = q.get('token_hash') ?? '';
+    // Remove the token from the address bar and history before anything else runs.
+    window.history.replaceState(null, '', window.location.pathname);
+    void supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }).then(({ data, error }) => {
+      if (error || !data.session) setLinkFailed(true);
+      else setRecoveryVerified(true);
+      setVerifyingLink(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [notice, setNotice] = useState(() => {
     const q = new URLSearchParams(window.location.search);
     const h = new URLSearchParams(window.location.hash.replace(/^#\/?/, '').split('?').pop() ?? '');
@@ -161,13 +181,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       notice,
       recoveryVerified,
       linkFailed,
+      verifyingLink,
       refresh,
       signOut,
       setPreview,
       idleSecondsLeft,
       stayActive: () => resetIdle.current(),
     }),
-    [status, preview, realSession, notice, recoveryVerified, linkFailed, refresh, signOut, idleSecondsLeft],
+    [status, preview, realSession, notice, recoveryVerified, linkFailed, verifyingLink, refresh, signOut, idleSecondsLeft],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

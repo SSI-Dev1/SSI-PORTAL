@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
-import { buildAuthEmail, verifyLink } from './authEmail.ts';
+import { buildAuthEmail, recoveryLink, verifyLink } from './authEmail.ts';
 
 Deno.test('recovery link is the Supabase verify link with the requested redirect', () => {
   const url = verifyLink('https://ref.supabase.co/', { token_hash: 'pkce_abc', email_action_type: 'recovery', redirect_to: 'https://portal.ssiglobal.uk/reset-password/', site_url: 'https://portal.ssiglobal.uk' });
@@ -46,4 +46,17 @@ Deno.test('hook signature: valid, tampered, stale and missing', async () => {
   assert(!(await verifyStandardWebhook(secret, h(sig, ts - 600), body)), 'stale timestamp');
   assert(!(await verifyStandardWebhook(secret, new Headers(), body)), 'no headers');
   assert(!(await verifyStandardWebhook('', h(sig), body)), 'no secret');
+});
+
+Deno.test('recovery link goes straight to the reset page with the token hash', () => {
+  assertEquals(recoveryLink({ token_hash: 'pkce_abc+/=', redirect_to: 'https://portal.ssiglobal.uk/reset-password/', site_url: 'https://portal.ssiglobal.uk' }),
+    'https://portal.ssiglobal.uk/reset-password/?token_hash=pkce_abc%2B%2F%3D&type=recovery');
+  assertEquals(recoveryLink({ token_hash: 'h', redirect_to: 'https://portal.ssiglobal.uk/reset-password/?x=1#y', site_url: '' }),
+    'https://portal.ssiglobal.uk/reset-password/?token_hash=h&type=recovery');
+});
+
+Deno.test('other redirects keep the Supabase verify link', () => {
+  assertEquals(recoveryLink({ token_hash: 'h', redirect_to: 'https://portal.ssiglobal.uk/', site_url: '' }), null);
+  assertEquals(recoveryLink({ token_hash: 'h', redirect_to: 'http://evil.test/reset-password/', site_url: '' }), null);
+  assertEquals(recoveryLink({ token_hash: 'h', redirect_to: '', site_url: 'https://portal.ssiglobal.uk' }), null);
 });

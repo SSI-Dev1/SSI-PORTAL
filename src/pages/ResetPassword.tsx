@@ -22,7 +22,7 @@ export default function ResetPassword() {
 
   const state: 'checking' | 'form' | 'expired' | 'done' = done ? 'done'
     : auth.linkFailed ? 'expired'
-    : auth.status === 'loading' ? 'checking'
+    : auth.status === 'loading' || auth.verifyingLink ? 'checking'
     : auth.status === 'recovery' && auth.recoveryVerified ? 'form'
     : 'expired';
 
@@ -121,7 +121,7 @@ function Expired() {
       <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"><ShieldAlert className="h-7 w-7" /></span>
       <h1 className="mt-4 font-display text-[24px] font-semibold tracking-tight text-heading">Password Reset Link Expired</h1>
       <p className="mt-2 text-[15px] text-ink-soft">This password reset link is invalid or has expired. Please request a new link.</p>
-      <p className="mt-2 text-xs text-ink-mute">Each link works once, only the most recent email is valid, and it must be opened in the browser where you requested it.</p>
+      <p className="mt-2 text-xs text-ink-mute">Each link works once and only the most recent email is valid. Request a new one and use it within the time shown in the email.</p>
       <Button size="lg" className="mt-6 w-full" onClick={() => window.location.assign(`${appRoot()}#/login?forgot=1`)}>Request New Reset Link</Button>
       <button type="button" className="mt-3 text-sm font-semibold text-rust hover:underline" onClick={() => window.location.assign(`${appRoot()}#/login`)}>Back to Login</button>
     </div>

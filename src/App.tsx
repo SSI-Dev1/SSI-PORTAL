@@ -60,6 +60,8 @@ import AgencyProposals from './pages/shared/AgencyProposals';
 import LinkedInOutreach from './pages/shared/LinkedInOutreach';
 import { ClientActivityLog, ClientDetail, ClientDirectory, MyClientsPage } from './pages/shared/Clients';
 import UniversityPartnerships from './pages/shared/UniversityPartnerships';
+import ResetPassword from './pages/ResetPassword';
+import { isResetPasswordPath } from './auth/auth';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
 import { HRCorrections, HREarlyCheckout } from './pages/hr/HRRequests';
@@ -182,6 +184,8 @@ export default function App() {
           <StoreProvider>
           <HRProvider>
           <ChatProvider>
+          {/* /reset-password/: the dedicated reset page, before any route guard or dashboard redirect. */}
+          {isResetPasswordPath() ? <ResetPassword /> : (
           <HashRouter>
             <Routes>
               <Route path="/" element={<Home />} />
@@ -357,6 +361,7 @@ export default function App() {
               <Route path="*" element={<Home />} />
             </Routes>
           </HashRouter>
+          )}
           </ChatProvider>
           </HRProvider>
           </StoreProvider>

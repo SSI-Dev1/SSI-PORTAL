@@ -177,7 +177,7 @@ export function mailConfig(env: (k: string) => string | undefined): MailConfig {
 export type SendResult = { ok: true; messageId: string } | { ok: false; detail: string };
 
 /** One Brevo transactional request. Accepted means Brevo took it — not that it was delivered. */
-export async function sendViaBrevo(cfg: MailConfig, to: { email: string; name: string }, mail: { subject: string; html: string; text: string }, fetcher: typeof fetch = fetch): Promise<SendResult> {
+export async function sendViaBrevo(cfg: MailConfig, to: { email: string; name: string }, mail: { subject: string; html: string; text: string }, fetcher: typeof fetch = fetch, tag = 'account-credentials'): Promise<SendResult> {
   if (!cfg.apiKey || !cfg.fromAddress) return { ok: false, detail: 'Email service is not configured' };
   try {
     const res = await fetcher('https://api.brevo.com/v3/smtp/email', {
@@ -189,7 +189,7 @@ export async function sendViaBrevo(cfg: MailConfig, to: { email: string; name: s
         subject: mail.subject,
         htmlContent: mail.html,
         textContent: mail.text,
-        tags: ['account-credentials'],
+        tags: [tag],
       }),
       signal: AbortSignal.timeout(10_000),
     });

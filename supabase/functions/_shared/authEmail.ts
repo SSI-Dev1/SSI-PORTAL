@@ -21,6 +21,29 @@ export function verifyLink(supabaseUrl: string, d: Pick<AuthEmailData, 'token_ha
   return `${base}/auth/v1/verify?${q.toString()}`;
 }
 
+/**
+ * Password reset: link straight to the portal's reset page with the one-time token hash. The page
+ * verifies it with Supabase (verifyOtp), so it works in any browser or device — not only the one that
+ * asked — and mail scanners that merely fetch the page cannot use it up. Only for a redirect to the
+ * portal's own /reset-password/ page (Supabase has already checked it against the allow-list).
+ */
+export function recoveryLink(d: Pick<AuthEmailData, 'token_hash' | 'redirect_to' | 'site_url'>): string | null {
+  const target = d.redirect_to || '';
+  let u: URL;
+  try {
+    u = new URL(target);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.hostname !== 'localhost') return null;
+  if (!/\/reset-password\/?$/.test(u.pathname)) return null;
+  u.search = '';
+  u.hash = '';
+  u.searchParams.set('token_hash', d.token_hash);
+  u.searchParams.set('type', 'recovery');
+  return u.toString();
+}
+
 const COPY: Record<string, { subject: string; heading: string; lines: string[]; button: string; note: string }> = {
   recovery: {
     subject: 'SSI GLOBAL — Reset Your Password',

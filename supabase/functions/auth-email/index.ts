@@ -10,7 +10,7 @@
 // Secret:  supabase secrets set SEND_EMAIL_HOOK_SECRET='v1,whsec_…'   (from Auth → Hooks → Send Email)
 // Uses:    BREVO_API_KEY, EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, PORTAL_PUBLIC_URL (already set)
 import { mailConfig, sendViaBrevo } from '../_shared/credentials.ts';
-import { buildAuthEmail, verifyLink, type AuthEmailData } from '../_shared/authEmail.ts';
+import { buildAuthEmail, recoveryLink, verifyLink, type AuthEmailData } from '../_shared/authEmail.ts';
 import { describeWebhookFailure, verifyStandardWebhook } from '../_shared/webhookSignature.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     if (d.token_hash_new) sends.push({ to: payload.user.email, url: verifyLink(SUPABASE_URL, d, d.token_hash_new) });
     sends.push({ to: payload.user.new_email, url: verifyLink(SUPABASE_URL, d, d.token_hash) });
   } else {
-    sends.push({ to: payload.user.email, url: verifyLink(SUPABASE_URL, d) });
+    sends.push({ to: payload.user.email, url: (type === 'recovery' && recoveryLink(d)) || verifyLink(SUPABASE_URL, d) });
   }
   for (const s of sends) {
     const mail = buildAuthEmail(type, s.url, MAIL.portalUrl, d.token);

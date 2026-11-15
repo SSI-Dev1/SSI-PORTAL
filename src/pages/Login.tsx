@@ -258,7 +258,7 @@ export default function Login() {
           <Input icon={Mail} type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="you@company.com" autoFocus invalid={!!resetError}
             onKeyDown={(e) => { if (e.key === 'Enter') void reset(); }} />
         </Field>
-        <p className="mt-3 text-xs text-ink-mute">The link works once and expires after a while. Open it in this browser.</p>
+        <p className="mt-3 text-xs text-ink-mute">The link works once, on any device. Requesting another link cancels the previous one.</p>
       </Modal>
     </div>
   );

@@ -26,12 +26,15 @@ import { LiveActivity } from '../../components/LiveActivity';
 import { useLookup, useStore } from '../../store/store';
 import { partnershipFocused } from '../../lib/agencies';
 import PartnershipDashboard from '../shared/PartnershipDashboard';
+import { PartnerSuccessDashboard } from '../shared/Clients';
+import { partnerSuccessFocused } from '../../lib/clients';
 import { cn, daysUntil, formatDate, greeting, money } from '../../lib/utils';
 
 /** Partnership Officers see the partnership dashboard instead of student / application figures. */
 export default function AdminDashboard() {
   const { session } = useStore();
   if (partnershipFocused(session)) return <PartnershipDashboard />;
+  if (partnerSuccessFocused(session)) return <PartnerSuccessDashboard />;
   // Agencies access plus student / application work (e.g. Senior IRM): partnership first, then the rest.
   if (session && session.userRole !== 'super_admin' && session.permissions.includes('agency_outreach'))
     return <><PartnershipDashboard /><div className="mt-10"><BusinessAdminDashboard /></div></>;

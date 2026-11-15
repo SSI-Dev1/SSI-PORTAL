@@ -113,3 +113,13 @@ test('LinkedIn Outreach: anyone with Agencies & proposals (Partnership Officer, 
   assert.equal(canOpenPath(appTeam, 'agencies/linkedin'), false);
   assert.equal(canOpenPath(partner, 'agencies/linkedin'), false);
 });
+
+test('Partner Success: Agency List and My Clients, no partnership development or partner administration', () => {
+  const pso = { role: 'staff' as const, userRole: 'support_staff' as const, permissions: ['students', 'applications', 'catalogue', 'tasks', 'partner_success'], partnerModules: [] };
+  assert.equal(canOpenPath(pso, 'clients'), true);
+  assert.equal(canOpenPath(pso, 'clients/mine'), true);
+  assert.equal(canOpenPath(pso, 'clients/activity'), true);
+  for (const p of ['agencies', 'agencies/new', 'agencies/proposals', 'agencies/linkedin', 'partners', 'partners/registrations', 'commissions', 'users']) assert.equal(canOpenPath(pso, p), false, p);
+  assert.equal(canOpenPath(pso, 'applications'), true, 'application work kept');
+  assert.equal(canOpenPath(partner, 'clients'), false, 'partners never');
+});

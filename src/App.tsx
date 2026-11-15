@@ -58,6 +58,7 @@ import Agencies from './pages/shared/Agencies';
 import AgencyDetail from './pages/shared/AgencyDetail';
 import AgencyProposals from './pages/shared/AgencyProposals';
 import LinkedInOutreach from './pages/shared/LinkedInOutreach';
+import { ClientActivityLog, ClientDetail, ClientDirectory, MyClientsPage } from './pages/shared/Clients';
 import UniversityPartnerships from './pages/shared/UniversityPartnerships';
 import MyCommission from './pages/client/MyCommission';
 import { MyDocuments, MyTeamMembers } from './pages/work/SelfService';
@@ -282,6 +283,10 @@ export default function App() {
                 <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
                 <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
                 <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
+                <Route path="clients" element={<ClientDirectory />} />
+                <Route path="clients/mine" element={<MyClientsPage />} />
+                <Route path="clients/activity" element={<ClientActivityLog />} />
+                <Route path="clients/:key" element={<ClientDetail />} />
                 <Route path="university-partnerships" element={<UniversityPartnerships />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
@@ -313,6 +318,10 @@ export default function App() {
                 <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
                 <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
                 <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
+                <Route path="clients" element={<ClientDirectory />} />
+                <Route path="clients/mine" element={<MyClientsPage />} />
+                <Route path="clients/activity" element={<ClientActivityLog />} />
+                <Route path="clients/:key" element={<ClientDetail />} />
                 <Route path="university-partnerships" element={<UniversityPartnerships />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />

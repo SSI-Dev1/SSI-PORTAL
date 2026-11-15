@@ -31,6 +31,8 @@ import Agencies from './shared/Agencies';
 import AgencyDetail from './shared/AgencyDetail';
 import PartnershipDashboard from './shared/PartnershipDashboard';
 import LinkedInOutreach from './shared/LinkedInOutreach';
+import { ClientActivityLog, ClientDetail, ClientDirectory, MyClientsPage, PartnerSuccessDashboard } from './shared/Clients';
+import { ClientsDemo } from '../lib/clients';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -134,7 +136,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['linkedin', 'LinkedIn', <LinkedInOutreach key="li" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['linkedin', 'LinkedIn', <LinkedInOutreach key="li" />], ['ps', 'PSO dashboard', <PartnerSuccessDashboard key="psd" />], ['clients', 'PSO agency list', <ClientDirectory key="cd" />], ['clients/mine', 'My Clients', <MyClientsPage key="mc" />], ['clients/activity', 'Activity log', <ClientActivityLog key="cal" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 // Clearly fake commission data (not from any real agreement) for layout checks only.
@@ -210,6 +212,23 @@ const AGENCY_SAMPLE: AgencyData = {
   registrations: [{ id: 'reg-demo', reference: 'PR-26-DEMO01', status: 'activated', link_status: 'closed', submitted_at: d(10), activated_at: d(4) }],
 };
 
+// Clearly fake Partner Success data for layout checks only.
+const CLIENTS_SAMPLE = {
+  directory: [
+    { key: 'p:d1', partner_id: 'd1', agency_id: null, name: 'Sample Client One (demo)', country: 'Sampleland', city: 'Sample City', agency_type: 'domestic', business_status: 'verified' as const, onboarded_on: '2026-10-01',
+      main_officer_id: 'm', main_officer: 'Main Officer (sample)', sub_officer_id: ME, sub_officer: 'Manu Manager', mine: true, contact_name: 'Contact One', phone: '+00 0000 000011', email: 'one@example.test' },
+    { key: 'p:d2', partner_id: 'd2', agency_id: null, name: 'Sample Client Two (demo)', country: 'Exampleland', city: null, agency_type: 'international', business_status: 'verified' as const, onboarded_on: '2026-09-01',
+      main_officer_id: 'm', main_officer: 'Main Officer (sample)', sub_officer_id: 'o2', sub_officer: 'Other Officer (sample)', mine: false, contact_name: null, phone: null, email: null },
+    { key: 'a:d3', partner_id: null, agency_id: 'd3', name: 'Sample Historic Client (demo)', country: 'Sampleland', city: null, agency_type: null, business_status: 'historical' as const, onboarded_on: null,
+      main_officer_id: null, main_officer: null, sub_officer_id: null, sub_officer: null, mine: false, contact_name: null, phone: null, email: null },
+  ],
+  mine: [{ key: 'p:d1', partner_id: 'd1', agency_id: null, name: 'Sample Client One (demo)', country: 'Sampleland', city: 'Sample City', agency_type: 'domestic', business_status: 'verified' as const,
+    onboarded_on: '2026-10-01', main_officer: 'Main Officer (sample)', contact_name: 'Contact One', phone: '+00 0000 000011', email: 'one@example.test', applications: 5, pending: 2, submitted: 3, offers: 1, visa_granted: 0,
+    last_activity: d(1), next_follow_up: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10) }],
+  activities: [{ id: 1, client_key: 'p:d1', partner_id: 'd1', agency_id: null, employee_id: ME, kind: 'query' as const, outcome: 'completed' as const, note: 'Sample note', next_follow_up: null, at: d(1) }],
+  portfolio: { mine: { applications: 5, pending: 2, offers: 1 }, team: { agencies: 0 }, today: { applications: 1, offers: 0, agencies: 1 } },
+};
+
 export default function HRDemo() {
   const [data, setData] = useState<HRData>(sample);
   const [log, setLog] = useState<string[]>([]);
@@ -256,6 +275,7 @@ export default function HRDemo() {
     <StoreContext.Provider value={store}>
       <CommissionDemo.Provider value={COMMISSION_SAMPLE}>
       <AgencyDemo.Provider value={AGENCY_SAMPLE}>
+      <ClientsDemo.Provider value={CLIENTS_SAMPLE}>
       <HRContext.Provider value={hr}>
         <div className="min-h-screen bg-canvas">
           <div className="sticky top-0 z-30 flex flex-wrap gap-1.5 border-b border-line bg-surface/90 p-3 text-xs backdrop-blur">
@@ -265,10 +285,11 @@ export default function HRDemo() {
             <AttendanceControl />
           </div>
           <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6">
-            <Routes>{PAGES.map(([k, , el]) => <Route key={k} path={k} element={el} />)}<Route path="agencies/:id" element={<AgencyDetail />} /></Routes>
+            <Routes>{PAGES.map(([k, , el]) => <Route key={k} path={k} element={el} />)}<Route path="agencies/:id" element={<AgencyDetail />} /><Route path="clients/:key" element={<ClientDetail />} /></Routes>
           </div>
         </div>
       </HRContext.Provider>
+      </ClientsDemo.Provider>
       </AgencyDemo.Provider>
       </CommissionDemo.Provider>
     </StoreContext.Provider>

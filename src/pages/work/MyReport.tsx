@@ -9,6 +9,7 @@ import { MetricActivitiesModal, QuickLogModal, ReportForm, reportTone, type Repo
 import { useConfirm } from '../../components/feedback';
 import { useHR } from '../../store/hr';
 import { useStore } from '../../store/store';
+import { rpc } from '../../lib/agencies';
 import { supabase } from '../../auth/auth';
 import { companyDate, fmtDay, type MetricValue } from '../../data/hr';
 import { chosenDesignation } from '../../layouts/Sidebar';
@@ -150,6 +151,7 @@ export default function MyReport() {
           {dirty && <span className="text-xs text-amber-600">Unsaved summary</span>}
         </div>
       </Card>
+      {session?.permissions.includes('partner_success') && <PortfolioDay date={date} />}
       {existing?.status === 'Correction Requested' && existing.reviewComment && (
         <Alert tone="warning" title="Correction requested" className="mb-5">{existing.reviewComment}</Alert>
       )}
@@ -176,5 +178,27 @@ export default function MyReport() {
         metric={showing ? (typeof metrics[showing.key] === 'number' ? { value: metrics[showing.key] as number, kind: 'activity' } : (metrics[showing.key] as MetricValue | undefined)) : undefined} />
       <QuickLogModal open={!!logFor} onClose={() => setLogFor(null)} types={logFor ?? []} />
     </>
+  );
+}
+
+/** Partner Success: outcomes through the officer's clients on this day — not personal work, not part of the report figures. */
+function PortfolioDay({ date }: { date: string }) {
+  const [d, setD] = useState<{ agencies: number; applications: number; offers: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void rpc<{ agencies: number; applications: number; offers: number }>('portfolio_day', { p_date: date }).then((r) => { if (live) setD(r.ok ? r.data : null); });
+    return () => { live = false; };
+  }, [date]);
+  if (!d) return null;
+  return (
+    <Card className="mb-5 p-4">
+      <div className="text-sm font-semibold text-heading">Through my assigned clients · {date}</div>
+      <p className="text-xs text-ink-mute">Applications and first offers at the clients you are Sub Officer for. Shown for information — they are not your personal work and are not added to the report figures below.</p>
+      <div className="mt-3 flex flex-wrap gap-6 text-sm">
+        <span><b className="text-lg text-heading">{d.agencies}</b> assigned clients</span>
+        <span><b className="text-lg text-heading">{d.applications}</b> applications created</span>
+        <span><b className="text-lg text-heading">{d.offers}</b> offers received</span>
+      </div>
+    </Card>
   );
 }

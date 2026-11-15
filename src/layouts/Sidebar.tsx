@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { partnershipFocused } from '../lib/agencies';
+import { partnerSuccessFocused } from '../lib/clients';
 import { FocusScope } from '@radix-ui/react-focus-scope';
 import { GraduationCap, Linkedin, Plus, Send, Handshake, AlertTriangle, BadgePercent, Briefcase, Crown, FolderLock, Laptop, ListChecks, CalendarClock, CalendarRange, Scale,
   BarChart3,
@@ -318,11 +319,41 @@ const partnershipNav: NavSection[] = [
  * One menu for an employee who cannot switch portals: their main work first, then their
  * employee self-service and (with HR access) the HR pages, so nothing needs a portal switch.
  */
+// Partner Success Officers: their clients and their own work — no partnership development,
+// registrations, proposals, imports or partner administration.
+const partnerSuccessNav: NavSection[] = [
+  { id: 'ps-overview', title: 'Dashboard', items: [{ to: 'dashboard', label: 'Overview', icon: LayoutDashboard }] },
+  { id: 'ps-clients', title: 'Client Management', items: [
+    { to: 'clients', label: 'Agency List', icon: Building2 },
+    { to: 'clients/mine', label: 'My Clients', icon: Briefcase },
+  ] },
+  { id: 'ps-work', title: 'My Work', items: [
+    { to: 'clients/activity', label: 'Activity Log', icon: ListChecks },
+    { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
+    { to: 'work/reports', label: 'Report History', icon: History },
+    { to: 'work/assigned', label: 'My Assigned Tasks', icon: ListTodo },
+  ] },
+  { id: 'ps-tools', title: 'Work Tools', items: [
+    { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'students', label: 'Students', icon: Users },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
+  ] },
+  { id: 'ps-self', title: 'Employee Self-Service', items: [
+    { to: 'work/profile', label: 'My Profile', icon: UserCircle2 },
+    { to: 'work/attendance', label: 'My Attendance', icon: Clock },
+    { to: 'work/leave', label: 'My Leave', icon: Palmtree },
+    { to: 'work/documents', label: 'My Documents', icon: FolderLock },
+    { to: 'work/team-members', label: 'My Team Members', icon: Users },
+  ] },
+];
+
 function singleWorkspaceNav(session: Session): NavSection[] {
   const emp = !!(session as { employee?: boolean }).employee;
   const hr = canOpen(session, 'hr') ? hrNav : [];
   let parts: NavSection[];
   if (partnershipFocused(session) && emp) parts = [...partnershipNav, ...hr];
+  else if (partnerSuccessFocused(session) && emp) parts = [...partnerSuccessNav, ...hr];
   else if (hrPrimary(session)) parts = [...hrNav, ...(emp ? employeeNav : [])];
   else if (session.role === 'staff' && emp) parts = [...employeeNav, ...staffNav, ...hr];
   else parts = [...(session.role === 'admin' ? adminNav : staffNav), ...(emp ? employeeNav : []), ...hr];
@@ -350,6 +381,7 @@ export function navFor(session: Session | null, workspace: WorkspaceId = 'busine
     : !canSwitchPortals(session) ? singleWorkspaceNav(session)
     : workspace === 'hr' ? hrNav
     : partnershipFocused(session) && (session as { employee?: boolean }).employee ? partnershipNav
+    : partnerSuccessFocused(session) && (session as { employee?: boolean }).employee ? partnerSuccessNav
     : workspace === 'work' ? employeeNav
     : session.role === 'admin' ? adminNav : staffNav;
   const allowed = (to: string) => {
@@ -518,7 +550,7 @@ function SidebarContent({
                         <Tooltip content={collapsed ? (badge ? `${item.label} (${badge})` : item.label) : undefined} side="right">
                           <NavLink
                             to={`${base}/${item.to}`}
-                            end={item.to === 'agencies'}
+                            end={item.to === 'agencies' || item.to === 'clients'}
                             tabIndex={closed ? -1 : undefined}
                             aria-label={collapsed ? item.label : undefined}
                             className={({ isActive }) =>

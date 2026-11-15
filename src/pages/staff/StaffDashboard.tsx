@@ -10,6 +10,8 @@ import { ActivityFeed } from '../../components/ActivityFeed';
 import { useLookup, useStore } from '../../store/store';
 import { partnershipFocused } from '../../lib/agencies';
 import PartnershipDashboard from '../shared/PartnershipDashboard';
+import { PartnerSuccessDashboard } from '../shared/Clients';
+import { partnerSuccessFocused } from '../../lib/clients';
 import { appStatusTone, cn, daysUntil, formatDate, greeting } from '../../lib/utils';
 
 const CLOSED = ['Visa Granted', 'Visa Refused', 'Withdrawn', 'Rejected'];
@@ -18,6 +20,7 @@ const CLOSED = ['Visa Granted', 'Visa Refused', 'Withdrawn', 'Rejected'];
 export default function StaffDashboard() {
   const { session } = useStore();
   if (partnershipFocused(session)) return <PartnershipDashboard />;
+  if (partnerSuccessFocused(session)) return <PartnerSuccessDashboard />;
   // Agencies access plus student / application work (e.g. Senior IRM): partnership first, then the rest.
   if (session && session.userRole !== 'super_admin' && session.permissions.includes('agency_outreach'))
     return <><PartnershipDashboard /><div className="mt-10"><BusinessStaffDashboard /></div></>;

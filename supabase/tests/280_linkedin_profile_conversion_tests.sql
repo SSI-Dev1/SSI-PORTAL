@@ -72,7 +72,7 @@ select public.set_linkedin_contact_status(:'hari', 'connected', null, gen_random
 select public.log_linkedin_activity(:'hari', 'contacted', 'messaged again', null, gen_random_uuid());
 select pg_temp.check(pg_temp.work(:po, 'linkedin_connection') = (select conn0 from base) + 1, 'switching back and forth, or also recording contact, never counts twice');
 select pg_temp.check((select count(*) from public.linkedin_activities where prospect_id = :'hari' and kind = 'contact_status') = 3, 'each status change is in the activity history');
-select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'interested', null, gen_random_uuid())$$, :'hari'), 'only Connected or Not connected', '%Connected or Not connected%');
+select pg_temp.denied(format($$select public.set_linkedin_contact_status(%L, 'interested', null, gen_random_uuid())$$, :'hari'), 'only Connected, Not connected or Not recorded', '%Connected, Not connected or Not recorded%');
 
 \echo '== TEST 4: Move to Agency List needs the mandatory fields'
 select pg_temp.denied(format($$select public.convert_linkedin_prospect(%L, '{"contact_name": "Hari Kumar"}'::jsonb)$$, :'hari'),

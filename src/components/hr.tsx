@@ -187,7 +187,8 @@ const PENDING_HELP: Record<string, string> = {
   agency_attempts: 'Contact attempts you logged that no call or completed follow-up has resolved yet.',
   agency_not_connected: 'Your agencies that are not Connected yet (closed, inactive and onboarded agencies excluded).',
   agency_followups: 'Your follow-ups, meetings and visits due on or before this day and not done yet.',
-  linkedin_pending: 'Your LinkedIn leads not connected yet, or with a follow-up due.',
+  linkedin_pending: 'Your LinkedIn prospects still Not recorded or Not connected (closed and converted ones excluded). A name-only prospect counts straight away.',
+  linkedin_followups: 'Your LinkedIn prospects with a follow-up due on or before this day.',
 };
 
 /** The activities (or assigned applications) behind one report figure, with corrections. */

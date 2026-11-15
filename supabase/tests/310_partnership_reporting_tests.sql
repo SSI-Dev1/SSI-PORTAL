@@ -60,7 +60,7 @@ create or replace function pg_temp.d(key text) returns integer language sql as $
 grant select on b to authenticated;
 
 \echo '== template'
-select pg_temp.check((select version = 2 from public.report_templates where id = 'partnership_officer' order by version desc limit 1)
+select pg_temp.check((select version >= 2 from public.report_templates where id = 'partnership_officer' order by version desc limit 1)
   and (select count(*) from public.report_metric_sources where template_id = 'partnership_officer' and field_key in ('po_followups_attempted', 'po_visits_done', 'po_pending_followups')) = 3,
   'report v2 has Follow-ups attempted, Visits done and Pending follow-ups');
 

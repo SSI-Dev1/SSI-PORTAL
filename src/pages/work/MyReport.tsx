@@ -97,6 +97,7 @@ export default function MyReport() {
     const lines = [
       ...pw.tasks.filter((t) => t.due_date <= date).map((t) => `• ${TASK_KIND[t.kind]} · ${t.agency} · ${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}${t.overdue ? ' (overdue)' : ''}${t.attendee ? ` · ${t.attendee}` : ''}`),
       ...pw.linkedin.map((l) => `• LinkedIn follow-up · ${l.name} · ${fmtDate(l.due_date)}${l.overdue ? ' (overdue)' : ''}`),
+      ...(pw.linkedin_pending_contacts ? [`• ${pw.linkedin_pending_contacts} LinkedIn contact${pw.linkedin_pending_contacts === 1 ? '' : 's'} not connected yet`] : []),
       ...(pw.not_connected ? [`• ${pw.not_connected} agenc${pw.not_connected === 1 ? 'y' : 'ies'} not connected yet`] : []),
       ...(pw.open_attempts ? [`• ${pw.open_attempts} open contact attempt${pw.open_attempts === 1 ? '' : 's'}`] : []),
     ];

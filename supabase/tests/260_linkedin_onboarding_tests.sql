@@ -60,8 +60,8 @@ select public.log_linkedin_activity(:'l1', 'follow_up', 'Second follow-up', null
 select public.log_linkedin_activity(:'l1', 'interested', 'Wants rates', null, gen_random_uuid());
 select public.log_linkedin_activity(:'l1', 'interested', 'Still keen', null, gen_random_uuid());
 commit;
-select pg_temp.check(pg_temp.n(:po, 'linkedin_connection') - (select c from w0) = 1 and pg_temp.n(:po, 'linkedin_followup') - (select f from w0) = 2
-  and pg_temp.n(:po, 'linkedin_positive') - (select p from w0) = 1, 'report: 1 contacted, 2 follow-up messages, 1 positive response (counted once) — for the officer only');
+select pg_temp.check(pg_temp.n(:po, 'linkedin_connection') - (select c from w0) = 0 and pg_temp.n(:po, 'linkedin_followup') - (select f from w0) = 2
+  and pg_temp.n(:po, 'linkedin_positive') - (select p from w0) = 1, 'report: 2 follow-up messages, 1 positive response (once); outreach sent is not a connection — only an explicit Connected is (0046)');
 begin; select pg_temp.act_as(:mgr);
 select public.create_linkedin_prospect('{"name":"Manager Lead"}', gen_random_uuid()) ->> 'id' as l2 \gset
 select pg_temp.check((select count(*) from public.linkedin_prospects where id in (:'l1', :'l2')) = 2, 'Senior IRM adds prospects too and sees the team member''s (test 2)');

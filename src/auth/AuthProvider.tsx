@@ -29,7 +29,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(supabase ? 'loading' : 'signed-out');
   const [realSession, setRealSession] = useState<Session | null>(null);
   const [preview, setPreview] = useState<Session | null>(null);
-  const [notice, setNotice] = useState('');
+  // A reset / sign-in link that failed comes back with ?error_code=… (or #error_code=…): explain it
+  // on the sign-in page and remove it from the address bar.
+  const [notice, setNotice] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const h = new URLSearchParams(window.location.hash.replace(/^#\/?/, '').split('?').pop() ?? '');
+    const code = q.get('error_code') ?? h.get('error_code');
+    const err = q.get('error') ?? h.get('error');
+    if (!code && !err) return '';
+    window.history.replaceState(null, '', window.location.pathname + (window.location.hash.startsWith('#/') && !window.location.hash.includes('error') ? window.location.hash : ''));
+    return code === 'otp_expired'
+      ? 'This password reset link has expired or was already used. Request a new one below — only the most recent email works, and each link works once.'
+      : 'That sign-in link could not be used. Please request a new one.';
+  });
   const [idleSecondsLeft, setIdleSecondsLeft] = useState<number | null>(null);
   const resetIdle = useRef<() => void>(() => {});
   const recovering = useRef(new URLSearchParams(window.location.search).has('recovery'));

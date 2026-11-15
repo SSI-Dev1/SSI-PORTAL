@@ -33,6 +33,9 @@ const tokenStorage: SupportedStorage = {
   },
 };
 
+/** Read before the client starts: Supabase removes ?code= from the address once it has exchanged it. */
+export const arrivedWithAuthCode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('code');
+
 export const supabase: SupabaseClient | null = authConfigured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: tokenStorage },
@@ -149,10 +152,20 @@ export function passwordProblems(pw: string, email = ''): string[] {
   return issues;
 }
 
+/** Root of the portal (https://portal.ssiglobal.uk/), also when the current page is /reset-password/. */
+export const appRoot = () => siteUrl().replace(/reset-password\/?$/, '');
+/** The dedicated reset page that reset emails return to (must be in Supabase → Auth → Redirect URLs). */
+export const resetPasswordUrl = () => `${appRoot().replace(/\/?$/, '/')}reset-password/`;
+export const isResetPasswordPath = () => /\/reset-password\/?$/.test(window.location.pathname);
+
 export async function sendPasswordReset(email: string) {
   if (!supabase) return;
-  // Supabase issues a single-use, time-limited link; the response never reveals whether the email exists.
-  await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${siteUrl()}?recovery=1` });
+  // Supabase issues a single-use, time-limited link; the response never reveals whether the email
+  // exists. Only rate limiting is surfaced (it says nothing about the account).
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: resetPasswordUrl() });
+  if (error && (error.status === 429 || /rate limit/i.test(error.message))) {
+    throw new AuthError('Too many reset requests. Please wait a few minutes and try again.');
+  }
 }
 
 export async function updatePassword(password: string) {

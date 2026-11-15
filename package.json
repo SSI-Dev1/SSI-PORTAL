@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && tsc -p tsconfig.node.json && vite build",
+    "build": "tsc -b && tsc -p tsconfig.node.json && vite build && node scripts/reset-password-page.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b && tsc -p tsconfig.node.json",
     "test:security": "bash supabase/tests/run.sh",

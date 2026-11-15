@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { Session } from '../data/types';
-import { AuthError, resolveStage, signOut as authSignOut, supabase } from './auth';
+import { AuthError, arrivedWithAuthCode, isResetPasswordPath, resolveStage, signOut as authSignOut, supabase } from './auth';
 import { IDLE_TIMEOUT_MINUTES } from './config';
 
 export type AuthStatus = 'loading' | 'signed-out' | 'recovery' | 'password-change' | 'signed-in';
@@ -18,6 +18,10 @@ interface AuthValue {
   refresh: () => Promise<void>;
   signOut: (reason?: 'logout' | 'idle_timeout') => Promise<void>;
   setPreview: (s: Session | null) => void;
+  /** A password-recovery session was established from a reset link (code exchanged by Supabase). */
+  recoveryVerified: boolean;
+  /** The reset / sign-in link failed (expired, used, invalid). */
+  linkFailed: boolean;
   /** Seconds left before automatic sign-out (only set during the final minute). */
   idleSecondsLeft: number | null;
   stayActive: () => void;
@@ -31,6 +35,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [preview, setPreview] = useState<Session | null>(null);
   // A reset / sign-in link that failed comes back with ?error_code=… (or #error_code=…): explain it
   // on the sign-in page and remove it from the address bar.
+  const [linkFailed] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const h = new URLSearchParams(window.location.hash.replace(/^#\/?/, '').split('?').pop() ?? '');
+    return !!(q.get('error_code') ?? h.get('error_code') ?? q.get('error') ?? h.get('error'));
+  });
+  // On the reset page a session only counts once Supabase confirms it came from a recovery link:
+  // the PASSWORD_RECOVERY event, or a ?code= exchanged on this page (only reset emails point here).
+  const [recoveryVerified, setRecoveryVerified] = useState(false);
   const [notice, setNotice] = useState(() => {
     const q = new URLSearchParams(window.location.search);
     const h = new URLSearchParams(window.location.hash.replace(/^#\/?/, '').split('?').pop() ?? '');
@@ -44,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [idleSecondsLeft, setIdleSecondsLeft] = useState<number | null>(null);
   const resetIdle = useRef<() => void>(() => {});
-  const recovering = useRef(new URLSearchParams(window.location.search).has('recovery'));
+  const recovering = useRef(new URLSearchParams(window.location.search).has('recovery') || isResetPasswordPath());
   const resolvedFor = useRef<string | null>(null);
 
   const apply = useCallback(async (user: User | null) => {
@@ -56,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (recovering.current) {
+      if (isResetPasswordPath() && arrivedWithAuthCode) setRecoveryVerified(true);
       setStatus('recovery');
       return;
     }
@@ -75,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'PASSWORD_RECOVERY') {
         recovering.current = true;
+        setRecoveryVerified(true);
         setStatus('recovery');
         return;
       }
@@ -145,13 +159,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session: status === 'signed-in' ? preview ?? realSession : null,
       realSession,
       notice,
+      recoveryVerified,
+      linkFailed,
       refresh,
       signOut,
       setPreview,
       idleSecondsLeft,
       stayActive: () => resetIdle.current(),
     }),
-    [status, preview, realSession, notice, refresh, signOut, idleSecondsLeft],
+    [status, preview, realSession, notice, recoveryVerified, linkFailed, refresh, signOut, idleSecondsLeft],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

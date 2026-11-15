@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
 import { Logo } from '../components/brand';
 import { Button, Checkbox, Field, Input, Modal } from '../components/ui';
@@ -23,7 +23,12 @@ export default function Login() {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState<'password' | 'google' | null>(null);
-  const [forgotOpen, setForgotOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // "Request New Reset Link" on the reset page opens the form here (#/login?forgot=1).
+  const [forgotOpen, setForgotOpen] = useState(() => params.get('forgot') === '1');
+  useEffect(() => {
+    if (params.get('forgot')) setParams((p) => { const n = new URLSearchParams(p); n.delete('forgot'); return n; }, { replace: true });
+  }, [params, setParams]);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
   // Returning from Google or an email link (PKCE adds ?code=…); AuthProvider finishes sign-in.
@@ -68,13 +73,22 @@ export default function Login() {
     }
   };
 
+  const [resetError, setResetError] = useState('');
   const reset = async () => {
-    if (!EMAIL_RE.test(resetEmail.trim())) return toast.error('Enter a valid email address');
+    if (resetSending) return;
+    if (!EMAIL_RE.test(resetEmail.trim())) return setResetError('Enter a valid email address.');
     setResetSending(true);
-    await sendPasswordReset(resetEmail).catch(() => {});
+    setResetError('');
+    try {
+      await sendPasswordReset(resetEmail);
+    } catch (err) {
+      setResetSending(false);
+      return setResetError(err instanceof AuthError ? err.message : 'Could not send the link. Please try again.');
+    }
     setResetSending(false);
     setForgotOpen(false);
-    toast.success('Check your inbox', `If an account exists for ${resetEmail.trim()}, we’ve sent password reset instructions.`);
+    // Neutral on purpose: never reveals whether the email belongs to an account.
+    toast.success('Check your inbox', 'If an account exists for this email address, password reset instructions will be sent.');
   };
 
   if (auth.status === 'signed-in' && auth.session) return <Navigate to="/" replace />;
@@ -227,22 +241,24 @@ export default function Login() {
         open={forgotOpen}
         onClose={() => setForgotOpen(false)}
         size="sm"
-        title="Reset your password"
-        subtitle="Enter your account email and we’ll send you reset instructions."
+        title="Forgot password"
+        subtitle="Enter your account email. We’ll send a secure link to create a new password."
         footer={
           <>
             <Button variant="secondary" onClick={() => setForgotOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={reset} loading={resetSending}>
-              Send reset link
+            <Button onClick={() => void reset()} loading={resetSending} disabled={resetSending}>
+              Send Password Reset Link
             </Button>
           </>
         }
       >
-        <Field label="Email address">
-          <Input icon={Mail} type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="you@company.com" autoFocus />
+        <Field label="Email Address" error={resetError || undefined}>
+          <Input icon={Mail} type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="you@company.com" autoFocus invalid={!!resetError}
+            onKeyDown={(e) => { if (e.key === 'Enter') void reset(); }} />
         </Field>
+        <p className="mt-3 text-xs text-ink-mute">The link works once and expires after a while. Open it in this browser.</p>
       </Modal>
     </div>
   );

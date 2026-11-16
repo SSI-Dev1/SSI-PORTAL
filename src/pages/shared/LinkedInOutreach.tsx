@@ -65,7 +65,7 @@ export default function LinkedInOutreach() {
     <>
       <PageHeader title="LinkedIn Outreach" subtitle="People you contact on LinkedIn, tracked by hand. Open a prospect to record the contact status or move them to the Agency List."
         actions={<Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add LinkedIn Prospect</Button>} />
-      {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
+      {error && <Alert tone="warning" className="mb-4">{error} <Button size="sm" variant="secondary" className="ml-1" onClick={() => void reload()}>Try again</Button></Alert>}
       {rows && (
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {([['Pending contacts', counts.pending, 'stage:pending', 'Not attempted yet'], ['Not responded', counts.not_responded, 'stage:not_responded', 'Followed up, no response'],
@@ -353,7 +353,9 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
+  /** The phone / email belongs to a differently named agency already in the list (0050). */
+  const [clash, setClash] = useState('');
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => { setClash(''); setF((x) => ({ ...x, [k]: e.target.value })); };
   const errors: Partial<Record<keyof typeof f, string>> = {
     company_name: f.company_name.trim() ? undefined : 'Enter the agency / company name',
     contact_name: f.contact_name.trim() ? undefined : "Enter the point of contact's full name",
@@ -363,21 +365,27 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
   };
   const missing = Object.values(errors).filter(Boolean) as string[];
   const show = (k: keyof typeof f) => (tried ? errors[k] : undefined);
-  const save = async () => {
+  const save = async (allowSharedContact = false) => {
     setTried(true); setErr('');
     if (missing.length) return;
     setBusy(true);
-    const r = await rpc<{ agency_id: string; linked: boolean; duplicate: boolean }>('convert_linkedin_prospect', { p_id: p.id, p: { ...f, phone: f.phone.trim(), agency_type: agencyType || null } });
+    const r = await rpc<{ agency_id: string; linked: boolean; duplicate: boolean }>('convert_linkedin_prospect',
+      { p_id: p.id, p: { ...f, phone: f.phone.trim(), agency_type: agencyType || null, ...(allowSharedContact ? { allow_shared_contact: true } : {}) } });
     setBusy(false);
-    if (!r.ok) return setErr(r.error);
+    // Nothing was saved: the form keeps everything entered.
+    if (!r.ok) {
+      if (/already in the Agency List as/i.test(r.error)) { setClash(r.error); return; }
+      return setErr(r.error);
+    }
+    setClash('');
     toast.success(r.data.linked ? 'Prospect linked to the existing agency' : 'Prospect successfully moved to Agency List.',
-      r.data.linked ? 'An agency with this phone, email or name was already listed — no duplicate was created.' : 'Open it there to send a proposal.');
+      r.data.linked ? 'This agency was already in the Agency List — no duplicate was created.' : 'Open it there to send a proposal.');
     onDone(); onClose();
     navigate(`../${r.data.agency_id}`, { relative: 'path' });
   };
   return (
     <Modal open onClose={onClose} size="lg" title="Move to Agency List" subtitle={`${p.name} · ${p.reference}`} dirty
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={ArrowRightLeft} disabled={busy} onClick={() => void save()}>{busy ? 'Moving…' : 'Move to Agency List'}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={ArrowRightLeft} disabled={busy} loading={busy} onClick={() => void save()}>{busy ? 'Moving…' : 'Move to Agency List'}</Button></>}>
       {tried && missing.length > 0 && <Alert tone="warning" className="mb-4" title="Complete these to continue">{missing.join(' · ')}</Alert>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Agency / company name" required error={show('company_name')}><Input value={f.company_name} onChange={set('company_name')} maxLength={160} invalid={!!show('company_name')} autoFocus={!f.company_name} /></Field>
@@ -391,7 +399,13 @@ function MoveToAgency({ p, onClose, onDone }: { p: LinkedInProspect; onClose: ()
         <Field label="LinkedIn profile link" error={show('linkedin_url')}><Input value={f.linkedin_url} onChange={set('linkedin_url')} maxLength={300} invalid={!!show('linkedin_url')} placeholder="linkedin.com/in/…" /></Field>
         <Field label="Additional notes" className="sm:col-span-2"><Textarea rows={3} value={f.notes} onChange={set('notes')} maxLength={2000} /></Field>
       </div>
-      <p className="mt-3 text-xs text-ink-mute">The prospect and its LinkedIn history stay here, marked Converted and linked to the agency. If the Agency List already has this phone, email or name, it is linked instead of creating a duplicate. No partner login or portal access is created.</p>
+      <p className="mt-3 text-xs text-ink-mute">The prospect and its LinkedIn history stay here, marked Converted and linked to the agency. If the Agency List already has this agency (same name, or same phone or email with a matching name), it is linked instead of creating a duplicate. No partner login or portal access is created.</p>
+      {clash && (
+        <Alert tone="warning" className="mt-3" title="Phone or email already listed">
+          {clash}
+          <div className="mt-2"><Button size="sm" variant="secondary" disabled={busy} onClick={() => void save(true)}>Create as a separate agency</Button></div>
+        </Alert>
+      )}
       {err && <Alert tone="error" className="mt-3">{err}</Alert>}
     </Modal>
   );

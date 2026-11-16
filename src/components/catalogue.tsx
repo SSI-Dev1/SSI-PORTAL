@@ -23,6 +23,7 @@ import {
 import { Alert, Badge, Button, Field, Input, Modal, Select, Switch, Tabs } from './ui';
 import { useConfirm, useToast } from './feedback';
 import { useStore, type ImportSummary } from '../store/store';
+import { supabase } from '../auth/auth';
 import type { Course, CourseIntake, IntakeStatus, University } from '../data/types';
 import { cn, formatDate, money, type Tone } from '../lib/utils';
 import { MAX_IMPORT_BYTES, parseCatalogue, previewImport, readWorkbook, type ParseResult, type Preview } from '../lib/catalogueImport';
@@ -93,6 +94,26 @@ const score = (v?: number | null) => (v == null ? null : String(v));
 const yesNo = (v?: boolean | null) => (v == null ? null : v ? 'Yes' : 'No');
 type DetailTab = 'overview' | 'intakes' | 'requirements' | 'fees' | 'source';
 
+/**
+ * The original spreadsheet row of one course. The course list is downloaded without it (it is most
+ * of the catalogue's size), so it is fetched only when a course's details are opened.
+ */
+export function useCourseSourceData(course?: Course): Record<string, string | null> | null {
+  const [fetched, setFetched] = useState<{ id: string; data: Record<string, string | null> | null } | null>(null);
+  const id = course?.id;
+  const inline = course?.sourceData;
+  useEffect(() => {
+    if (!id || inline !== undefined || !supabase) return;
+    let alive = true;
+    void supabase.from('courses').select('source_data').eq('id', id).maybeSingle().then(({ data }) => {
+      if (alive) setFetched({ id, data: ((data as { source_data?: Record<string, string | null> | null } | null)?.source_data) ?? null });
+    });
+    return () => { alive = false; };
+  }, [id, inline]);
+  if (inline !== undefined) return inline ?? null;
+  return fetched && fetched.id === id ? fetched.data : null;
+}
+
 /** Read-only course details (every imported field); `actions` adds Edit / Apply buttons. */
 export function CourseDetails({ course, onClose, actions, showInactive }: { course?: Course; onClose: () => void; actions?: React.ReactNode; showInactive?: boolean }) {
   const { db } = useStore();
@@ -100,7 +121,8 @@ export function CourseDetails({ course, onClose, actions, showInactive }: { cour
   const intakes = useCourseIntakes(course?.id, showInactive);
   const [tab, setTab] = useState<DetailTab>('overview');
   useEffect(() => setTab('overview'), [course?.id]);
-  const sourceEntries = Object.entries(course?.sourceData ?? {});
+  const sourceData = useCourseSourceData(course);
+  const sourceEntries = Object.entries(sourceData ?? {});
   return (
     <Modal open={!!course} onClose={onClose} size="wide" title={course?.name ?? ''} subtitle={uni ? `${uni.name}${course?.campus || uni.city ? ` · ${course?.campus || uni.city}` : ''}${uni.country ? ` · ${uni.country}` : ''}` : undefined} footer={actions}>
       {course && (

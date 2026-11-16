@@ -1,5 +1,5 @@
 // deno test supabase/functions/admin-users/lib.test.ts
-import { cleanEmail, cleanEmployee, cleanModules, cleanPartner, cleanPermissions, cleanSalary, hrPermissionProblem, isPartnerRole, isStaffRole, passwordProblems } from './lib.ts';
+import { cleanEmail, cleanEmployee, cleanModules, cleanPartner, cleanPermissions, cleanSalary, hrPermissionProblem, isPartnerRole, isStaffRole, passwordProblems, STAFF_MODULES } from './lib.ts';
 
 function assert(ok: boolean, msg: string) {
   if (!ok) throw new Error(msg);
@@ -60,4 +60,24 @@ Deno.test('HR cannot grant HR or finance permissions', () => {
   assert(hrPermissionProblem(['tasks'], ['tasks', 'hr_salary']) !== null, 'removing hr_salary refused');
   assert(hrPermissionProblem(['tasks', 'finance'], ['tasks']) !== null, 'adding finance refused');
   assert(cleanSalary({ amount: -1 }) === undefined && cleanSalary({ amount: 50000, currency: 'INR' })?.amount === 50000, 'salary validation');
+});
+
+// The function must accept every permission the app offers and the database allows (a missing key
+// made saving an account fail with "Unknown permission.").
+Deno.test('STAFF_MODULES matches the app and the database', async () => {
+  const roles = await Deno.readTextFile(new URL('../../../src/auth/roles.ts', import.meta.url));
+  const block = roles.slice(roles.indexOf('export const STAFF_MODULES'), roles.indexOf('];', roles.indexOf('export const STAFF_MODULES')));
+  const app = [...block.matchAll(/\{ id: '([a-z_]+)'/g)].map((m) => m[1]).sort();
+  const sqlDir = new URL('../../migrations/', import.meta.url);
+  let latest = '';
+  for (const f of [...Deno.readDirSync(sqlDir)].map((e) => e.name).sort()) {
+    const sql = Deno.readTextFileSync(new URL(f, sqlDir));
+    const i = sql.lastIndexOf('function public.staff_modules()');
+    if (i >= 0) latest = sql.slice(i, sql.indexOf('$$;', i));
+  }
+  const db = [...latest.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+  const mine = [...STAFF_MODULES].sort().join(',');
+  assert(mine === app.join(','), `app offers ${app.join(',')}`);
+  assert(mine === db.join(','), `database allows ${db.join(',')}`);
+  assert(cleanPermissions(['agency_outreach', 'partner_accounts', 'partner_success']) !== undefined, 'new modules accepted');
 });

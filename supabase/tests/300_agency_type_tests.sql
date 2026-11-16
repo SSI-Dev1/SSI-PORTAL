@@ -91,10 +91,10 @@ select pg_temp.check((select agency_id is null from public.linkedin_prospects wh
 select (public.convert_linkedin_prospect(:'li', '{"company_name": "Ravi Domestic Overseas", "contact_name": "Ravi Kumar", "phone": "9100000020", "agency_type": "domestic"}'::jsonb) ->> 'agency_id') as liag \gset
 select pg_temp.check((select agency_type = 'domestic' and source = 'linkedin' from public.agency_prospects where id = :'liag'), 'converted to a Domestic agency');
 select (public.create_linkedin_prospect('{"name": "Old Contact", "phone": "9100000001"}'::jsonb, gen_random_uuid()) ->> 'id') as li2 \gset
-select pg_temp.check((select (r ->> 'linked')::boolean from public.convert_linkedin_prospect(:'li2', '{"contact_name": "Old Contact", "agency_type": "international"}'::jsonb) r), 'same phone links to the existing agency');
+select pg_temp.check((select (r ->> 'linked')::boolean from public.convert_linkedin_prospect(:'li2', '{"company_name": "Old Import One", "contact_name": "Old Contact", "agency_type": "international"}'::jsonb) r), 'same agency (name and phone) links to the existing agency');
 select pg_temp.check((select agency_type = 'international' from public.agency_prospects where reference = 'AG-T-01'), 'an unclassified existing agency takes the chosen type');
 select (public.create_linkedin_prospect('{"name": "Third", "phone": "9100000020"}'::jsonb, gen_random_uuid()) ->> 'id') as li3 \gset
-select public.convert_linkedin_prospect(:'li3', '{"contact_name": "Third", "agency_type": "international"}'::jsonb);
+select public.convert_linkedin_prospect(:'li3', '{"company_name": "Ravi Domestic Overseas", "contact_name": "Third", "agency_type": "international"}'::jsonb);
 select pg_temp.check((select agency_type = 'domestic' from public.agency_prospects where id = :'liag'), 'an existing classification is not overwritten by a later conversion');
 
 \echo '== filters use the stored field'

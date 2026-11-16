@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2 } from 'lucide-react';
+import { releaseOrphanedScrollLock } from '../lib/scrollLock';
+import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2, WifiOff } from 'lucide-react';
 import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
 import { useHR } from '../store/hr';
 import { useChat } from '../store/chat';
@@ -14,7 +15,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { cn, countryFlag, fullName, matches, timeAgo, updateStatus } from '../lib/utils';
 
 export default function AppShell() {
-  const { session, loading } = useStore();
+  const { session, loading, loadError, retryLoad } = useStore();
   const auth = useAuth();
   const scoped = useScoped();
   const navigate = useNavigate();
@@ -29,7 +30,16 @@ export default function AppShell() {
   useEffect(() => {
     setMobileOpen(false);
     window.scrollTo(0, 0);
+    // After the page change has rendered, make sure no closed overlay left the page locked.
+    const id = window.requestAnimationFrame(releaseOrphanedScrollLock);
+    return () => window.cancelAnimationFrame(id);
   }, [location.pathname]);
+  useEffect(() => {
+    // Back/forward cache restores the page with whatever lock it had when it was left.
+    const h = () => releaseOrphanedScrollLock();
+    window.addEventListener('pageshow', h);
+    return () => window.removeEventListener('pageshow', h);
+  }, []);
 
   // Unread "Important Updates" badge for partners.
   const liveUpdates = scoped.announcements.filter((a) => updateStatus(a) === 'Active').length;
@@ -130,6 +140,15 @@ export default function AppShell() {
             <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading data">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-rust border-t-transparent" />
             </div>
+          ) : loadError ? (
+            <Card>
+              <EmptyState
+                icon={WifiOff}
+                title="Couldn't load your data"
+                description="The connection to SSI GLOBAL failed or took too long. Check your internet connection and try again."
+                action={<Button onClick={() => void retryLoad()}>Try again</Button>}
+              />
+            </Card>
           ) : canOpenPath(session, location.pathname.split('/').slice(2).join('/')) ? (
             <Outlet />
           ) : (

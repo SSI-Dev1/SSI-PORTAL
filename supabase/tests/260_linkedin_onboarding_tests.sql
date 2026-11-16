@@ -85,10 +85,21 @@ select pg_temp.check((select status = 'converted' and agency_id = :'ag' from pub
   and (select count(*) from public.linkedin_activities where prospect_id = :'l1') >= 6, 'prospect marked Converted, LinkedIn history kept');
 select pg_temp.check((select count(*) from public.agency_prospects where id = :'ag') = 1, 'the agency is in the Agency List (test 7)');
 select public.create_linkedin_prospect('{"name":"Lina again","phone":"98765 43299"}', gen_random_uuid()) ->> 'id' as l3 \gset
-select pg_temp.check((public.convert_linkedin_prospect(:'l3', '{}') ->> 'agency_id') = :'ag', 'same phone: linked to the existing agency, no duplicate (test 6)');
+select pg_temp.denied(format($$select public.convert_linkedin_prospect(%L, '{}')$$, :'l3'), 'no agency name: asked for it, not silently linked by phone (0050)', 'MISSING:%agency / company name%');
+select pg_temp.denied(format($$select public.convert_linkedin_prospect(%L, '{"company_name":"Other Agency Ltd"}')$$, :'l3'), 'same phone, different agency name: stops and names the listed agency (0050)', 'CONTACT_IN_USE:%AG-%');
+select pg_temp.check((public.convert_linkedin_prospect(:'l3', '{"company_name":"lina recruits  pvt"}') ->> 'agency_id') = :'ag', 'same agency name: linked to the existing agency, no duplicate (test 6)');
+select pg_temp.check((public.convert_linkedin_prospect(:'l3', '{"company_name":"lina recruits pvt"}') ->> 'agency_id') = :'ag', 'retrying the conversion returns the same agency');
 select pg_temp.check((select count(*) from public.agency_prospects where regexp_replace(phone, '\D', '', 'g') like '%9876543299') = 1, 'still exactly one agency');
 commit;
 select pg_temp.check(pg_temp.n(:po, 'partner_contact') = (select pc from w0) + 1, 'moving to the Agency List counts one New partner contacted — the second LinkedIn record for the same agency adds none (0048)');
+
+\echo '== shared phone, confirmed as a different agency (0050)'
+begin; select pg_temp.act_as(:po);
+select public.create_linkedin_prospect('{"name":"Sam Shared","phone":"+91 98765 43299"}', gen_random_uuid()) ->> 'id' as l4 \gset
+select public.convert_linkedin_prospect(:'l4', '{"company_name":"Shared Desk Agency","allow_shared_contact":true}') ->> 'agency_id' as ag4 \gset
+select pg_temp.check(:'ag4' <> :'ag' and (select company_name = 'Shared Desk Agency' and source = 'linkedin' from public.agency_prospects where id = :'ag4'), 'a new agency is created when the employee confirms it is different');
+select pg_temp.check((select agency_id = :'ag4' and status = 'converted' from public.linkedin_prospects where id = :'l4'), 'the prospect links to its own new agency');
+rollback;
 
 \echo '== onboarding emails (service role, as the agency-proposal function)'
 select public.record_agency_email(:'ag', null, 'mou', 'accepted', '<mou-1>', null, null);

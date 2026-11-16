@@ -145,7 +145,8 @@ select public.set_agency_contact_status(:'joag', 'connected', null);
 select public.update_agency_prospect(:'joag', '{"notes": "edited"}'::jsonb);
 select (public.create_linkedin_prospect('{"name": "Jo Again", "phone": "9700035001"}'::jsonb, gen_random_uuid()) ->> 'id') as jo2 \gset
 select pg_temp.check((public.set_linkedin_stage(:'jo2', 'positive', null, null, gen_random_uuid()) ->> 'conversion_pending')::boolean, 'no agency name yet: kept as a pending conversion (nothing invented)');
-select public.convert_linkedin_prospect(:'jo2', '{}'::jsonb);
+select pg_temp.denied(format($$select public.convert_linkedin_prospect(%L, '{}'::jsonb)$$, :'jo2'), 'Move to Agency List still asks for the agency name', 'MISSING:%agency / company name%');
+select public.convert_linkedin_prospect(:'jo2', '{"company_name": "Jo Overseas 350"}'::jsonb);
 select pg_temp.check((select agency_id = :'joag'::uuid from public.linkedin_prospects where id = :'jo2'), 'a second LinkedIn record for the same agency links to it — no duplicate agency');
 select pg_temp.check(pg_temp.d('po_new_partners_contacted') = 1 and (select count(*) from public.work_activities where dedupe_key = 'agency-contact:' || :'joag') = 1,
   'edits, Connected and a second conversion add nothing (TEST 13)');

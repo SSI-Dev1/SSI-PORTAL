@@ -12,6 +12,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { lockScroll } from '../lib/scrollLock';
 import { FocusScope } from '@radix-ui/react-focus-scope';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, Search, X, type LucideIcon } from 'lucide-react';
@@ -432,11 +433,7 @@ function useEscape(active: boolean, fn: () => void, container?: HTMLElement | nu
 function useLockScroll(active: boolean) {
   useEffect(() => {
     if (!active) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockScroll();
   }, [active]);
 }
 

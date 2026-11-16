@@ -51,6 +51,7 @@ import { Menu, Tooltip } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { Session } from '../data/types';
 import { canOpen, canOpenPath, canSwitchPortals, hrPrimary, isHR } from '../auth/roles';
+import { lockScroll } from '../lib/scrollLock';
 
 export const SIDEBAR_EXPANDED = 264;
 export const SIDEBAR_RAIL = 76;
@@ -655,11 +656,10 @@ export function MobileDrawer({ open, onClose, shared }: { open: boolean; onClose
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', h);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       window.removeEventListener('keydown', h);
-      document.body.style.overflow = overflow;
+      unlock();
     };
   }, [open, onClose]);
   if (!open) return null;

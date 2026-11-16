@@ -31,6 +31,7 @@ import {
   hrPermissionProblem,
   isPartnerRole,
   isStaffRole,
+  nameKey,
   passwordProblems,
   STATUSES,
   UUID_RE,
@@ -108,8 +109,12 @@ Deno.serve(async (req) => {
   // "Partner accounts" (0044): an employee a Super Admin named may create partner logins for
   // existing onboarded clients — nothing else (no portal access, no other accounts).
   const { data: partnerAccounts } = isSuper === true || hrAccounts === true ? { data: false } : await asCaller.rpc('staff_can', { m: 'partner_accounts' });
-  if (isSuper !== true && hrAccounts !== true && partnerAccounts !== true) return json(403, { error: 'Only a Super Admin or authorised HR can manage accounts.' }, origin);
-  const partnerMode = isSuper !== true && hrAccounts !== true && partnerAccounts === true;
+  // "Add partner" (0051): Partnership Officers a Super Admin named may add partners with the same form;
+  // each new partner waits for Super Admin approval (portal closed, no login email).
+  const { data: partnerCreate } = isSuper === true || hrAccounts === true ? { data: false } : await asCaller.rpc('staff_can', { m: 'partner_create' });
+  if (isSuper !== true && hrAccounts !== true && partnerAccounts !== true && partnerCreate !== true) return json(403, { error: 'Only a Super Admin or authorised HR can manage accounts.' }, origin);
+  const partnerMode = isSuper !== true && hrAccounts !== true && (partnerAccounts === true || partnerCreate === true);
+  const officerCreate = partnerMode && partnerCreate === true;
   const hrMode = isSuper !== true && !partnerMode;
   const me = who.user.id;
 
@@ -122,7 +127,7 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const audit = (action: string, entity: string, entityId: string, partnerId: string | null, changes: unknown = null) =>
-    admin.from('audit_log').insert({ actor_id: me, actor_role: partnerMode ? 'partner_accounts' : hrMode ? 'hr' : 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
+    admin.from('audit_log').insert({ actor_id: me, actor_role: officerCreate ? 'partner_create' : partnerMode ? 'partner_accounts' : hrMode ? 'hr' : 'super_admin', action, entity, entity_id: entityId, partner_id: partnerId, changes });
   // Live Activity entry (Super Admins only); actor details are stamped by the database.
   const activity = (title: string, detail: string | null, refId: string) =>
     admin.from('activities').insert({ kind: 'account', title, detail, ref_id: refId, actor_id: me });
@@ -170,7 +175,9 @@ Deno.serve(async (req) => {
     if (hrMode && !['create_employee', 'update_user', 'set_status', 'reset_password', 'resend_login_access'].includes(String(body.action))) {
       throw new Fail(403, 'Only a Super Admin can do this.');
     }
-    if (partnerMode && body.action !== 'create_partner_user') throw new Fail(403, 'Only a Super Admin can do this.');
+    if (partnerMode && !((body.action === 'create_partner_user' && partnerAccounts === true) || (body.action === 'create_partner' && officerCreate))) {
+      throw new Fail(403, 'Only a Super Admin can do this.');
+    }
     switch (body.action) {
       // ------------------------------------------------------------ employees
       case 'create_employee': {
@@ -243,7 +250,35 @@ Deno.serve(async (req) => {
         if (codeUsed) throw new Fail(409, 'This partner code is already in use.');
         if (await emailTaken(admin, email)) throw new Fail(409, 'An account with this email already exists.');
 
-        const portalEnabled = body.portalEnabled !== false;
+        // Partnership Officers: held for Super Admin approval, never a duplicate, linked to its agency.
+        type AgencyLink = { id: string; assigned_officer: string | null; partner_id: string | null };
+        let agency: AgencyLink | null = null;
+        if (partnerMode) {
+          if (body.registrationId) throw new Fail(403, 'Only authorised administrators can activate partner registrations.');
+          const key = nameKey(partner.name);
+          const { data: same } = await admin.from('partners').select('id, name').is('archived_at', null);
+          const dup = (same ?? []).find((x) => nameKey(x.name) === key);
+          if (dup) throw new Fail(409, `"${dup.name}" is already a partner. Open it in Clients & Branches instead of adding it again.`);
+          if (partner.email) {
+            const { data: sameMail } = await admin.from('partners').select('name').ilike('email', partner.email).is('archived_at', null).limit(1);
+            if (sameMail?.length) throw new Fail(409, `This email already belongs to the partner "${sameMail[0].name}".`);
+          }
+          // The agency this partner comes from: the one chosen (must be visible to the officer), or
+          // the single Agency List record with the same name.
+          const agencyId = typeof body.agencyId === 'string' && UUID_RE.test(body.agencyId) ? body.agencyId : null;
+          if (agencyId) {
+            const { data: seen } = await asCaller.from('agency_prospects').select('id, assigned_officer, partner_id').eq('id', agencyId).maybeSingle();
+            if (!seen) throw new Fail(403, 'You cannot link this agency.');
+            agency = seen as AgencyLink;
+          } else {
+            const { data: list } = await asCaller.from('agency_prospects').select('id, company_name, assigned_officer, partner_id').limit(5000);
+            const hits = (list ?? []).filter((a) => nameKey(a.company_name) === key);
+            if (hits.length === 1) agency = hits[0] as AgencyLink;
+          }
+          if (agency?.partner_id) throw new Fail(409, 'This agency is already linked to a partner. Open it in Clients & Branches instead.');
+        }
+
+        const portalEnabled = !partnerMode && body.portalEnabled !== false;
         const accountPhone = cleanOptional(account.phone, 40);
         if (accountPhone === undefined) throw bad();
         // From an approved partner registration: claim it first, so retries or two admins can
@@ -264,7 +299,8 @@ Deno.serve(async (req) => {
         const release = async (why: string) => { if (registrationId) await admin.rpc('release_registration_provisioning', { p_id: registrationId, p_actor: me, p_error: why }); };
         const { data: org, error: orgErr } = await admin
           .from('partners')
-          .insert({ ...partner, status: portalEnabled ? 'Active' : 'Onboarding', portal_enabled: portalEnabled, modules })
+          .insert({ ...partner, status: portalEnabled ? 'Active' : 'Onboarding', portal_enabled: portalEnabled, modules,
+            ...(partnerMode ? { partnership_officer_id: agency?.assigned_officer ?? me } : {}) })
           .select('id')
           .single();
         if (orgErr || !org) { await release('partner insert failed'); throw new Fail(500, 'Could not create the partner.'); }
@@ -273,7 +309,7 @@ Deno.serve(async (req) => {
           userId = await createAuthUser(admin, email, password, fullName);
           const { error } = await admin.from('profiles').insert({
             id: userId, role: 'partner_admin', partner_id: org.id, full_name: fullName, email, status: 'active',
-            phone: accountPhone ?? partner.phone, must_change_password: account.mustChangePassword === true, created_by: me,
+            phone: accountPhone ?? partner.phone, must_change_password: partnerMode || account.mustChangePassword === true, created_by: me,
           });
           if (error) throw new Fail(500, 'Could not create the partner account.');
         } catch (e) {
@@ -286,15 +322,22 @@ Deno.serve(async (req) => {
           const { error: finErr } = await admin.rpc('finish_registration_provisioning', { p_id: registrationId, p_partner: org.id, p_user: userId, p_actor: me });
           if (finErr) await audit('registration_link_failed', 'partners', org.id, org.id, { registration: registrationId });
         }
-        await audit('partner_created', 'partners', org.id, org.id);
+        if (agency) {
+          // Main and Sub Officer stay with the agency; the partner record follows them (sub_officer_sync).
+          const { error: linkErr } = await admin.from('agency_prospects').update({ partner_id: org.id, updated_at: new Date().toISOString() }).eq('id', agency.id).is('partner_id', null);
+          if (linkErr) await audit('agency_link_failed', 'partners', org.id, org.id, { agency: agency.id });
+          else await admin.from('agency_activities').insert({ prospect_id: agency.id, kind: 'partner_created', note: 'Partner added by the Partnership Officer — waiting for Super Admin approval.', detail: { partner_id: org.id }, actor: me });
+        }
+        await audit('partner_created', 'partners', org.id, org.id, partnerMode ? { by: 'partnership_officer', approval: 'pending', agency: agency?.id ?? null } : null);
         await audit('account_created', 'profiles', userId, org.id, { role: [null, 'partner_admin'] });
-        await activity('Partner and login account created', partner.name, org.id);
+        await activity(partnerMode ? 'Partner added — waiting for Super Admin approval' : 'Partner and login account created', partner.name, org.id);
         let delivery: Delivery | null = null;
-        if (sendCredentials) {
+        // Officers' partners get their login email when a Super Admin approves (Resend login access).
+        if (sendCredentials && !partnerMode) {
           delivery = await deliver({ userId, kind: 'initial', email, fullName, organization: partner.name, accountType: ROLE_LABELS.partner_admin, password });
           await audit('credentials_emailed', 'profiles', userId, org.id, { status: delivery.status });
         }
-        return json(200, { ok: true, partnerId: org.id, userId, delivery }, origin);
+        return json(200, { ok: true, partnerId: org.id, userId, delivery, pendingApproval: partnerMode, agencyId: agency?.id ?? null }, origin);
       }
 
       case 'create_partner_user': {

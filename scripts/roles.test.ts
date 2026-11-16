@@ -123,3 +123,19 @@ test('Partner Success: Agency List and My Clients, no partnership development or
   assert.equal(canOpenPath(pso, 'applications'), true, 'application work kept');
   assert.equal(canOpenPath(partner, 'clients'), false, 'partners never');
 });
+
+test('Partner Management (0051): only employees with "Partners · Add partner"', () => {
+  const officer = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['agency_outreach', 'partners', 'partner_create'], partnerModules: [] as string[] };
+  const officerStaff = { ...base, userRole: 'support_staff' as const, permissions: ['agency_outreach', 'partner_create'] };
+  const outreachOnly = { role: 'admin' as const, userRole: 'admin_staff' as const, permissions: ['agency_outreach', 'partners'], partnerModules: [] as string[] };
+  const pso = { ...base, userRole: 'support_staff' as const, permissions: ['partner_success', 'tasks'] };
+  const appTeam = { ...base, userRole: 'application_manager' as const, permissions: ['partners', 'students', 'applications'] };
+  const superAdmin = { role: 'admin' as const, userRole: 'super_admin' as const, permissions: ['partners', 'partner_create'], partnerModules: [] as string[] };
+  assert.equal(canOpenPath(officer, 'partners/manage'), true, 'Partnership Officer (Admin Staff)');
+  assert.equal(canOpenPath(officerStaff, 'partners/manage'), true, 'Partnership Officer (Staff Portal)');
+  assert.equal(canOpenPath(outreachOnly, 'partners/manage'), false, 'agency outreach alone is not enough');
+  assert.equal(canOpenPath(pso, 'partners/manage'), false, 'Partner Success Officer');
+  assert.equal(canOpenPath(appTeam, 'partners/manage'), false, 'Application Team');
+  assert.equal(canOpenPath(partner, 'partners/manage'), false, 'partner organisations');
+  assert.equal(canOpenPath(superAdmin, 'partners/manage'), false, 'Super Admins add partners from Clients & Branches');
+});

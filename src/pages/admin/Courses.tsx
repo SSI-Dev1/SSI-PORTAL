@@ -7,7 +7,7 @@ import { BookOpen, CalendarDays, Eye, FileSpreadsheet, MoreHorizontal, Pencil, P
 import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Select, Switch, Table, Tabs, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { useLookup, useStore } from '../../store/store';
-import { CatalogueImportDialog, CourseDetails, IntakeManager, intakeLabel, intakeTone } from '../../components/catalogue';
+import { CatalogueImportDialog, CourseDetails, IntakeManager, intakeLabel, intakeTone, useCourseSourceData } from '../../components/catalogue';
 import { COURSE_DETAIL_FIELDS, PROGRAM_LEVELS } from '../../lib/catalogueImport';
 import type { Course, StudyLevel } from '../../data/types';
 import { countryFlag, matches, money } from '../../lib/utils';
@@ -165,6 +165,7 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
   const toast = useToast();
   const [tab, setTab] = useState<'details' | 'fees' | 'requirements' | 'search' | 'source' | 'intakes'>('details');
   const live = course ? db.courses.find((c) => c.id === course.id) ?? course : null;
+  const liveSource = useCourseSourceData(live ?? undefined);
   const init = (): CourseDraft => ({
     universityId: live?.universityId ?? db.universities[0]?.id ?? '', name: live?.name ?? '', level: (live?.level as StudyLevel) ?? 'Postgraduate',
     field: live?.field ?? '', faculty: live?.faculty ?? '', duration: live?.duration ?? '', tuition: live?.tuition ?? 0, currency: live?.currency ?? 'GBP',
@@ -344,7 +345,7 @@ function CourseForm({ open, onClose, course }: { open: boolean; onClose: () => v
           <Field label="Important notes (one per line, shown in the Course Finder)" className="sm:col-span-2">
             <textarea value={d.sourceNotes} onChange={txt('sourceNotes')} rows={5} className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-heading focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" />
           </Field>
-          {live?.sourceData && <p className="text-xs text-ink-mute sm:col-span-2">The original spreadsheet row ({Object.keys(live.sourceData).length} columns) is kept unchanged as the source record and shown in the course details.</p>}
+          {liveSource && <p className="text-xs text-ink-mute sm:col-span-2">The original spreadsheet row ({Object.keys(liveSource).length} columns) is kept unchanged as the source record and shown in the course details.</p>}
         </div>
       )}
       {tab === 'requirements' && (

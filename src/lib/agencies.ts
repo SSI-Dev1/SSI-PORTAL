@@ -1,7 +1,7 @@
 // Agency outreach (0034): prospects, their activity, proposals and MOUs. Everything is read
 // through RLS (an officer sees the agencies assigned to them or that they created; registration
 // managers see all) and written only through the database functions / agency-proposal function.
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../auth/auth';
 import { serverMessage } from '../data/hr';
 import { canManageRegistrations } from '../auth/roles';
@@ -143,43 +143,95 @@ export interface AgencyData { agencies: Agency[]; proposals: Proposal[]; mous: M
 /** Sample data for the dev harness (#/ui/hr/agencies); never used in the app itself. */
 export const AgencyDemo = createContext<AgencyData | null>(null);
 
+const PROPOSAL_COLUMNS = 'id, reference, prospect_id, status, company_name, recipient_name, recipient_email, country, arrangement, terms_title, terms_body, message, expires_at, created_by, created_at, approved_by, approved_at, sent_by, sent_at, email_status, email_detail, first_viewed_at, confirmed_at, confirmed_name, declined_at, decline_reason, updated_at';
+type AgencyTable = 'agency_prospects' | 'agency_proposals' | 'agency_mous' | 'agency_activities';
+const AGENCY_TABLES: AgencyTable[] = ['agency_prospects', 'agency_proposals', 'agency_mous', 'agency_activities'];
+const AGENCY_LOAD_TIMEOUT_MS = 20_000;
+const emptyAgencyData = (): AgencyData => ({ agencies: [], proposals: [], mous: [], activities: [], registrations: [] });
+
 /** All agency data the signed-in user may see, kept live through realtime. */
 export function useAgencyData(enabled = true) {
   const demo = useContext(AgencyDemo);
   const [data, setData] = useState<AgencyData | null>(demo);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
+  const dataRef = useRef<AgencyData | null>(demo);
+  dataRef.current = data;
+  /** Loads the given tables (all by default). A realtime change reloads only its own table. */
+  const load = useCallback(async (only?: AgencyTable[]) => {
     if (demo) { setData(demo); return; }
-    if (!supabase || !enabled) { setData({ agencies: [], proposals: [], mous: [], activities: [], registrations: [] }); return; }
+    if (!supabase || !enabled) { setData(emptyAgencyData()); return; }
     const sb = supabase;
-    const [a, p, m, act] = await Promise.all([
-      sb.from('agency_prospects').select('*').order('updated_at', { ascending: false }).limit(5000),
-      sb.from('agency_proposals').select('id, reference, prospect_id, status, company_name, recipient_name, recipient_email, country, arrangement, terms_title, terms_body, message, expires_at, created_by, created_at, approved_by, approved_at, sent_by, sent_at, email_status, email_detail, first_viewed_at, confirmed_at, confirmed_name, declined_at, decline_reason, updated_at').order('created_at', { ascending: false }).limit(5000),
-      sb.from('agency_mous').select('*').order('sent_on', { ascending: false }).limit(5000),
-      sb.from('agency_activities').select('*').order('at', { ascending: false }).limit(300),
-    ]);
-    if (a.error) { setError(/agency_prospects/.test(a.error.message) ? 'Run migration 0034 to enable Agencies.' : 'Agencies could not be loaded.'); setData({ agencies: [], proposals: [], mous: [], activities: [], registrations: [] }); return; }
-    const agencies = (a.data ?? []) as Agency[];
-    const regIds = agencies.map((x) => x.registration_id).filter(Boolean) as string[];
-    // Registrations are readable only by registration managers; officers see the stage instead.
-    const r = regIds.length ? await sb.from('partner_registrations').select('id, reference, status, link_status, submitted_at, activated_at').in('id', regIds) : { data: [] };
+    const tables = only?.length && dataRef.current ? only : AGENCY_TABLES;
+    const query = (t: AgencyTable) => {
+      if (t === 'agency_prospects') return sb.from(t).select('*').order('updated_at', { ascending: false }).limit(5000);
+      if (t === 'agency_proposals') return sb.from(t).select(PROPOSAL_COLUMNS).order('created_at', { ascending: false }).limit(5000);
+      if (t === 'agency_mous') return sb.from(t).select('*').order('sent_on', { ascending: false }).limit(5000);
+      return sb.from(t).select('*').order('at', { ascending: false }).limit(300);
+    };
+    let res: { data: unknown; error: { message: string } | null }[];
+    try {
+      res = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), AGENCY_LOAD_TIMEOUT_MS);
+        Promise.all(tables.map((t) => query(t))).then((v) => { clearTimeout(timer); resolve(v as typeof res); }, (e) => { clearTimeout(timer); reject(e); });
+      });
+    } catch (e) {
+      // Network failure or timeout: keep what is on screen, stop the spinner, offer a retry.
+      setError((e as Error)?.message === 'timeout' ? 'Agencies took too long to load. Check your connection and try again.' : 'Agencies could not be loaded. Check your connection and try again.');
+      setData((d) => d ?? emptyAgencyData());
+      return;
+    }
+    const byTable = new Map(tables.map((t, i) => [t, res[i]]));
+    const failed = res.find((r) => r.error);
+    if (failed?.error) {
+      const pe = byTable.get('agency_prospects')?.error;
+      setError(pe && /agency_prospects/.test(pe.message) ? 'Run migration 0034 to enable Agencies.' : 'Agencies could not be loaded. Please try again.');
+      setData((d) => d ?? emptyAgencyData());
+      return;
+    }
+    const prev = dataRef.current ?? emptyAgencyData();
+    const agencies = byTable.has('agency_prospects') ? ((byTable.get('agency_prospects')!.data ?? []) as Agency[]) : prev.agencies;
+    let registrations = prev.registrations;
+    if (byTable.has('agency_prospects')) {
+      const regIds = agencies.map((x) => x.registration_id).filter(Boolean) as string[];
+      // Registrations are readable only by registration managers; officers see the stage instead.
+      const r = regIds.length ? await sb.from('partner_registrations').select('id, reference, status, link_status, submitted_at, activated_at').in('id', regIds) : { data: [] };
+      registrations = (r.data ?? []) as Registration[];
+    }
     setError(null);
-    setData({ agencies, proposals: (p.data ?? []) as Proposal[], mous: (m.data ?? []) as Mou[], activities: (act.data ?? []) as AgencyActivity[], registrations: (r.data ?? []) as Registration[] });
+    setData({
+      agencies,
+      proposals: byTable.has('agency_proposals') ? ((byTable.get('agency_proposals')!.data ?? []) as Proposal[]) : prev.proposals,
+      mous: byTable.has('agency_mous') ? ((byTable.get('agency_mous')!.data ?? []) as Mou[]) : prev.mous,
+      activities: byTable.has('agency_activities') ? ((byTable.get('agency_activities')!.data ?? []) as AgencyActivity[]) : prev.activities,
+      registrations,
+    });
   }, [enabled, demo]);
   useEffect(() => {
     void load();
     if (!supabase || !enabled || demo) return;
     const sb = supabase;
     let t: ReturnType<typeof setTimeout> | undefined;
-    const soon = () => { clearTimeout(t); t = setTimeout(() => void load(), 250); };
+    const pending = new Set<AgencyTable>();
+    const soon = (table?: AgencyTable) => {
+      if (table) pending.add(table); else AGENCY_TABLES.forEach((x) => pending.add(x));
+      clearTimeout(t);
+      t = setTimeout(() => { const only = [...pending]; pending.clear(); void load(only); }, 250);
+    };
     const ch = sb.channel(`agencies-${Math.random().toString(36).slice(2, 8)}`);
-    for (const table of ['agency_prospects', 'agency_proposals', 'agency_mous', 'agency_activities']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, soon);
+    for (const table of AGENCY_TABLES) ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => soon(table));
     ch.subscribe();
-    const onFocus = () => document.visibilityState === 'visible' && soon();
+    // Back after a while: reconcile anything missed. A quick tab switch downloads nothing.
+    let hiddenAt = 0;
+    const onFocus = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt >= 60_000) soon();
+      hiddenAt = 0;
+    };
     document.addEventListener('visibilitychange', onFocus);
     return () => { clearTimeout(t); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
   }, [load, enabled, demo]);
-  return { data, error, reload: load };
+  const reload = useCallback(() => load(), [load]);
+  return { data, error, reload };
 }
 
 export const latestProposal = (proposals: Proposal[], agencyId: string) => proposals.find((p) => p.prospect_id === agencyId) ?? null;
@@ -304,9 +356,22 @@ export function useLinkedIn(enabled = true) {
   const load = useCallback(async () => {
     if (demo) { setRows(demo); return; }
     if (!supabase || !enabled) { setRows([]); return; }
-    const { data, error: e } = await supabase.from('linkedin_prospects').select('*').order('updated_at', { ascending: false }).limit(5000);
-    if (e) { setError(/linkedin_prospects/.test(e.message) ? 'Run migration 0039 to enable LinkedIn Outreach.' : 'Prospects could not be loaded.'); setRows([]); return; }
-    setError(null); setRows((data ?? []) as LinkedInProspect[]);
+    const sb = supabase;
+    let res: { data: unknown; error: { message: string } | null };
+    try {
+      res = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), AGENCY_LOAD_TIMEOUT_MS);
+        sb.from('linkedin_prospects').select('*').order('updated_at', { ascending: false }).limit(5000)
+          .then((v) => { clearTimeout(timer); resolve(v as typeof res); }, (err) => { clearTimeout(timer); reject(err); });
+      });
+    } catch {
+      setError('Prospects could not be loaded. Check your connection and try again.');
+      setRows((r) => r ?? []);
+      return;
+    }
+    const e = res.error;
+    if (e) { setError(/linkedin_prospects/.test(e.message) ? 'Run migration 0039 to enable LinkedIn Outreach.' : 'Prospects could not be loaded.'); setRows((r) => r ?? []); return; }
+    setError(null); setRows((res.data ?? []) as LinkedInProspect[]);
   }, [enabled, demo]);
   useEffect(() => {
     void load();
@@ -317,7 +382,12 @@ export function useLinkedIn(enabled = true) {
     const ch = sb.channel(`linkedin-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'linkedin_prospects' }, soon)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'linkedin_activities' }, soon).subscribe();
-    const onFocus = () => document.visibilityState === 'visible' && soon();
+    let hiddenAt = 0;
+    const onFocus = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt >= 60_000) soon();
+      hiddenAt = 0;
+    };
     document.addEventListener('visibilitychange', onFocus);
     return () => { clearTimeout(t); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
   }, [load, enabled, demo]);

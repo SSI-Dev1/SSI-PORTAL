@@ -21,7 +21,7 @@ import { supabase } from '../../auth/auth';
 export default function PartnershipDashboard() {
   const { session } = useStore();
   const navigate = useNavigate();
-  const { data, error } = useAgencyData(true);
+  const { data, error, reload } = useAgencyData(true);
   const [adding, setAdding] = useState(false);
   // Agency Type filter (0043): every count, list and card link below uses the same rule as the Agency List.
   const [type, setType] = useState<AgencyTypeFilter>('');
@@ -87,7 +87,7 @@ export default function PartnershipDashboard() {
           <Button icon={Plus} onClick={() => setAdding(true)}>Add Agency</Button>
         </div>
       </div>
-      {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error}</p>}
+      {error && <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">{error} <button type="button" className="font-semibold underline" onClick={() => void reload()}>Try again</button></p>}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-ink-mute">Agency type</span>
         <Segmented options={TYPE_FILTERS.map((t) => ({ value: t.value, label: t.value ? t.label : 'All' }))} value={type} onChange={(v) => setType(v as AgencyTypeFilter)} />

@@ -84,6 +84,28 @@ export function fromRow<T>(row: Row): T {
 /** Readable partners columns (commission_rate is not; see partner_commissions()). */
 const PARTNER_COLUMNS: string = 'id, name, code, contact_name, email, phone, city, country, website, status, tier, branches, joined_at, portal_enabled, modules, archived_at, address, partnership_officer_id, commission_visible';
 
+/**
+ * Course columns the app lists and filters on. source_data (the raw spreadsheet row, most of the
+ * catalogue's size) is not downloaded with the list; course details fetch it for one course.
+ * Add new course columns here when the UI starts using them.
+ */
+export const COURSE_LIST_COLUMNS = 'id, university_id, name, level, field, duration, tuition, currency, intakes, ielts_min, active, faculty, scholarship, '
+  + 'tuition_after_scholarship, early_bird, accommodation, academic_requirement, english_requirement, compliance_requirement, course_requirement, '
+  + 'documents_required, source, updated_at, campus, website_url, scholarship_url, open_intakes, intake_year_text, application_deadline_text, '
+  + 'application_fee, application_mode, tuition_text, scholarship_available, average_scholarship, backlog_range, remarks, english_waiver, ielts_band, '
+  + 'toefl_score, toefl_band, pte_score, pte_band, det_score, source_serial, source_row, source_notes, program_level, discipline_area, study_mode, '
+  + 'esl_available, sat_min, act_min, gre_min, gmat_min, english_required, gre_required, gmat_required, maths_required, stem, accepts_fifteen_years, '
+  + 'application_fee_waiver, scholarship_amount';
+
+/** Large, rarely-changing catalogue collections: loaded after the app is usable, kept live by realtime. */
+const BACKGROUND_KEYS = ['courses', 'courseIntakes', 'blacklist'];
+/** Give up on a load after this long, so the screen never spins forever. */
+const LOAD_TIMEOUT_MS = 25_000;
+const withTimeout = <T,>(p: PromiseLike<T>, ms: number) => new Promise<T>((resolve, reject) => {
+  const t = setTimeout(() => reject(new Error('timeout')), ms);
+  p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+});
+
 const TABLES = {
   partners: 'partners',
   students: 'students',
@@ -108,6 +130,8 @@ function useStoreValue() {
   const toast = useMemo(() => ({ error: (t: string, m?: string) => toastRef.current.error(t, m) }), []);
   const [db, setDb] = useState<DB>(emptyDB);
   const [loading, setLoading] = useState(false);
+  /** The first load failed (network, timeout, server): the shell shows a retry instead of a spinner. */
+  const [loadError, setLoadError] = useState(false);
   /** Realtime connection state, shown as the "Live" indicator. */
   const [live, setLive] = useState<'connecting' | 'live' | 'offline'>('connecting');
   /** Bumps whenever any visible account changes, so account screens can re-query. */
@@ -121,7 +145,7 @@ function useStoreValue() {
     const sb = supabase;
     const f: Record<string, () => PromiseLike<{ data: unknown; error: unknown }>> = {};
     (Object.keys(TABLES) as TableKey[]).forEach((k) => {
-      f[k] = () => sb.from(TABLES[k]).select(k === 'partners' ? PARTNER_COLUMNS : '*').limit(5000);
+      f[k] = () => sb.from(TABLES[k]).select(k === 'partners' ? PARTNER_COLUMNS : k === 'courses' ? COURSE_LIST_COLUMNS : '*').limit(5000);
     });
     // Commission is not a readable column: it comes from partner_commissions(), which returns
     // only what this user may see (SSI staff with Partners/Finance, or their own Partner Admin).
@@ -154,17 +178,23 @@ function useStoreValue() {
 
   /** (Re)loads the given collections — or everything — from the server. */
   const load = useCallback(
-    async (only?: string[]) => {
-      if (!fetchers || status !== 'signed-in' || !realSession) return;
+    async (only?: string[], first = false): Promise<boolean> => {
+      if (!fetchers || status !== 'signed-in' || !realSession) return false;
       const keys = keysFor(only);
-      if (!keys.length) return;
-      const results = await Promise.all(keys.map((k) => fetchers[k]()));
-      const failed = results.find((r) => r.error);
-      if (failed?.error) {
-        if (!only) toast.error('Could not load data', 'Please refresh the page. If this continues, contact SSI GLOBAL.');
-        setLoading(false);
-        return;
+      if (!keys.length) return true;
+      let results: { data: unknown; error: unknown }[] | null = null;
+      try {
+        results = await withTimeout(Promise.all(keys.map((k) => fetchers[k]())), LOAD_TIMEOUT_MS);
+      } catch {
+        results = null; // network failure or timeout
       }
+      if (!results || results.some((r) => r.error)) {
+        if (first) setLoadError(true);
+        else if (!only) toast.error('Could not load data', 'Check your connection. The page will refresh when the connection is back.');
+        setLoading(false);
+        return false;
+      }
+      if (first) setLoadError(false);
       setDb((d) => {
         const next = only ? { ...d } : emptyDB();
         keys.forEach((k, i) => {
@@ -173,9 +203,18 @@ function useStoreValue() {
         return next;
       });
       setLoading(false);
+      return true;
     },
     [fetchers, status, realSession, keysFor, toast],
   );
+
+  /** First load: everything the screens need, then the big catalogue in the background. */
+  const firstLoad = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    const core = keysFor().filter((k) => !BACKGROUND_KEYS.includes(k));
+    if (await load(core, true)) void load(BACKGROUND_KEYS);
+  }, [keysFor, load]);
 
   // Initial load, and re-sync when the tab regains focus (picks up other users' changes).
   const loadedFor = useRef<string | null>(null);
@@ -187,18 +226,26 @@ function useStoreValue() {
     }
     if (loadedFor.current !== userId) {
       loadedFor.current = userId;
-      setLoading(true);
-      void load();
+      setDb(emptyDB());
+      void firstLoad();
     }
     // Reconcile anything missed while hidden or offline (events are not the only source of truth).
-    const h = () => document.visibilityState === 'visible' && void load();
-    document.addEventListener('visibilitychange', h);
-    window.addEventListener('online', h);
-    return () => {
-      document.removeEventListener('visibilitychange', h);
-      window.removeEventListener('online', h);
+    // A quick tab switch re-downloads nothing; after a longer absence the working data is refreshed
+    // (the catalogue is kept current by realtime); coming back online refreshes everything.
+    let hiddenAt = 0;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt >= 60_000) void load(keysFor().filter((k) => !BACKGROUND_KEYS.includes(k)));
+      hiddenAt = 0;
     };
-  }, [status, userId, load]);
+    const onOnline = () => void load();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [status, userId, load, firstLoad, keysFor]);
 
   // ---------------------------------------------------------------- realtime
   // Supabase Realtime delivers a change only to subscribers whose RLS allows reading the row.
@@ -615,7 +662,7 @@ function useStoreValue() {
     },
   };
 
-  return { db, session, actions, loading, live, profilesRev };
+  return { db, session, actions, loading, loadError, retryLoad: firstLoad, live, profilesRev };
 }
 
 type StoreValue = ReturnType<typeof useStoreValue>;

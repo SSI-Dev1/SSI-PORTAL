@@ -22,7 +22,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const [params, setParams] = useSearchParams();
   const allowed = agencyAccess(session);
   const manager = agencyManager(session);
-  const { data, error } = useAgencyData(allowed);
+  const { data, error, reload } = useAgencyData(allowed);
   const [q, setQ] = useState('');
   const [officer, setOfficer] = useState('');
   const [adding, setAdding] = useState(addNew || params.get('add') === '1');
@@ -74,7 +74,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
           {manager && <Button variant="secondary" icon={Settings2} onClick={() => setSettings(true)}>Proposal terms & settings</Button>}
           <Button icon={Plus} onClick={() => setAdding(true)}>Add Agency</Button>
         </>} />
-      {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
+      {error && <Alert tone="warning" className="mb-4">{error} <Button size="sm" variant="secondary" className="ml-1" onClick={() => void reload()}>Try again</Button></Alert>}
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, contact, phone, email…" className="w-full sm:w-72" />

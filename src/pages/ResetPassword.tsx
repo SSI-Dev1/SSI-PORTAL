@@ -75,7 +75,7 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (err) {
       const msg = err instanceof AuthError ? err.message : '';
-      setError(/session|expired|jwt|missing/i.test(msg) ? 'Your reset link has expired. Request a new one.'
+      setError(/auth session missing|jwt expired|invalid jwt|session.*(expired|not found)/i.test(msg) ? 'Your reset link has expired. Request a new one.'
         : msg || 'Could not update your password. Check your connection and try again — your reset link is still valid.');
     }
     setBusy(false);

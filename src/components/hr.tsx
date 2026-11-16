@@ -1,6 +1,7 @@
 // Building blocks shared by the Employee (work), Manager (team) and HR screens:
 // daily report form and detail, approval queues, the punch card and small helpers.
 // Every action is a database function (useHR().call) that re-checks permission and policy.
+import { WorkTimeline, useWorkTimeline } from './WorkTimeline';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -309,6 +310,8 @@ export function ReportDetailModal({ report, onClose, canReview }: { report?: Dai
   const [events, setEvents] = useState<{ action: string; at: string; actorId: string | null; comment: string | null }[]>([]);
   const live = data.reports.find((r) => r.id === report?.id) ?? report;
   const tpl: ReportTemplate | undefined = data.templates.find((t) => t.id === live?.templateId && t.version === live?.templateVersion);
+  // The day's recorded work behind the figures (live data; the submitted figures stay as submitted).
+  const timeline = useWorkTimeline(live?.reportDate ?? '', live?.employeeId, live?.updatedAt);
   useEffect(() => {
     setComment('');
     if (!report) return;
@@ -358,6 +361,7 @@ export function ReportDetailModal({ report, onClose, canReview }: { report?: Dai
             {live.reviewedAt && <span className="text-ink-soft">· {live.status === 'Correction Requested' ? 'Returned' : 'Reviewed'} by {lk.name(live.reviewedBy)}</span>}
           </div>
           {live.reviewComment && <Alert tone={live.status === 'Correction Requested' ? 'warning' : 'info'} title="Reviewer comment">{live.reviewComment}</Alert>}
+          <WorkTimeline rows={timeline.rows} error={timeline.error} title="Recorded work that day (live)" />
           {tpl ? (
             tpl.sections.map((s) => (
               <section key={s.id} className="rounded-2xl border border-line p-4">

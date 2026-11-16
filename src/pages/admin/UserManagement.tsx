@@ -71,6 +71,7 @@ import {
   STAFF_ROLES,
   type StaffRole,
 } from '../../auth/roles';
+import { useAgencyData } from '../../lib/agencies';
 import { adminApi, AdminApiError, generatePassword, loadDirectory, setPartnerAccess, type DirectoryUser } from '../../lib/adminApi';
 import { DeliveryBadge, ResendIcon, SendCredentialsOption, deliveryMessage, useCredentialDeliveries, useResendLoginAccess, type Delivery, type DeliveryRow } from '../../lib/credentialDeliveries';
 import type { Partner, UserRole } from '../../data/types';
@@ -900,13 +901,21 @@ const emptyOrg = { name: '', code: '', branch: '', contactName: '', email: '', p
 /** Clients & Branches → Add Partner: the organisation and its first login, in one step. */
 export type PartnerPrefill = Partial<typeof emptyOrg> & { loginEmail?: string };
 
-export function PartnerDialog({ open, onClose, onCreated, initial, registrationId }: {
+export function PartnerDialog({ open, onClose, onCreated, initial, registrationId, officerMode = false }: {
   open: boolean; onClose: () => void; onCreated: OnCreated;
   /** Prefill from an approved partner registration (Clients & Branches → Partner Registrations). */
   initial?: PartnerPrefill;
   registrationId?: string;
+  /**
+   * Partnership Officers ("Partners · Add partner", 0051): the same form and backend, but the partner
+   * waits for Super Admin approval — portal closed, no login email — and can be linked to its agency.
+   */
+  officerMode?: boolean;
 }) {
   const { db } = useStore();
+  const { data: agencyData } = useAgencyData(officerMode && open);
+  const [agencyId, setAgencyId] = useState('');
+  const linkable = useMemo(() => (agencyData?.agencies ?? []).filter((a) => !a.partner_id).sort((a, b) => (a.company_name ?? '').localeCompare(b.company_name ?? '')), [agencyData]);
   const [org, setOrg] = useState(emptyOrg);
   const [acct, setAcct] = useState({ email: '', password: '', confirm: '', mustChange: false, send: true });
   const [modules, setModules] = useState<string[]>(PARTNER_MODULES.map((m) => m.id));
@@ -918,9 +927,17 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
     setOrg({ ...emptyOrg, ...Object.fromEntries(Object.entries(initialOrg).filter(([, v]) => v != null)) });
     setAcct({ email: initialLogin ?? '', password: '', confirm: '', mustChange: false, send: true });
     setModules(PARTNER_MODULES.map((m) => m.id));
+    setAgencyId('');
     setErrors({});
     s.setError('');
   }, [open]);
+  // Picking the agency fills what the Agency List already holds (still editable).
+  const pickAgency = (id: string) => {
+    setAgencyId(id);
+    const a = linkable.find((x) => x.id === id);
+    if (!a) return;
+    setOrg((o) => ({ ...o, name: o.name || a.company_name || '', contactName: o.contactName || a.contact_name || '', email: o.email || a.email || '', phone: o.phone || a.phone || '' }));
+  };
   const loginEmail = acct.email || org.email;
   // Suggest a code from the name (editable).
   const suggestedCode = org.name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
@@ -942,18 +959,19 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
     if (Object.values(e).some(Boolean)) return;
     void s.run(async () => {
       const email = loginEmail.trim().toLowerCase();
-      const active = org.status === 'Active';
+      const active = !officerMode && org.status === 'Active';
       const sendCredentials = acct.send && active;
       const r = await adminApi.createPartner({
         partner: {
           name: org.name, code, contactName: org.contactName, email: org.email, phone: org.phone, country: org.country,
           city: org.branch, branches: [org.branch.trim()], address: org.address, tier: 'Silver',
         },
-        account: { email, fullName: org.contactName.trim(), password: acct.password, mustChangePassword: sendCredentials || acct.mustChange },
+        account: { email, fullName: org.contactName.trim(), password: acct.password, mustChangePassword: officerMode || sendCredentials || acct.mustChange },
         portalEnabled: active,
         modules,
         sendCredentials,
         ...(registrationId ? { registrationId } : {}),
+        ...(officerMode && agencyId ? { agencyId } : {}),
       });
       await onCreated(email, acct.password, r.delivery);
     });
@@ -966,11 +984,26 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
       size="xl"
       dirty={!!(org.name || org.email || acct.password)}
       title={registrationId ? 'Approve & create partner' : 'Add partner'}
-      subtitle={registrationId ? 'Prefilled from the approved registration — check every detail. Creates the partner organisation and its Partner Admin login once, and can email the login details.' : 'Creates the partner organisation, its private workspace and its Partner Admin login, and can email the login details.'}
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>Create Partner &amp; Account</Button></>}
+      subtitle={registrationId ? 'Prefilled from the approved registration — check every detail. Creates the partner organisation and its Partner Admin login once, and can email the login details.'
+        : officerMode ? 'Creates the partner organisation and its Partner Admin login. It waits for Super Admin approval: portal access and the login email follow approval.'
+        : 'Creates the partner organisation, its private workspace and its Partner Admin login, and can email the login details.'}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Check} onClick={save} loading={s.busy}>{officerMode ? 'Add Partner for Approval' : <>Create Partner &amp; Account</>}</Button></>}
     >
       <div className="space-y-6">
         {s.error && <Alert tone="error">{s.error}</Alert>}
+        {officerMode && (
+          <Alert tone="info" title="Needs Super Admin approval">
+            The partner is saved now with portal access closed. A Super Admin approves it by opening portal access and sending the login details. It is never created twice: an existing partner with the same name or email is refused.
+          </Alert>
+        )}
+        {officerMode && (
+          <Field label="Agency List record" hint="Optional — links the partner to its agency, keeping the Main and Sub Officer. Same-name agencies are linked automatically.">
+            <Select value={agencyId} onChange={(e) => pickAgency(e.target.value)} aria-label="Agency List record">
+              <option value="">{agencyData ? 'Not linked / match by name' : 'Loading agencies…'}</option>
+              {linkable.map((a) => <option key={a.id} value={a.id}>{a.company_name || a.contact_name || a.reference} · {a.reference}</option>)}
+            </Select>
+          </Field>
+        )}
         <section>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-mute">1 · Partner information</h3>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -988,12 +1021,12 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
               </Select>
             </Field>
             <Field label="Address" className="sm:col-span-2"><Input value={org.address} onChange={o('address')} placeholder="Street, city, PIN" /></Field>
-            <Field label="Account status">
+            {!officerMode && <Field label="Account status">
               <Select value={org.status} onChange={o('status')} aria-label="Account status">
                 <option value="Active">Active — can sign in now</option>
                 <option value="Inactive">Inactive — create now, enable later</option>
               </Select>
-            </Field>
+            </Field>}
           </div>
         </section>
         <section>
@@ -1003,8 +1036,9 @@ export function PartnerDialog({ open, onClose, onCreated, initial, registrationI
               <Input icon={Mail} type="email" value={acct.email} placeholder={org.email} invalid={!!errors.loginEmail} onChange={(e) => setAcct({ ...acct, email: e.target.value })} autoComplete="off" />
             </Field>
             <PasswordInput value={acct.password} onChange={(v) => setAcct((x) => ({ ...x, password: v }))} confirm={acct.confirm} onConfirm={(v) => setAcct((x) => ({ ...x, confirm: v }))} email={loginEmail} error={errors.password} confirmError={errors.confirm} />
-            {org.status === 'Active' && <SendCredentialsOption checked={acct.send} onChange={(v) => setAcct({ ...acct, send: v })} />}
-            {!(acct.send && org.status === 'Active') && <Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" />}
+            {!officerMode && org.status === 'Active' && <SendCredentialsOption checked={acct.send} onChange={(v) => setAcct({ ...acct, send: v })} />}
+            {officerMode && <p className="text-xs text-ink-mute">The partner must change this password at first sign-in. Login details are sent when a Super Admin approves the partner.</p>}
+            {!officerMode && !(acct.send && org.status === 'Active') && <Checkbox checked={acct.mustChange} onCheckedChange={(v) => setAcct({ ...acct, mustChange: v })} label="Require a password change at first sign-in" />}
           </div>
         </section>
         <section>

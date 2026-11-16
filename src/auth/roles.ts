@@ -26,7 +26,7 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success' | 'partner_create';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -48,12 +48,13 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'commission_internal', label: 'Commission · Internal values', hint: 'SSI GLOBAL\'s own commission and profit — confidential (Super Admin grants)' },
   { id: 'commission_edit', label: 'Commission · Edit master & import', hint: 'Edit master records, providers and tiers; import sheets (Super Admin grants)' },
   { id: 'partner_accounts', label: 'Partner accounts · create logins', hint: 'Create partner login accounts for existing onboarded clients. Portal access stays a Super Admin decision (Super Admin grants)' },
+  { id: 'partner_create', label: 'Partners · Add partner', hint: 'Partner Management: add a partner and its Partner Admin login with the standard form. It waits for Super Admin approval — portal closed, no login email until approved (Super Admin grants)' },
   { id: 'partner_success', label: 'Partner Success · My Clients', hint: 'Agency List of onboarded clients (read-only) and My Clients where the employee is Sub Officer; logs relationship activities. No partner, proposal or commission management' },
   { id: 'partner_onboarding', label: 'Partner registrations', hint: 'Registration links, review and approval of new partners — Admin Staff only (Super Admin grants)' },
   { id: 'agency_outreach', label: 'Agencies & proposals', hint: 'Agency prospects, follow-ups and partnership proposals (Partnership Officers). Not registration approval or partner accounts' },
 ];
 /** Only a Super Admin can grant these. */
-export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding', 'partner_accounts'];
+export const HR_MODULES: StaffModule[] = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding', 'partner_accounts', 'partner_create'];
 
 /** Partner registrations: Super Admins, and Admin Staff given "Partner registrations" (0030). */
 export const canManageRegistrations = (s: { userRole: UserRole; permissions: string[] } | null) =>
@@ -240,10 +241,18 @@ export function canOpenPath(session: Parameters<typeof canOpen>[0], path: string
   const [seg, sub] = path.replace(/^\/+/, '').split('/');
   // Internal HR and the employee workspace are never open to partner organisations.
   if ((seg === 'hr' || seg === 'work' || seg === 'work-reports') && session?.role === 'client') return false;
+  // Partner Management (0051): employees a Super Admin allowed to add partners (whatever their other
+  // permissions). Super Admins add partners from Clients & Branches.
+  if (seg === 'partners' && sub === 'manage') return session?.role !== 'client' && canAddPartner(session) && session?.userRole !== 'super_admin';
   if (!canOpen(session, seg ?? '')) return false;
   if (seg === 'hr' && sub && !['employees', 'departments', 'designations'].includes(sub)) return isHR(session);
   if (seg === 'work' && (sub === 'team' || sub === 'assignments')) return canOpen(session, 'team');
   if (seg === 'partners' && sub === 'registrations') return canManageRegistrations(session);
   return true;
+}
+
+/** May add partners (Super Admin, or "Partners · Add partner"); officers' partners wait for approval. */
+export function canAddPartner(session: { userRole: UserRole; permissions: string[] } | null): boolean {
+  return !!session && (session.userRole === 'super_admin' || session.permissions.includes('partner_create'));
 }
 

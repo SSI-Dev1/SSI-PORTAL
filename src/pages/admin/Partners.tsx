@@ -6,7 +6,7 @@ import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
-import { canManageRegistrations } from '../../auth/roles';
+import { canAddPartner, canManageRegistrations } from '../../auth/roles';
 import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
 import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, LinkPartnerModal, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
 import { DeletePartnerDialog, PartnerUserDialog } from './UserManagement';
@@ -25,12 +25,19 @@ export const accountState = (p: Partner): { key: 'active' | 'provisioning' | 'su
     : p.status === 'Onboarding' ? { key: 'provisioning', label: 'Provisioning · portal off', tone: 'amber' }
       : { key: 'suspended', label: p.status === 'Inactive' ? 'Suspended' : 'Portal off', tone: 'red' };
 
-export default function Partners() {
+/**
+ * Clients & Branches. With `manage` (Partner Management, 0051): the same directory opened on the
+ * partners waiting for approval, for employees allowed to add partners.
+ */
+export default function Partners({ manage = false }: { manage?: boolean }) {
   const { db, actions, session } = useStore();
   // Partnership Officers: Clients & Branches is the directory of active, onboarded partners only.
-  const activeOnly = partnershipFocused(session);
   const { realSession } = useAuth();
   const superAdmin = realSession?.userRole === 'super_admin';
+  /** "Partners · Add partner": the Admin Add Partner form; the partner then waits for Super Admin approval. */
+  const canAdd = canAddPartner(realSession);
+  const activeOnly = partnershipFocused(session) && !manage;
+  const toast = useToast();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -38,13 +45,13 @@ export default function Partners() {
   // Partners are created only here, by a Super Admin, together with their login account.
   const openAdd = () => {
     setEditing(undefined);
-    if (superAdmin) setAccountOpen(true);
+    if (canAdd) setAccountOpen(true);
   };
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [tier, setTier] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('grid');
-  const [tab, setTabState] = useState<DirTab>(() => (TABS as string[]).includes(params.get('tab') ?? '') ? params.get('tab') as DirTab : 'onboarded');
+  const [tab, setTabState] = useState<DirTab>(() => (TABS as string[]).includes(params.get('tab') ?? '') ? params.get('tab') as DirTab : manage ? 'provisioning' : 'onboarded');
   const setTab = (t: DirTab) => { setTabState(t); setParams((x) => { const n = new URLSearchParams(x); n.set('tab', t); return n; }, { replace: true }); };
   useEffect(() => { const t = params.get('tab'); if (t && (TABS as string[]).includes(t)) setTabState(t as DirTab); }, [params]);
   const statusMap = usePartnerStatus(true);
@@ -147,8 +154,10 @@ export default function Partners() {
   return (
     <>
       <PageHeader
-        title="Clients & Branches"
-        subtitle="Every onboarded client — historically onboarded or verified — with its portal access shown separately. Prospects and earlier stages stay in the Agency List."
+        title={manage ? 'Partner Management' : 'Clients & Branches'}
+        subtitle={manage
+          ? 'Add a partner with its Partner Admin login. New partners wait here for Super Admin approval; portal access and the login email follow approval, and the partner then appears in Clients & Branches.'
+          : 'Every onboarded client — historically onboarded or verified — with its portal access shown separately. Prospects and earlier stages stay in the Agency List.'}
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
@@ -157,7 +166,7 @@ export default function Partners() {
                 Partner Registrations
               </Button>
             )}
-            {superAdmin && (
+            {canAdd && (
               <Button icon={Plus} onClick={openAdd}>
                 Add Partner
               </Button>
@@ -172,7 +181,7 @@ export default function Partners() {
         { value: 'not_activated', label: 'Portal not activated', count: count('not_activated') },
         { value: 'review', label: 'Needs review', count: count('review') },
         { value: 'suspended', label: 'Suspended', count: count('suspended') },
-        ...(activeOnly ? [] : [{ value: 'provisioning' as const, label: 'Provisioning', count: count('provisioning') }]),
+        ...(activeOnly ? [] : [{ value: 'provisioning' as const, label: manage ? 'Pending approval' : 'Provisioning', count: count('provisioning') }]),
         { value: 'all', label: 'All', count: count('all') },
       ]} />
       <Card className="mb-6">
@@ -195,7 +204,7 @@ export default function Partners() {
           onOpen={(a) => navigate(`../agencies/${a.agency_id}`, { relative: 'path' })} />
       ) : rows.length === 0 ? (
         <Card>
-          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={superAdmin ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
+          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={canAdd ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
         </Card>
       ) : view === 'grid' ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -292,10 +301,16 @@ export default function Partners() {
       <PartnerForm open={formOpen} onClose={() => setFormOpen(false)} partner={editing} onCreated={(id) => navigate(id)} />
       <PartnerDialog
         open={accountOpen}
+        officerMode={!superAdmin}
         onClose={() => setAccountOpen(false)}
         onCreated={async (email, password, delivery) => {
           setAccountOpen(false);
-          setCreated(createdAccount('Partner and login account created', email, password, delivery));
+          if (!superAdmin) {
+            toast.success('Partner added — waiting for Super Admin approval', 'Portal access and the login email are sent once a Super Admin approves it.');
+            setTab('provisioning');
+          } else {
+            setCreated(createdAccount('Partner and login account created', email, password, delivery));
+          }
           await actions.reload();
         }}
       />

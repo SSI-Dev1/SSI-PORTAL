@@ -77,7 +77,9 @@ export const adminApi = {
     sendCredentials?: boolean;
     /** Approved partner registration this partner is created from (claimed server-side, once). */
     registrationId?: string;
-  }) => call<{ ok: true; partnerId: string; userId: string; delivery?: Delivery | null }>({ action: 'create_partner', ...b }),
+    /** Partnership Officers (0051): the Agency List record this partner comes from. */
+    agencyId?: string;
+  }) => call<{ ok: true; partnerId: string; userId: string; delivery?: Delivery | null; pendingApproval?: boolean; agencyId?: string | null }>({ action: 'create_partner', ...b }),
   createPartnerUser: (b: { partnerId: string; email: string; fullName: string; role: UserRole; password: string; mustChangePassword: boolean; sendCredentials?: boolean }) =>
     call<{ ok: true; userId: string; delivery?: Delivery | null }>({ action: 'create_partner_user', ...b }),
   /** New temporary password emailed by the server; the old password stops working. */

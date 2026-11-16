@@ -295,6 +295,7 @@ export default function App() {
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
                 <Route path="partners/registrations" element={<PartnerRegistrations />} />
+                <Route path="partners/manage" element={<Partners manage />} />
                 <Route path="partners/:id" element={<PartnerDetail />} />
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />
@@ -329,6 +330,7 @@ export default function App() {
                 <Route path="university-partnerships" element={<UniversityPartnerships />} />
                 <Route path="agencies/:id" element={<AgencyDetail />} />
                 <Route path="partners" element={<Partners />} />
+                <Route path="partners/manage" element={<Partners manage />} />
                 <Route path="partners/:id" element={<PartnerDetail />} />
                 {sharedRoutes}
                 <Route path="providers" element={<Providers />} />

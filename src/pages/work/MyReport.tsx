@@ -3,10 +3,11 @@
 // only writes the summaries and submits. Submitted reports are frozen snapshots.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, ClipboardList, Hourglass, ListPlus, Lock, PenLine, Save, Send, Sparkles } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ClipboardList, FileDown, Hourglass, Lock, PenLine, Send, Sparkles } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Segmented } from '../../components/ui';
 import { WorkTimeline, useWorkTimeline } from '../../components/WorkTimeline';
-import { MetricActivitiesModal, QuickLogModal, ReportForm, reportTone, type ReportDraft } from '../../components/hr';
+import { printReportPdf } from '../../lib/reportPdf';
+import { MetricActivitiesModal, QuickLogModal, reportTone, type ReportDraft } from '../../components/hr';
 import { useConfirm } from '../../components/feedback';
 import { useHR } from '../../store/hr';
 import { useStore } from '../../store/store';
@@ -78,6 +79,34 @@ export default function MyReport() {
   const me = data.directory.find((d) => d.id === session?.userId);
   const department = data.departments.find((d) => d.id === me?.departmentId)?.name;
 
+  // The full report (every figure, the timeline, pending work and any written summary) as a PDF.
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const downloadPdf = async () => {
+    if (!template) return;
+    setPdfBusy(true);
+    let pending: PendingWork | null = null;
+    if (agencyAccess(session ?? null) && supabase) {
+      const { data: w } = await supabase.rpc('my_pending_work', { p_date: date });
+      pending = (w ?? null) as PendingWork | null;
+    }
+    printReportPdf({
+      employee: session?.name ?? 'Employee', designation: options.find((o) => o.value === templateId)?.label ?? template.name, department: department ?? null,
+      date, dateLabel: fmtDay(date), status: existing?.status ?? 'Not submitted', submittedAt: existing?.submittedAt ?? null, templateName: template.name,
+      sections: template.sections.map((sec) => ({
+        title: sec.title,
+        counts: sec.fields.filter((f) => f.type === 'count').map((f) => ({ label: f.label, value: valueOf(metrics[f.key]), kind: kindOf(metrics[f.key]) })),
+        texts: sec.fields.filter((f) => f.type === 'text').map((f) => ({ label: f.label, value: (editable ? draft.notes[f.key] : existing?.notes?.[f.key]) ?? '' })),
+      })),
+      completed, openWork,
+      timeline: (timeline.rows ?? []).filter((r) => !r.voided),
+      pending: pending ? [
+        ...pending.tasks.filter((t) => t.due_date <= date).map((t) => ({ title: `${TASK_KIND[t.kind]} · ${t.agency}`, when: fmtDate(t.due_date), overdue: t.overdue })),
+        ...pending.linkedin.map((l) => ({ title: `LinkedIn follow-up · ${l.name}`, when: fmtDate(l.due_date), overdue: l.overdue })),
+      ] : [],
+    });
+    setPdfBusy(false);
+  };
+
   const save = async (submit: boolean) => {
     if (inFlight.current) return;
     if (submit) {
@@ -99,30 +128,6 @@ export default function MyReport() {
     if (r.ok) setSaved(JSON.stringify(draft));
   };
 
-  // Key Update: add the open task queue (carried-over follow-ups, meetings, visits, LinkedIn
-  // follow-ups) to "Pending Follow-ups". It is appended — written text is never replaced.
-  const hasPendingField = !!template?.sections.some((s) => s.fields.some((f) => f.key === 'pending_followups'));
-  const addPending = async () => {
-    if (!supabase) return;
-    const { data: w, error } = await supabase.rpc('my_pending_work', { p_date: date });
-    if (error || !w) return;
-    const pw = w as PendingWork;
-    const lines = [
-      ...pw.tasks.filter((t) => t.due_date <= date).map((t) => `• ${TASK_KIND[t.kind]} · ${t.agency} · ${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}${t.overdue ? ' (overdue)' : ''}${t.attendee ? ` · ${t.attendee}` : ''}`),
-      ...pw.linkedin.map((l) => `• LinkedIn follow-up · ${l.name} · ${fmtDate(l.due_date)}${l.overdue ? ' (overdue)' : ''}`),
-      ...(pw.linkedin_pending_contacts ? [`• ${pw.linkedin_pending_contacts} LinkedIn contact${pw.linkedin_pending_contacts === 1 ? '' : 's'} not connected yet`] : []),
-      ...(pw.not_connected ? [`• ${pw.not_connected} agenc${pw.not_connected === 1 ? 'y' : 'ies'} not connected yet`] : []),
-      ...(pw.open_attempts ? [`• ${pw.open_attempts} open contact attempt${pw.open_attempts === 1 ? '' : 's'}`] : []),
-    ];
-    const text = lines.length ? lines.join('\n') : '• Nothing pending';
-    const cur = (draft.notes.pending_followups ?? '').trim();
-    if (cur) {
-      const ok = await confirm({ title: 'Add pending items?', message: 'Your text stays as it is; the open items are added below it.', confirmLabel: 'Add below' });
-      if (!ok) return;
-    }
-    setDraft({ ...draft, notes: { ...draft.notes, pending_followups: cur ? `${cur}\n${text}` : text } });
-  };
-
   const set = (k: 'template' | 'date', v: string) => {
     const p = new URLSearchParams(params);
     p.set(k, v);
@@ -130,9 +135,6 @@ export default function MyReport() {
     setParams(p, { replace: true });
   };
   const options = useMemo(() => data.myTemplates.map((t) => ({ value: t.id, label: t.designation })), [data.myTemplates]);
-  const loggableFor = (fieldKey: string) =>
-    (data.metricSources.find((x) => x.templateId === templateId && x.fieldKey === fieldKey)?.activityTypes ?? [])
-      .filter((t) => data.activityTypes.find((a) => a.id === t)?.source === 'logged');
   const allLoggable = [...new Set(data.metricSources.filter((x) => x.templateId === templateId).flatMap((x) => x.activityTypes))]
     .filter((t) => data.activityTypes.find((a) => a.id === t)?.source === 'logged');
 
@@ -151,7 +153,7 @@ export default function MyReport() {
         subtitle={template?.name}
         actions={<>
           {editable && date === today && <Button variant="secondary" icon={PenLine} onClick={() => setLogFor([...allLoggable, 'manual_work'])}>Add manual activity</Button>}
-          {editable && hasPendingField && agencyAccess(session ?? null) && <Button variant="secondary" icon={ListPlus} onClick={() => void addPending()}>Add pending items</Button>}
+          <Button variant="secondary" icon={FileDown} disabled={!template || pdfBusy} loading={pdfBusy} onClick={() => void downloadPdf()}>Download PDF</Button>
           <Button variant="secondary" onClick={() => navigate(`/${session?.role === 'admin' ? 'admin' : 'staff'}/work/reports`)}>Report history</Button>
         </>}
       />
@@ -188,7 +190,7 @@ export default function MyReport() {
         <Alert tone="info" title="Submitted report" className="mb-5"><span className="inline-flex items-center gap-1"><Lock className="h-3.5 w-3.5" /> These are the figures as submitted. Later changes in the CRM do not alter them.</span></Alert>
       ) : (
         <Alert tone="info" className="mb-5">
-          Figures fill in automatically from your work in the CRM and anything you log. {total === 0 ? 'Nothing is recorded for this day yet — you can still submit.' : 'Click a figure to see the work behind it.'}
+          Your report fills in automatically from your work in the CRM and anything you log. {total === 0 ? 'Nothing is recorded for this day yet — you can still submit.' : 'Download PDF gives the full report with every figure.'}
         </Alert>
       )}
       <div className="mb-5 grid gap-5 xl:grid-cols-5">
@@ -199,16 +201,8 @@ export default function MyReport() {
         )}</div>
       </div>
 
-      <h2 className="mb-3 font-display text-[15px] font-semibold text-heading">Report heads & daily summary</h2>
-      {template ? (
-        <ReportForm template={template} draft={draft} onChange={setDraft} readOnly={!editable} metrics={metrics} sources={data.metricSources}
-          onShow={(key, label) => setShowing({ key, label })} onLog={date === today ? (key) => setLogFor(loggableFor(key)) : undefined} />
-      ) : (
-        <Card><EmptyState icon={ClipboardList} title="Choose a report" /></Card>
-      )}
       {editable && template && (
         <div className="sticky bottom-0 z-10 -mx-4 mt-5 flex justify-end gap-2 border-t border-line bg-canvas/90 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
-          <Button variant="secondary" icon={Save} disabled={busy || !dirty} onClick={() => save(false)}>Save Draft</Button>
           <Button icon={Send} disabled={busy} onClick={() => save(true)}>{busy ? 'Submitting…' : 'Submit Daily Report'}</Button>
         </div>
       )}

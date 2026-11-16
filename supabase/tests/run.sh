@@ -63,6 +63,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0046_linkedin_pending_fix.sql
 "${PSQL[@]}" -f migrations/0047_partner_success.sql
 "${PSQL[@]}" -f migrations/0048_linkedin_reporting.sql
+"${PSQL[@]}" -f migrations/0049_reset_clears_temp_password.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
 "${PSQL[@]}" -f tests/20_account_tests.sql

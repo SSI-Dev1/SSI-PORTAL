@@ -107,6 +107,21 @@ select pg_temp.denied($$select public.password_change_done()$$, 'an expired temp
 select pg_temp.check(not public.my_profile_ok(), 'still no data access');
 rollback;
 
+\echo '== password reset by email clears an expired temporary password'
+begin;
+select pg_temp.trusted();
+select public.record_temp_credential(:newemp, 1, :super);
+update public.account_temp_credentials set expires_at = now() - interval '1 minute' where user_id = :newemp;
+update auth.users set encrypted_password = '$2a$reset' where id = :newemp;
+select pg_temp.act_as(:newemp);
+select set_config('request.jwt.claims', (auth.jwt() || jsonb_build_object('amr', jsonb_build_array(jsonb_build_object('method', 'password', 'timestamp', 1), jsonb_build_object('method', 'otp', 'timestamp', 2))))::text, true);
+select pg_temp.denied($$select public.password_change_done()$$, 'a session that also used the password still hits the expiry', '%TEMP_PASSWORD_EXPIRED%');
+select set_config('request.jwt.claims', (auth.jwt() || jsonb_build_object('amr', jsonb_build_array(jsonb_build_object('method', 'otp', 'timestamp', 2))))::text, true);
+select public.password_change_done();
+select pg_temp.check(public.my_temp_password_state() is null, 'the stale temporary credential is removed');
+select pg_temp.check(not (select must_change_password from public.my_access()), 'no further change is required');
+rollback;
+
 \echo '== resending replaces the earlier temporary password'
 begin;
 select pg_temp.trusted();

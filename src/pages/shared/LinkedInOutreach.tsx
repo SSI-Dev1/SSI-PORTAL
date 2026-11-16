@@ -6,8 +6,9 @@
 // duplicating it, and keeps the LinkedIn history.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRightLeft, ExternalLink, Linkedin, MessageSquare, MoreHorizontal, Pencil, Plus, Send, StickyNote, UserCheck } from 'lucide-react';
-import { Alert, Badge, Button, Card, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Segmented, Select, Table, Textarea, usePaged } from '../../components/ui';
+import { ArrowRightLeft, ExternalLink, Linkedin, MessageSquare, MoreHorizontal, Pencil, Plus, Send, StickyNote, Trash2, UserCheck, X } from 'lucide-react';
+import { Alert, Badge, Button, Card, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, Pagination, SearchInput, Segmented, Select, Table, Textarea, usePaged } from '../../components/ui';
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '../../components/PermanentDelete';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { supabase } from '../../auth/auth';
@@ -36,6 +37,10 @@ export default function LinkedInOutreach() {
   const [params, setParams] = useSearchParams();
   const allowed = agencyAccess(session);
   const { rows, error, reload } = useLinkedIn(allowed);
+  /** Super Admin: permanent deletion of test prospects (the server checks again). */
+  const canDelete = useCanPermanentlyDelete();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<string[] | null>(null);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [contact, setContact] = useState('');
@@ -87,17 +92,30 @@ export default function LinkedInOutreach() {
           <FilterSelect label="Stage" value={status} onChange={setStatus} options={[{ value: '', label: 'All stages' }, ...(Object.keys(LI_STAGE) as LinkedInStage[]).map((k) => ({ value: k, label: LI_STAGE[k].label }))]} />
           <span className="ml-auto text-xs text-ink-mute">{rows ? `${shown.length} of ${rows.length}` : ''}</span>
         </div>
+        {canDelete && selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas/50 px-4 py-2.5 text-sm">
+            <b className="text-heading">{selected.size} selected</b>
+            <Button size="sm" variant="ghost" icon={X} onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button size="sm" variant="danger" icon={Trash2} className="ml-auto" disabled={selected.size > 100} onClick={() => setDeleting([...selected])}>Delete permanently</Button>
+          </div>
+        )}
         {!rows ? <p className="p-6 text-sm text-ink-soft" role="status">Loading prospects…</p> : shown.length === 0 ? (
           <EmptyState icon={Linkedin} title={rows.length ? 'Nothing matches' : 'No LinkedIn prospects yet'} description={rows.length ? undefined : 'Add someone as soon as you connect — a name is enough.'}
             action={!rows.length ? <Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add LinkedIn Prospect</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={['Prospect', 'Company', 'Contact', 'Stage', 'Last contact', 'Follow-up', 'Employee', 'Agency', '']}>
+            <Table className="hr-table" head={[...(canDelete ? [<span key="sel" className="sr-only">Select</span>] : []), 'Prospect', 'Company', 'Contact', 'Stage', 'Last contact', 'Follow-up', 'Employee', 'Agency', '']}>
               {paged.rows.map((p) => {
                 const due = p.next_follow_up && p.next_follow_up <= today() && p.status !== 'converted';
                 const cs = CONTACT[p.contact_status ?? 'unknown'];
                 return (
                   <tr key={p.id}>
+                    {canDelete && (
+                      <td className="w-10">
+                        <Checkbox checked={selected.has(p.id)} label={<span className="sr-only">Select {p.name}</span>}
+                          onCheckedChange={(v) => setSelected((cur) => { const n = new Set(cur); if (v) n.add(p.id); else n.delete(p.id); return n; })} />
+                      </td>
+                    )}
                     <td className="min-w-[160px]">
                       <button type="button" className="text-left font-medium text-heading hover:text-rust hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" onClick={() => setProfileId(p.id)}>{p.name}</button>
                       <div className="text-xs text-ink-mute">{p.reference}</div>
@@ -121,7 +139,10 @@ export default function LinkedInOutreach() {
       </Card>
       {profile && <ProspectProfile p={profile} staffName={staffName} onClose={() => setProfileId(null)}
         onEdit={() => setModal({ kind: 'edit', p: profile })} onLog={(k) => setModal({ kind: 'log', p: profile, log: k })}
-        onConvert={() => setModal({ kind: 'convert', p: profile })} onOpenAgency={(id) => navigate(`../${id}`, { relative: 'path' })} onChanged={reload} />}
+        onConvert={() => setModal({ kind: 'convert', p: profile })} onOpenAgency={(id) => navigate(`../${id}`, { relative: 'path' })} onChanged={reload}
+        onDelete={canDelete ? () => setDeleting([profile.id]) : undefined} />}
+      {deleting && <PermanentDeleteDialog kind="linkedin" ids={deleting} onClose={() => setDeleting(null)}
+        onDeleted={async (ids) => { setSelected((cur) => { const n = new Set(cur); ids.forEach((i) => n.delete(i)); return n; }); if (profileId && ids.includes(profileId)) setProfileId(null); await reload(); }} />}
       {modal?.kind === 'log' && modal.log === 'stage' && <LinkedInStage p={modal.p} onClose={() => setModal(null)} onSaved={reload}
         onNeedsDetails={() => setModal({ kind: 'convert', p: modal.p })} onConverted={(id) => { setModal(null); setProfileId(null); navigate(`../${id}`, { relative: 'path' }); }} />}
       {(modal?.kind === 'add' || modal?.kind === 'edit') && <ProspectForm p={modal.kind === 'edit' ? modal.p : undefined} onClose={() => setModal(null)} onSaved={reload} />}
@@ -132,9 +153,9 @@ export default function LinkedInOutreach() {
 }
 
 // ------------------------------------------------------------------ profile
-function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOpenAgency, onChanged }: {
+function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOpenAgency, onChanged, onDelete }: {
   p: LinkedInProspect; staffName: (id: string | null | undefined) => string; onClose: () => void; onEdit: () => void; onLog: (k: Kind) => void;
-  onConvert: () => void; onOpenAgency: (id: string) => void; onChanged: () => void;
+  onConvert: () => void; onOpenAgency: (id: string) => void; onChanged: () => void; onDelete?: () => void;
 }) {
   const toast = useToast();
   const { session } = useStore();
@@ -171,6 +192,7 @@ function ProspectProfile({ p, staffName, onClose, onEdit, onLog, onConvert, onOp
       subtitle={<span className="flex flex-wrap items-center gap-2">{p.reference}<Badge tone={LI_STAGE[liStage(p)].tone}>{LI_STAGE[liStage(p)].label}</Badge>{converted && <Badge tone="navy">In the Agency List</Badge>}</span>}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Close</Button>
+        {onDelete && <Button variant="danger" icon={Trash2} onClick={onDelete}>Delete permanently</Button>}
         <Button variant="secondary" icon={Pencil} onClick={onEdit}>Edit details</Button>
         {converted && p.agency_id
           ? <Button icon={ExternalLink} onClick={() => onOpenAgency(p.agency_id!)}>Open in Agency List</Button>

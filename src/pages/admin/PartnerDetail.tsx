@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, CalendarDays, ExternalLink, Globe, LogIn, Mail, MapPin, Pencil, Percent, Phone, Users } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, ExternalLink, Globe, LogIn, Mail, MapPin, Pencil, Percent, Phone, Users, X } from 'lucide-react';
+import { PermanentDeleteDialog } from '../../components/PermanentDelete';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Progress, Table, Tabs } from '../../components/ui';
 import { StatusDonut, TrendChart } from '../../components/charts';
 import { ApplicationDetailsModal, StatusBadge, stageProgress } from '../../components/ApplicationDetailsModal';
@@ -19,8 +20,10 @@ type Tab = 'overview' | 'students' | 'applications' | 'finance';
 
 export default function PartnerDetail() {
   const { id } = useParams();
-  const { db } = useStore();
+  const { db, actions } = useStore();
   const { realSession, setPreview } = useAuth();
+  const superAdmin = realSession?.userRole === 'super_admin';
+  const [removingBranch, setRemovingBranch] = useState<string | null>(null);
   const lk = useLookup();
   const navigate = useNavigate();
   const toast = useToast();
@@ -145,7 +148,19 @@ export default function PartnerDetail() {
             <CardHeader title="Workspace details" />
             <dl className="space-y-3.5 p-5 text-sm">
               <Row icon={CalendarDays} label="Partner since" value={formatDate(p.joinedAt)} />
-              <Row icon={Building2} label="Branches" value={p.branches.join(', ')} />
+              <Row icon={Building2} label="Branches" value={superAdmin && p.branches.length > 1 ? (
+                <span className="flex flex-wrap gap-1.5">
+                  {p.branches.map((b) => (
+                    <span key={b} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-0.5">
+                      {b}
+                      <button type="button" aria-label={`Delete branch ${b} permanently`} title="Delete branch permanently" className="rounded p-0.5 text-ink-mute hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10" onClick={() => setRemovingBranch(b)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </span>
+              ) : p.branches.join(', ')} />
+              {removingBranch && <PermanentDeleteDialog kind="branch" ids={[`${p.id}::${removingBranch}`]} onClose={() => setRemovingBranch(null)} onDeleted={async () => { await actions.reload(); }} />}
               {p.commissionRate != null && <Row icon={Percent} label="Commission rate" value={`${p.commissionRate}%${p.commissionVisible === false ? ' · hidden from the partner' : ''}`} />}
               <Row icon={Globe} label="Website" value={p.website ? <a className="inline-flex items-center gap-1 text-rust hover:underline" href={`https://${p.website}`} target="_blank" rel="noreferrer">{p.website}<ExternalLink className="h-3 w-3" /></a> : '—'} />
             </dl>

@@ -173,7 +173,7 @@ select public.review_daily_report((select id from public.daily_reports limit 1),
 select pg_temp.check((select status = 'Approved' from public.daily_reports), 'admin approved the report');
 select pg_temp.check((select count(*) from public.daily_report_events) = 5, 'audit history: draft, submit, correction request, resubmit, approval (5)');
 select pg_temp.check((select count(*) from public.report_expectations(public.company_today()) where employee_id = '00000000-0000-0000-0000-0000000000f3' and status = 'Approved') = 1, 'expectations list the approved report');
-select pg_temp.check((select count(*) from public.report_expectations(public.company_today()) where report_id is null) = 3, 'three employees with templates have not reported (no rows created)');
+select pg_temp.check((select count(*) from public.report_expectations(public.company_today()) where report_id is null) = 4, 'four employees with templates have not reported, incl. HR, which has a report since 0052 (no rows created)');
 commit;
 
 \echo '== designation change keeps history'

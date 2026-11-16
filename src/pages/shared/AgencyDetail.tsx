@@ -4,7 +4,9 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, CalendarClock, CalendarPlus, MapPin, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, PhoneMissed, Send, StickyNote, UserCheck, UserCog, UserX, Users, XCircle,
+  Trash2,
 } from 'lucide-react';
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '../../components/PermanentDelete';
 import { Alert, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Textarea, TimePicker } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -38,6 +40,8 @@ const LOG_HINT: Partial<Record<LogKind, string>> = {
 };
 
 export default function AgencyDetail() {
+  const canDelete = useCanPermanentlyDelete();
+  const [deleting, setDeleting] = useState(false);
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -142,8 +146,10 @@ export default function AgencyDetail() {
             { label: 'Change stage', icon: Pencil, onClick: () => setModal({ kind: 'stage' }) },
           ]} />
           <Button icon={Send} disabled={closed} onClick={startProposal}>Send Proposal</Button>
+          {canDelete && <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>Delete permanently</Button>}
         </>}
       />
+      {deleting && <PermanentDeleteDialog kind="agency" ids={[a.id]} onClose={() => setDeleting(false)} onDeleted={(ids) => { if (ids.length) navigate('..', { relative: 'path' }); }} />}
       {correcting && <ContactCorrection name={agencyName(a)} current={a.contact_status} onClose={() => setCorrecting(false)} onSave={correct} />}
       {changingSub && <AssignSubOfficerModal ids={[a.id]} title={agencyName(a)} main={a.assigned_officer} mainName={a.assigned_officer ? staffName(a.assigned_officer) : ''}
         current={a.sub_officer} currentName={a.sub_officer ? staffName(a.sub_officer) : ''} onClose={() => setChangingSub(false)} onDone={() => void reload()} />}

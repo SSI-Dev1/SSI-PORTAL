@@ -3,7 +3,8 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, UserCheck, UserCog, UserPlus, X } from 'lucide-react';
+import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, Trash2, UserCheck, UserCog, UserPlus, X } from 'lucide-react';
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '../../components/PermanentDelete';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -31,7 +32,9 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const [importing, setImporting] = useState(false);
   // Administrators: selection for bulk officer assignment / contact-status correction.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | 'sub' | null>(null);
+  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | 'sub' | 'delete' | null>(null);
+  /** Permanent deletion of test records: Super Admin only (the server checks again). */
+  const canDelete = useCanPermanentlyDelete();
   const names = useOfficerNames(allowed);
   const counts = useApplicationCounts(allowed);
   const [subF, setSubF] = useState('');
@@ -46,7 +49,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? names.get(id) ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
   // Bulk Sub Officer: administrators, or a Main Officer for their own agencies (the server enforces it).
   const ownsSome = !!data?.agencies.some((a) => a.assigned_officer === session?.userId);
-  const canSelect = manager || ownsSome;
+  const canSelect = manager || ownsSome || canDelete;
   const regOf = (id: string | null) => (id ? data?.registrations.find((r) => r.id === id) : undefined);
 
   const rows = useMemo(() => {
@@ -99,6 +102,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                   {manager && <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>}
                   {manager && <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>}
                   {manager && <Button size="sm" variant="secondary" icon={Globe2} onClick={() => setBulk('type')}>Set agency type</Button>}
+                  {canDelete && <Button size="sm" variant="danger" icon={Trash2} disabled={selected.size > 100} title={selected.size > 100 ? 'Select at most 100 records' : undefined} onClick={() => setBulk('delete')}>Delete permanently</Button>}
                 </span>
               </>
             )}
@@ -155,6 +159,8 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
         return <AssignSubOfficerModal ids={[...selected]} title={`${selected.size} selected agencies`} main={main ?? (manager ? session?.userId ?? null : null)}
           mainName={mains.length === 1 ? (mains[0] ? staffName(mains[0]) : 'Unassigned') : `${mains.length} different Main Officers`} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />;
       })()}
+      {canDelete && bulk === 'delete' && <PermanentDeleteDialog kind="agency" ids={[...selected]} onClose={() => setBulk(null)}
+        onDeleted={async () => { setSelected(new Set()); await reload(); }} />}
       {manager && bulk === 'type' && <AgencyTypeModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}
     </>
   );

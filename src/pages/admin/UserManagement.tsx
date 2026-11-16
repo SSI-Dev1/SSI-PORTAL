@@ -72,6 +72,7 @@ import {
   type StaffRole,
 } from '../../auth/roles';
 import { useAgencyData } from '../../lib/agencies';
+import { PermanentDeleteDialog } from '../../components/PermanentDelete';
 import { adminApi, AdminApiError, generatePassword, loadDirectory, setPartnerAccess, type DirectoryUser } from '../../lib/adminApi';
 import { DeliveryBadge, ResendIcon, SendCredentialsOption, deliveryMessage, useCredentialDeliveries, useResendLoginAccess, type Delivery, type DeliveryRow } from '../../lib/credentialDeliveries';
 import type { Partner, UserRole } from '../../data/types';
@@ -100,6 +101,7 @@ export default function UserManagement() {
     | { kind: 'reset'; user: DirectoryUser }
     | { kind: 'access'; partner: Partner }
     | { kind: 'delete-partner'; partner: Partner }
+    | { kind: 'delete-user'; user: DirectoryUser }
     | null
   >(null);
   const [details, setDetails] = useState<DirectoryUser | null>(null);
@@ -157,6 +159,7 @@ export default function UserManagement() {
     }
   };
 
+  const isSuperAdmin = realSession?.userRole === 'super_admin';
   const userActions = (u: DirectoryUser) => {
     const self = u.id === realSession?.userId;
     return [
@@ -171,6 +174,9 @@ export default function UserManagement() {
             ...(u.status !== 'active' ? [{ label: 'Activate', icon: PlayCircle, onClick: () => void changeStatus(u, 'active') }] : []),
             ...(u.status !== 'deactivated' ? [{ label: 'Deactivate', icon: PauseCircle, onClick: () => void changeStatus(u, 'deactivated') }] : []),
             ...(u.status !== 'suspended' ? [{ label: 'Suspend', icon: Ban, onClick: () => void changeStatus(u, 'suspended'), danger: true }] : []),
+            // Partner logins only, Super Admin only (the server refuses anything else).
+            ...(isSuperAdmin && (u.role === 'partner_admin' || u.role === 'partner_staff')
+              ? [{ label: 'Delete permanently', icon: Trash2, onClick: () => setDialog({ kind: 'delete-user', user: u }), danger: true }] : []),
           ]),
     ];
   };
@@ -286,7 +292,8 @@ export default function UserManagement() {
         }}
       />
       <PartnerAccessDialog partner={dialog?.kind === 'access' ? dialog.partner : null} onClose={() => setDialog(null)} onSaved={reloadAll} />
-      <DeletePartnerDialog partner={dialog?.kind === 'delete-partner' ? dialog.partner : null} onClose={() => setDialog(null)} onDeleted={reloadAll} />
+      {dialog?.kind === 'delete-partner' && <PermanentDeleteDialog kind="partner" ids={[dialog.partner.id]} onClose={() => setDialog(null)} onDeleted={() => reloadAll()} />}
+      {dialog?.kind === 'delete-user' && <PermanentDeleteDialog kind="partner_user" ids={[dialog.user.id]} onClose={() => setDialog(null)} onDeleted={() => reloadAll()} />}
       <CredentialsOnce data={created} onClose={() => setCreated(null)} />
       <UserDetails user={details} onClose={() => setDetails(null)} actionsFor={userActions} />
     </>
@@ -645,53 +652,6 @@ function PartnerAccessDialog({ partner, onClose, onSaved }: { partner: Partner |
     </Modal>
   );
 }
-
-export function DeletePartnerDialog({ partner, onClose, onDeleted }: { partner: Partner | null; onClose: () => void; onDeleted: () => Promise<void> }) {
-  const toast = useToast();
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    setName('');
-    setError('');
-  }, [partner]);
-  const del = async () => {
-    if (!partner) return;
-    setBusy(true);
-    setError('');
-    try {
-      await adminApi.deletePartner(partner.id, name);
-      toast.success('Partner deleted', partner.name);
-      await onDeleted();
-      onClose();
-    } catch (e) {
-      setError(errMsg(e));
-    }
-    setBusy(false);
-  };
-  return (
-    <Modal
-      open={!!partner}
-      onClose={onClose}
-      size="sm"
-      title="Delete partner permanently?"
-      subtitle={partner?.name}
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" icon={Trash2} onClick={del} loading={busy} disabled={name !== partner?.name}>Delete partner</Button></>}
-    >
-      <div className="space-y-4">
-        <Alert tone="warning">
-          Deletion is only allowed for partners with no students or invoices, and removes all of the partner's login accounts. A linked Agency List record is kept and flagged for review. Use <strong>Archive</strong> to keep records. The deletion is audit-logged.
-        </Alert>
-        {error && <Alert tone="error">{error}</Alert>}
-        <Field label={`Type “${partner?.name ?? ''}” to confirm`}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
-        </Field>
-      </div>
-    </Modal>
-  );
-}
-
-/* ================================================================== forms */
 
 export function PasswordInput({
   value,

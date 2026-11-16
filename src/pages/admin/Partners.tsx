@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Eye, Globe, Globe2, History, Trash2, UserPlus, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
+import { Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -9,7 +9,8 @@ import { useAuth } from '../../auth/AuthProvider';
 import { canAddPartner, canManageRegistrations } from '../../auth/roles';
 import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
 import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, LinkPartnerModal, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
-import { DeletePartnerDialog, PartnerUserDialog } from './UserManagement';
+import { PartnerUserDialog } from './UserManagement';
+import { PermanentDeleteDialog } from '../../components/PermanentDelete';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, initials, matches, type Tone } from '../../lib/utils';
@@ -65,7 +66,8 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
   const canClassify = superAdmin || agencyAccess(session);
   // "Partner accounts" (granted by a Super Admin to named employees): create logins only.
   const canCreateAccounts = superAdmin || (realSession?.permissions ?? []).includes('partner_accounts');
-  const [deleting, setDeleting] = useState<Partner | null>(null);
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [assigningSub, setAssigningSub] = useState<Partner | null>(null);
   const [subF, setSubF] = useState('');
   const names = useOfficerNames(true);
@@ -148,7 +150,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
     ...(canClassify && onboardedBiz(p) ? [{ label: 'Set agency type', icon: Globe2, onClick: () => setClassifying(p) }] : []),
     { label: 'Edit partner', icon: Pencil, onClick: () => { setEditing(p); setFormOpen(true); } },
     ...(superAdmin ? [{ label: 'Access, accounts & archive', icon: SlidersHorizontal, onClick: () => navigate('/admin/users') }] : []),
-    ...(superAdmin ? [{ label: 'Delete partner account details', icon: Trash2, danger: true, onClick: () => setDeleting(p) }] : []),
+    ...(superAdmin ? [{ label: 'Delete permanently', icon: Trash2, danger: true, onClick: () => setDeleting([p.id]) }] : []),
   ];
 
   return (
@@ -265,11 +267,24 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
         </div>
       ) : (
         <Card>
-          <Table head={['Company / agency', 'Point of contact', 'Email', 'Country', 'Main officer', 'Sub officer', 'Apps', 'Business onboarding', 'Portal access', 'Source', '']}>
+          {superAdmin && picked.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-canvas/50 px-4 py-2.5 text-sm">
+              <b className="text-heading">{picked.size} selected</b>
+              <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
+              <Button size="sm" variant="danger" icon={Trash2} className="ml-auto" disabled={picked.size > 100} onClick={() => setDeleting([...picked])}>Delete permanently</Button>
+            </div>
+          )}
+          <Table head={[...(superAdmin ? [<span key="sel" className="sr-only">Select</span>] : []), 'Company / agency', 'Point of contact', 'Email', 'Country', 'Main officer', 'Sub officer', 'Apps', 'Business onboarding', 'Portal access', 'Source', '']}>
             {rows.map((p) => {
               const ag = agencyOf.get(p.id);
               return (
                 <tr key={p.id} className="cursor-pointer hover:bg-brand-50/30" onClick={() => navigate(p.id)}>
+                  {superAdmin && (
+                    <td className="w-10 px-3" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox checked={picked.has(p.id)} label={<span className="sr-only">Select {p.name}</span>}
+                        onCheckedChange={(v) => setPicked((cur) => { const n = new Set(cur); if (v) n.add(p.id); else n.delete(p.id); return n; })} />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5"><div className="flex flex-wrap items-center gap-1.5 font-semibold text-heading">{p.name}<AgencyTypeBadge type={ptype(p)} /></div><div className="text-xs text-ink-mute">{p.code}{p.city ? ` · ${p.city}` : ''}</div></td>
                   <td className="px-5 py-3.5"><div className="text-heading">{p.contactName}</div><div className="text-xs text-ink-mute">{p.phone || '—'}</div></td>
                   <td className="px-5 py-3.5 text-ink-soft">{p.email || '—'}</td>
@@ -318,7 +333,8 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
       {assigningSub && <AssignSubOfficerModal ids={statusMap?.get(assigningSub.id)?.agency_id ? [statusMap.get(assigningSub.id)!.agency_id!] : []} partnerId={assigningSub.id}
         title={assigningSub.name} main={mainOf(assigningSub)} mainName={mainOf(assigningSub) ? officerName(mainOf(assigningSub)) : ''}
         current={subOf(assigningSub)} currentName={subOf(assigningSub) ? officerName(subOf(assigningSub)) : ''} onClose={() => setAssigningSub(null)} />}
-      <DeletePartnerDialog partner={deleting} onClose={() => setDeleting(null)} onDeleted={async () => { await actions.reload(); }} />
+      {deleting && <PermanentDeleteDialog kind="partner" ids={deleting} onClose={() => setDeleting(null)}
+        onDeleted={async (ids) => { setPicked((cur) => { const n = new Set(cur); ids.forEach((i) => n.delete(i)); return n; }); await actions.reload(); }} />}
       <PartnerUserDialog open={!!activating} activation canOpenPortal={superAdmin} partnerId={activating?.id} partners={activating ? [activating] : []} onClose={() => setActivating(null)}
         initial={activating ? { fullName: activating.contactName, email: activating.email || undefined, role: 'partner_admin' } : undefined}
         onCreated={async (email, password, delivery) => {

@@ -1,7 +1,10 @@
 // Building blocks shared by the Employee (work), Manager (team) and HR screens:
 // daily report form and detail, approval queues, the punch card and small helpers.
 // Every action is a database function (useHR().call) that re-checks permission and policy.
-import { WorkTimeline, useWorkTimeline } from './WorkTimeline';
+import { WorkTimeline, useWorkTimeline, type TimelineRow } from './WorkTimeline';
+import { buildReportView } from '../lib/dailyReport';
+import { downloadReportPdf } from '../lib/reportPdf';
+import type { PendingWork } from '../lib/agencies';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -15,8 +18,9 @@ import {
   Printer,
   Plus,
   type LucideIcon,
+  FileDown,
 } from 'lucide-react';
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, TimePicker } from './ui';
+import { Alert, Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, TimePicker } from './ui';
 import { useConfirm, useToast } from './feedback';
 import { useHR, useHRLookup } from '../store/hr';
 import { useStore } from '../store/store';
@@ -312,6 +316,16 @@ export function ReportDetailModal({ report, onClose, canReview }: { report?: Dai
   const tpl: ReportTemplate | undefined = data.templates.find((t) => t.id === live?.templateId && t.version === live?.templateVersion);
   // The day's recorded work behind the figures (live data; the submitted figures stay as submitted).
   const timeline = useWorkTimeline(live?.reportDate ?? '', live?.employeeId, live?.updatedAt);
+  // The same report data as the employee's screen and PDF: the submitted snapshot when there is one.
+  const snapshot = Array.isArray(live?.timelineSnapshot) ? (live!.timelineSnapshot as TimelineRow[]) : null;
+  const reportView = live && tpl ? buildReportView({
+    template: tpl, metrics: live.metricDetails && Object.keys(live.metricDetails).length ? live.metricDetails : live.metrics, notes: live.notes,
+    employee: lk.name(live.employeeId), designation: lk.designation.get(live.designationId)?.name ?? live.designationId,
+    department: live.departmentId ? lk.department.get(live.departmentId)?.name ?? null : null, date: live.reportDate, status: live.status,
+    submittedAt: live.submittedAt, live: live.status === 'Draft' || live.status === 'Correction Requested', timeline: snapshot ?? timeline.rows,
+    pending: (live.pendingSnapshot ?? null) as PendingWork | null,
+  }) : null;
+  const [pdfBusy, setPdfBusy] = useState(false);
   useEffect(() => {
     setComment('');
     if (!report) return;
@@ -361,7 +375,18 @@ export function ReportDetailModal({ report, onClose, canReview }: { report?: Dai
             {live.reviewedAt && <span className="text-ink-soft">· {live.status === 'Correction Requested' ? 'Returned' : 'Reviewed'} by {lk.name(live.reviewedBy)}</span>}
           </div>
           {live.reviewComment && <Alert tone={live.status === 'Correction Requested' ? 'warning' : 'info'} title="Reviewer comment">{live.reviewComment}</Alert>}
-          <WorkTimeline rows={timeline.rows} error={timeline.error} title="Recorded work that day (live)" />
+          <div className="flex justify-end">
+            <Button size="sm" variant="secondary" icon={FileDown} disabled={!reportView || pdfBusy} loading={pdfBusy}
+              onClick={async () => { if (!reportView) return; setPdfBusy(true); try { await downloadReportPdf(reportView); } finally { setPdfBusy(false); } }}>Download PDF</Button>
+          </div>
+          <WorkTimeline rows={snapshot ?? timeline.rows} error={snapshot ? undefined : timeline.error} title={snapshot ? 'Recorded work that day (as submitted)' : 'Recorded work that day (live)'} />
+          {reportView && (reportView.pending?.length || reportView.pendingNotes.length) ? (
+            <Card><CardHeader title="Pending work (as submitted)" />
+              <ul className="space-y-1.5 px-5 pb-5 text-sm">
+                {(reportView.pending ?? []).map((i, n) => <li key={n} className="flex justify-between gap-3"><span className="text-heading">{i.title}</span><span className={i.overdue ? 'text-xs font-semibold text-red-600' : 'text-xs text-ink-mute'}>{i.overdue ? 'Overdue · ' : ''}{i.when}</span></li>)}
+                {reportView.pendingNotes.map((n) => <li key={n} className="text-xs text-ink-soft">{n}</li>)}
+              </ul></Card>
+          ) : null}
           {tpl ? (
             tpl.sections.map((s) => (
               <section key={s.id} className="rounded-2xl border border-line p-4">

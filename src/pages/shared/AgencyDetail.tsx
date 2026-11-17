@@ -7,6 +7,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { PermanentDeleteDialog, useCanPermanentlyDelete } from '../../components/PermanentDelete';
+import { HISTORICAL_STATUS, RequestHistoricalOnboarding, ReviewHistoricalOnboarding } from './HistoricalOnboarding';
+import { History as HistoryIcon } from 'lucide-react';
+import { useAuth } from '../../auth/AuthProvider';
+import { canManageRegistrations } from '../../auth/roles';
 import { Alert, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Textarea, TimePicker } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -42,6 +46,10 @@ const LOG_HINT: Partial<Record<LogKind, string>> = {
 export default function AgencyDetail() {
   const canDelete = useCanPermanentlyDelete();
   const [deleting, setDeleting] = useState(false);
+  const { realSession } = useAuth();
+  /** Super Admin / "Partner registrations": may approve historical onboarding (checked again by the database). */
+  const canApproveHistorical = canManageRegistrations(realSession);
+  const [historical, setHistorical] = useState<'request' | 'review' | null>(null);
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -149,6 +157,19 @@ export default function AgencyDetail() {
           {canDelete && <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>Delete permanently</Button>}
         </>}
       />
+      {a.historical_status && (
+        <Alert tone={HISTORICAL_STATUS[a.historical_status].tone === 'green' ? 'success' : HISTORICAL_STATUS[a.historical_status].tone === 'red' ? 'warning' : 'info'} className="mb-4"
+          title={HISTORICAL_STATUS[a.historical_status].label}>
+          {a.historical_status === 'requested' ? a.historical_request_note : a.historical_reason}
+          {a.historical_status === 'approved' && ` · reconciled ${fmtDate(a.historical_reviewed_at)}${a.historical_original_date ? ` · originally onboarded ${fmtDate(a.historical_original_date)}` : ' · original onboarding date not recorded'}`}
+          {canApproveHistorical && a.stage !== 'onboarded' && <Button size="sm" variant="secondary" className="ml-2" onClick={() => setHistorical('review')}>Review</Button>}
+        </Alert>
+      )}
+      {!a.historical_status && canApproveHistorical && a.stage !== 'onboarded' && a.stage !== 'closed' && (
+        <div className="mb-4 flex justify-end"><Button size="sm" variant="ghost" icon={HistoryIcon} onClick={() => setHistorical('review')}>Approve historical onboarding…</Button></div>
+      )}
+      {historical === 'request' && <RequestHistoricalOnboarding agencyId={a.id} name={agencyName(a)} onClose={() => setHistorical(null)} onDone={() => void reload()} />}
+      {historical === 'review' && <ReviewHistoricalOnboarding ids={[a.id]} onClose={() => setHistorical(null)} onDone={() => void reload()} />}
       {deleting && <PermanentDeleteDialog kind="agency" ids={[a.id]} onClose={() => setDeleting(false)} onDeleted={(ids) => { if (ids.length) navigate('..', { relative: 'path' }); }} />}
       {correcting && <ContactCorrection name={agencyName(a)} current={a.contact_status} onClose={() => setCorrecting(false)} onSave={correct} />}
       {changingSub && <AssignSubOfficerModal ids={[a.id]} title={agencyName(a)} main={a.assigned_officer} mainName={a.assigned_officer ? staffName(a.assigned_officer) : ''}
@@ -329,6 +350,7 @@ export default function AgencyDetail() {
       {modal?.kind === 'edit' && <EditAgency a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'log' && <LogActivity a={a} kind={modal.log} task={modal.task} tasks={tasks ?? []} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'stage' && <ChangeStage a={a} hasSentMou={mous.some((m) => m.status === 'sent')} onClose={() => setModal(null)} onSaved={reload}
+        onHistorical={() => { setModal(null); setHistorical(canApproveHistorical ? 'review' : 'request'); }}
         onProposal={() => startProposal()} onMou={() => { const m = mous.find((x) => x.status === 'sent'); setModal(m ? { kind: 'sign', m } : { kind: 'mou' }); }} />}
       {modal?.kind === 'mou' && <RecordMou a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'sign' && <UpdateMou m={modal.m} onClose={() => setModal(null)} onSaved={reload} />}
@@ -503,18 +525,19 @@ function LogActivity({ a, kind, task, tasks, onClose, onSaved }: { a: Agency; ki
 // Change Stage: manual stages and Connected are set here. Proposal Sent, MOU Signed and Onboarded
 // follow the real events (proposal email, MOU marked signed, registration activation) — picking
 // them opens that workflow instead of recording a stage nobody completed.
-type StageChoice = Stage | 'connected' | 'go_proposal' | 'go_mou' | 'go_onboarding';
-function ChangeStage({ a, hasSentMou, onClose, onSaved, onProposal, onMou }: { a: Agency; hasSentMou: boolean; onClose: () => void; onSaved: () => void; onProposal: () => void; onMou: () => void }) {
+type StageChoice = Stage | 'connected' | 'go_proposal' | 'go_mou' | 'go_onboarding' | 'go_historical';
+function ChangeStage({ a, hasSentMou, onClose, onSaved, onProposal, onMou, onHistorical }: { a: Agency; hasSentMou: boolean; onClose: () => void; onSaved: () => void; onProposal: () => void; onMou: () => void; onHistorical: () => void }) {
   const toast = useToast();
   const [stage, setStage] = useState<StageChoice>(a.stage === 'onboarded' ? 'inactive' : a.contact_status !== 'connected' ? 'connected' : MANUAL_STAGES.includes(a.stage) ? a.stage : 'discussion');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const manual = a.stage === 'onboarded' ? (['inactive'] as Stage[]) : MANUAL_STAGES;
-  const go = stage === 'go_proposal' || stage === 'go_mou' || stage === 'go_onboarding';
+  const go = stage === 'go_proposal' || stage === 'go_mou' || stage === 'go_onboarding' || stage === 'go_historical';
   const save = async () => {
     if (stage === 'go_proposal') return onProposal();
     if (stage === 'go_mou') return onMou();
     if (stage === 'go_onboarding') return onClose();
+    if (stage === 'go_historical') return onHistorical();
     setBusy(true);
     const r = stage === 'connected'
       ? await rpc('set_agency_contact_status', { p_id: a.id, p_status: 'connected', p_note: note || null })
@@ -526,7 +549,7 @@ function ChangeStage({ a, hasSentMou, onClose, onSaved, onProposal, onMou }: { a
   const closed = a.stage === 'closed' || a.stage === 'onboarded';
   return (
     <Modal open onClose={onClose} title="Change stage" subtitle={agencyName(a)}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{stage === 'go_proposal' ? 'Open proposal' : stage === 'go_mou' ? (hasSentMou ? 'Mark MOU signed' : 'Record MOU sent') : stage === 'go_onboarding' ? 'Close' : 'Save'}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={() => void save()}>{stage === 'go_proposal' ? 'Open proposal' : stage === 'go_mou' ? (hasSentMou ? 'Mark MOU signed' : 'Record MOU sent') : stage === 'go_onboarding' ? 'Close' : stage === 'go_historical' ? 'Continue' : 'Save'}</Button></>}>
       <Field label="Stage">
         <Select value={stage} onChange={(e) => setStage(e.target.value as StageChoice)}>
           {a.contact_status !== 'connected' && <option value="connected">Connected</option>}
@@ -534,11 +557,13 @@ function ChangeStage({ a, hasSentMou, onClose, onSaved, onProposal, onMou }: { a
           {!closed && <option value="go_proposal">Proposal sent — send a proposal</option>}
           {!closed && <option value="go_mou">MOU signed — {hasSentMou ? 'mark the sent MOU signed' : 'record the MOU first'}</option>}
           {a.stage !== 'onboarded' && <option value="go_onboarding">Onboarded — via registration approval</option>}
+          {a.stage !== 'onboarded' && a.historical_status !== 'requested' && <option value="go_historical">Onboarded earlier (before the portal) — request historical review</option>}
         </Select>
       </Field>
       {go ? (
         <Alert tone="info" className="mt-3">{stage === 'go_proposal' ? 'Proposal Sent is recorded when the proposal email is actually sent, and counts once per agency.'
           : stage === 'go_mou' ? 'MOU Signed needs the signing date of an MOU that was sent. It is optional in the daily report.'
+          : stage === 'go_historical' ? 'For an agency already onboarded under the previous process: send it to an administrator for verification. The stage changes only if they approve.'
           : 'Onboarded is set when the partner registration is approved and activated by an administrator. Selecting it here does not create a partner account.'}</Alert>
       ) : (
         <Field label="Reason / note" className="mt-3"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>

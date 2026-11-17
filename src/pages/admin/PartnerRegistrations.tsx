@@ -13,6 +13,7 @@ import { supabase } from '../../auth/auth';
 import { FORM_SECTIONS, fieldByKey, type Answers } from '../../../supabase/functions/_shared/partnerRegistrationForm';
 import { PartnerDialog, CredentialsOnce, createdAccount, type CreatedAccount } from './UserManagement';
 import { serverMessage } from '../../data/hr';
+import { AGREEMENT_STATUS, AgreementPanel, AgreementTemplatesModal, type AgreementStatus } from './RegistrationAgreement';
 import { cn, matches } from '../../lib/utils';
 
 type Status = 'link_generated' | 'in_progress' | 'submitted' | 'in_review' | 'changes_requested' | 'approved' | 'rejected' | 'activated';
@@ -35,6 +36,12 @@ const EVENT: Record<string, string> = {
   link_created: 'Link generated', link_regenerated: 'New link generated', link_revoked: 'Link revoked', link_emailed: 'Link emailed', started: 'Applicant started the form',
   submitted: 'Submitted', resubmitted: 'Corrections submitted', review_started: 'Review started', changes_requested: 'Changes requested', rejected: 'Rejected',
   approved: 'Approved', provisioning_started: 'Partner account creation started', provisioning_failed: 'Partner account creation failed', activated: 'Partner account created — Activated',
+  agreement_generated: 'Agreement generated', agreement_signed_uploaded: 'Signed agreement uploaded', agreement_signed_removed: 'Signed agreement removed by the agency',
+  agreement_signed_copy_withdrawn: 'Signed copy withdrawn (agreement details changed)', agreement_annexure_attached: 'Annexure A attached',
+  agreement_annexure_resolved: 'Annexure A resolved by a Super Admin', agreement_date_set: 'Agreement date set', agreement_reviewer_set: 'Agreement reviewer assigned',
+  agreement_changes_requested: 'Agreement corrections requested', agreement_approved_for_countersign: 'Agreement approved for countersigning',
+  agreement_rejected: 'Agreement rejected', agreement_countersigned: 'Agreement countersigned', agreement_sent: 'Countersigned agreement sent',
+  agreement_downloaded_by_partner: 'Agency downloaded the final agreement', agreement_file_viewed: 'Agreement document opened',
 };
 const linkUrl = (token: string) => `${window.location.origin}${window.location.pathname}#/partner-registration/${token}`;
 const linkState = (r: Registration) => (r.link_status !== 'active' ? r.link_status : r.link_expires_at && new Date(r.link_expires_at) < new Date() ? 'expired' : 'active');
@@ -48,9 +55,12 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
 
 function useRegistrations() {
   const [rows, setRows] = useState<Registration[] | null>(null);
+  const [agreements, setAgreements] = useState<Map<string, AgreementStatus>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
     if (!supabase) return setRows([]);
+    void supabase.from('registration_agreements').select('registration_id, status').then(({ data }) =>
+      setAgreements(new Map(((data ?? []) as { registration_id: string; status: AgreementStatus }[]).map((a) => [a.registration_id, a.status]))));
     const { data, error: e } = await supabase.from('partner_registrations').select('*').order('created_at', { ascending: false }).limit(2000);
     if (e) { setError(/partner_registrations/.test(e.message) ? 'Run migration 0030 to enable Partner Registrations.' : 'Registrations could not be loaded.'); setRows([]); return; }
     setError(null);
@@ -63,15 +73,17 @@ function useRegistrations() {
     let t = 0;
     const ch = sb.channel(`registrations-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_registrations' }, () => { window.clearTimeout(t); t = window.setTimeout(() => void load(), 250); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'registration_agreements' }, () => { window.clearTimeout(t); t = window.setTimeout(() => void load(), 250); })
       .subscribe();
     return () => { window.clearTimeout(t); void sb.removeChannel(ch); };
   }, [load]);
-  return { rows, error, reload: load };
+  return { rows, agreements, error, reload: load };
 }
 
 export default function PartnerRegistrations() {
   const { db, session } = useStore();
-  const { rows, error, reload } = useRegistrations();
+  const { rows, agreements, error, reload } = useRegistrations();
+  const [templates, setTemplates] = useState(false);
   const [tab, setTab] = useState<'all' | Status>('all');
   const [q, setQ] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -89,7 +101,10 @@ export default function PartnerRegistrations() {
     <>
       <Link to="../partners" className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft hover:text-rust"><ArrowLeft className="h-4 w-4" /> Clients &amp; Branches</Link>
       <PageHeader title="Partner Registrations" subtitle="Send a company its own registration link, review what it submits, and create the partner only after approval."
-        actions={<Button icon={Link2} onClick={() => setGenerating(true)}>Generate Partner Registration Link</Button>} />
+        actions={<>
+          {session?.userRole === 'super_admin' && <Button variant="secondary" icon={FileText} onClick={() => setTemplates(true)}>Agreement templates</Button>}
+          <Button icon={Link2} onClick={() => setGenerating(true)}>Generate Partner Registration Link</Button>
+        </>} />
       {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <KPI icon={Link2} label="Link generated" value={count('link_generated')} onClick={() => setTab('link_generated')} />
@@ -112,7 +127,7 @@ export default function PartnerRegistrations() {
             action={!all.length ? <Button icon={Plus} onClick={() => setGenerating(true)}>Generate link</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={['Company', 'Primary contact', 'Email', 'Country', 'Link', 'Submitted', 'Status', 'Reviewer', '']}>
+            <Table className="hr-table" head={['Company', 'Primary contact', 'Email', 'Country', 'Link', 'Submitted', 'Status', 'Agreement', 'Reviewer', '']}>
               {paged.rows.map((r) => {
                 const ls = linkState(r);
                 return (
@@ -124,6 +139,7 @@ export default function PartnerRegistrations() {
                     <td><Badge tone={ls === 'active' ? 'green' : ls === 'expired' ? 'amber' : 'slate'}>{ls === 'active' ? 'Active' : ls === 'expired' ? 'Expired' : ls === 'revoked' ? 'Revoked' : 'Closed'}</Badge></td>
                     <td className="whitespace-nowrap text-xs">{r.submitted_at ? fmt(r.submitted_at) : '—'}{r.submission_count > 1 && <div className="text-ink-mute">revision {r.submission_count}</div>}</td>
                     <td><Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge></td>
+                    <td>{agreements.get(r.id) ? <Badge tone={AGREEMENT_STATUS[agreements.get(r.id)!].tone}>{AGREEMENT_STATUS[agreements.get(r.id)!].label}</Badge> : <span className="text-xs text-ink-mute">—</span>}</td>
                     <td className="text-xs">{staffName(r.assigned_reviewer)}</td>
                     <td className="text-right"><Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }}>Open</Button></td>
                   </tr>
@@ -136,6 +152,7 @@ export default function PartnerRegistrations() {
       </Card>
       <GenerateModal open={generating} onClose={() => setGenerating(false)} onCreated={(reg, token, expiresAt) => { setGenerating(false); setLink({ reg, token, expiresAt, kind: 'invite' }); void reload(); }} />
       <LinkModal value={link} onClose={() => setLink(null)} onRegenerated={(token, expiresAt) => link && setLink({ ...link, token, expiresAt })} onView={(id) => { setLink(null); setOpenId(id); }} />
+      <AgreementTemplatesModal open={templates} onClose={() => setTemplates(false)} />
       {selected && <DetailsModal reg={selected} staffName={staffName} onClose={() => setOpenId(null)} onLink={(token, expiresAt, kind) => setLink({ reg: selected, token, expiresAt, kind })} reload={reload} />}
     </>
   );
@@ -331,12 +348,15 @@ function DetailsModal({ reg, staffName, onClose, onLink, reload }: {
           {reg.status === 'activated' && <Alert tone="success" title="Partner activated">Partner account created {fmt(reg.activated_at)}. <Link to={`../partners/${reg.partner_id}`} className="font-semibold underline" onClick={onClose}>Open partner</Link></Alert>}
           {reg.status === 'approved' && duplicate && <Alert tone="warning" title="A similar partner already exists">“{duplicate.name}” has the same name or email. Check before creating another partner.</Alert>}
           {reg.status === 'rejected' && <Alert tone="error" title="Rejected">{reg.decision_reason} · {staffName(reg.reviewed_by)}, {fmt(reg.reviewed_at)}</Alert>}
-          {reg.status === 'changes_requested' && reg.change_request && <Alert tone="warning" title="Changes requested">{reg.change_request.reason}{reg.change_request.fields.length ? ` · ${reg.change_request.fields.map((k) => fieldByKey.get(k)?.label ?? k).join(', ')}` : ''}</Alert>}
+          {reg.status === 'changes_requested' && reg.change_request && <Alert tone="warning" title="Changes requested">{reg.change_request.reason}{reg.change_request.fields.length ? ` · ${reg.change_request.fields.map((k) => (k === 'signed_agreement' ? 'Signed Partnership Agreement' : fieldByKey.get(k)?.label ?? k)).join(', ')}` : ''}</Alert>}
           {reg.internal_notes && <Alert tone="info" title="Internal notes">{reg.internal_notes}</Alert>}
           <div className="grid gap-3 text-sm sm:grid-cols-4">
             <Info k="Reference" v={reg.reference} /><Info k="Link" v={linkState(reg)} /><Info k="Reviewer" v={staffName(reg.assigned_reviewer)} />
             <Info k="Login email" v={`${String(reg.answers.registered_email ?? '—')}${reg.verified_email && reg.verified_email === String(reg.answers.registered_email ?? '').toLowerCase() ? ' ✓ verified' : reg.answers.registered_email ? ' (not verified)' : ''}`} />
           </div>
+          <AgreementPanel registrationId={reg.id} regStatus={reg.status} staffName={staffName} isSuper={isSuper}
+            staff={db.staff.map((x) => ({ id: x.id, fullName: x.fullName }))} onChangesLink={(token, expiresAt) => onLink(token, expiresAt, 'changes')}
+            onChanged={() => { void reload(); void loadExtra(); }} />
           {revisions.length > 1 && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-ink-soft">Showing:</span>

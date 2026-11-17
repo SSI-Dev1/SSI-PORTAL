@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Building2, Globe, Mail, MapPin, Phone, ShieldCheck, SunMoon, User } from 'lucide-react';
+import { Building2, FileSignature, Globe, Mail, MapPin, Phone, ShieldCheck, SunMoon, User } from 'lucide-react';
+import { supabase } from '../../auth/auth';
 import { ThemeSegmented } from '../../components/ThemeSwitcher';
 import { AccountSecurityCard } from '../../components/SecurityPanels';
 import { Badge, Button, Card, CardHeader, Field, Input, PageHeader } from '../../components/ui';
@@ -87,6 +88,35 @@ export default function Profile() {
           </Card>
         </div>
       </div>
+      {!session?.previewOf && <PartnershipDocuments />}
     </>
+  );
+}
+
+/** My Partnership Documents: the partner's own countersigned agreement (0054), through short-lived links. */
+function PartnershipDocuments() {
+  const [doc, setDoc] = useState<{ name: string; status: string; countersignedAt: string | null; previewUrl: string; url: string } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!supabase) { setDoc(null); return; }
+    void supabase.functions.invoke('partner-registration', { body: { action: 'my_agreement' } }).then(({ data, error }) => setDoc(error ? null : ((data as { agreement: typeof doc })?.agreement ?? null)));
+  }, []);
+  if (doc === undefined) return null;
+  return (
+    <Card className="mt-6">
+      <CardHeader title="My Partnership Documents" subtitle="Documents signed between your organisation and SSI GLOBAL." />
+      <div className="px-5 pb-5">
+        {!doc ? <p className="text-sm text-ink-soft">No signed agreement is available here yet.</p> : (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line p-4">
+            <FileSignature className="h-6 w-6 shrink-0 text-rust" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-heading">Partnership Agreement</div>
+              <div className="text-xs text-ink-mute">Status: <Badge tone="green">Completed</Badge>{doc.countersignedAt ? ` · countersigned ${formatDate(doc.countersignedAt)}` : ''}</div>
+            </div>
+            <a href={doc.previewUrl} target="_blank" rel="noreferrer noopener" className="rounded-xl border border-line px-3 py-1.5 text-sm font-semibold text-heading hover:bg-canvas">View Agreement</a>
+            <a href={doc.url} className="rounded-xl bg-gradient-to-r from-brand to-rust px-3 py-1.5 text-sm font-semibold text-white">Download Signed Copy</a>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

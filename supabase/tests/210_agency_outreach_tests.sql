@@ -205,6 +205,7 @@ commit;
 select pg_temp.check((select stage = 'approved' from public.agency_prospects where id = :'ag_name'), 'approval reaches the agency');
 select pg_temp.trusted();
 insert into public.partners (id, name, code, contact_name, email, phone, city, status) values ('p_ravi', 'Ravi Overseas', 'RAVI', 'Ravi Kumar', 'ravi@example.com', '+91 9847000000', 'Kochi', 'Active');
+update public.partner_registrations set agreement_required = false where id = :'regid';   -- agreement step: 390
 select public.begin_registration_provisioning(:'regid', :admin) is not null;
 select public.finish_registration_provisioning(:'regid', 'p_ravi', gen_random_uuid(), :admin);
 select pg_temp.check((select stage = 'onboarded' and partner_id = 'p_ravi' from public.agency_prospects where id = :'ag_name'), 'activated: agency onboarded and linked to the partner (TEST 10)');

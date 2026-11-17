@@ -16,6 +16,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 import { mailConfig, sendViaBrevo } from '../_shared/credentials.ts';
 import { FILE_FIELDS, FORM_VERSION, fieldByKey, formProblems, sanitizeAnswers, type Answers } from '../_shared/partnerRegistrationForm.ts';
 import { TOKEN_RE, codeEmail, linkEmail, safeFileName, sha256Hex, sixDigitCode, sniffFile } from '../_shared/registration.ts';
+import { AgreementFail, deliveryDownload, ensureAgreement, publicAgreementAction, staffAgreementAction } from './agreements.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -56,6 +57,21 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const action = String(body.action ?? '');
 
+    // ---------------------------------------------------------------- agreements: staff / partner (signed in)
+    if (['agreement_file_url', 'annexure_upload_url', 'attach_annexure', 'template_upload_url', 'attach_template', 'countersign_upload_url',
+         'attach_countersigned', 'send_agreement', 'my_agreement'].includes(action)) {
+      const auth = req.headers.get('Authorization') ?? '';
+      if (!auth.startsWith('Bearer ')) throw new Fail(401, 'Sign in again.');
+      const user = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
+      await limit(`agreement-staff:${ip}`, 120, 10);
+      return json(200, await staffAgreementAction(admin, user, action, body, MAIL), origin);
+    }
+    // ---------------------------------------------------------------- agreements: final copy through the emailed link
+    if (action === 'delivery') {
+      await limit(`delivery:${ip}`, 30, 10);
+      return json(200, await deliveryDownload(admin, String(body.deliveryToken ?? '')), origin);
+    }
+
     // ---------------------------------------------------------------- admin: email the link
     if (action === 'email_link') {
       const auth = req.headers.get('Authorization') ?? '';
@@ -73,7 +89,7 @@ Deno.serve(async (req) => {
       await limit(`email_link:${id}`, 10, 60);
       const kind = body.kind === 'changes' ? 'changes' : 'invite';
       const cr = r.change_request as { reason?: string; instructions?: string | null; fields?: string[] } | null;
-      const fields = (cr?.fields ?? []).map((k) => fieldByKey.get(k)?.label ?? k);
+      const fields = (cr?.fields ?? []).map((k) => (k === 'signed_agreement' ? 'Signed Partnership Agreement' : fieldByKey.get(k)?.label ?? k));
       const url = `${MAIL.portalUrl.replace(/\/$/, '')}/#/partner-registration/${token}`;
       const expires = new Date(r.link_expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
       const sent = await sendViaBrevo(MAIL, { email: String(to), name: r.company_name }, linkEmail(kind, r.company_name, url, expires, kind === 'changes' ? { ...cr, fields } : undefined));
@@ -84,7 +100,9 @@ Deno.serve(async (req) => {
     }
 
     // ---------------------------------------------------------------- public actions
-    if (!['load', 'save', 'upload_url', 'attach_file', 'send_code', 'verify_code', 'submit'].includes(action)) throw new Fail(400, 'Unknown request.');
+    if (!['load', 'save', 'upload_url', 'attach_file', 'send_code', 'verify_code', 'submit', 'agreement', 'agreement_upload_url', 'attach_agreement', 'remove_agreement'].includes(action)) {
+      throw new Fail(400, 'Unknown request.');
+    }
     // An address that tried more than 20 unknown links in the last hour is refused (guessing).
     const { data: badRows } = await admin.from('partner_registration_hits').select('hits').eq('bucket', `badlink:${ip}`)
       .gte('window_start', new Date(Date.now() - 60 * 60_000).toISOString());
@@ -100,6 +118,10 @@ Deno.serve(async (req) => {
     if (action === 'load' || state.state !== 'open') return json(200, publicState(state, action), origin);
     const id = String(state.id);
     await limit(`link:${id}:${action}`, action === 'save' ? 240 : 60, 10);
+
+    if (['agreement', 'agreement_upload_url', 'attach_agreement', 'remove_agreement'].includes(action)) {
+      return json(200, await publicAgreementAction(admin, action, body, state), origin);
+    }
 
     if (action === 'save') {
       const answers = sanitizeAnswers(body.answers);
@@ -178,11 +200,23 @@ Deno.serve(async (req) => {
       return json(422, { error: 'Confirm your login email with the code we send.', problems: { registered_email: 'Confirm this email address with the code' } }, origin);
     }
     const idem = String(body.idempotencyKey ?? '').slice(0, 80) || null;
+    // The agreement must match the answers being submitted: save them, then bring the agreement up to date.
+    await admin.rpc('save_registration_draft', { p_token: token, p_answers: answers });
+    const { data: regRow } = await admin.from('partner_registrations').select('id, reference, company_name, agreement_required').eq('id', id).single();
+    if (regRow) {
+      const ag = await ensureAgreement(admin, regRow, answers);
+      if (ag.required && 'agreement' in ag && ag.agreement && ag.status !== 'partner_signed') {
+        return json(422, { error: 'Upload the signed Partnership Agreement before submitting.', problems: { signed_agreement: 'Upload the signed agreement' } }, origin);
+      }
+    }
     const { data, error } = await admin.rpc('submit_partner_registration', { p_token: token, p_answers: answers, p_form_version: FORM_VERSION, p_idempotency: idem });
-    if (error) throw new Fail(409, 'This form can no longer be submitted. It may have been submitted already or the link was replaced.');
+    if (error) {
+      if (error.message.includes('AGREEMENT_REQUIRED')) return json(422, { error: 'Upload the signed Partnership Agreement before submitting.', problems: { signed_agreement: 'Upload the signed agreement' } }, origin);
+      throw new Fail(409, 'This form can no longer be submitted. It may have been submitted already or the link was replaced.');
+    }
     return json(200, { ok: true, reference: (data as { reference: string }).reference }, origin);
   } catch (e) {
-    if (e instanceof Fail) return json(e.status, { error: e.message }, origin);
+    if (e instanceof Fail || e instanceof AgreementFail) return json(e.status, { error: e.message }, origin);
     return json(500, { error: 'Something went wrong. Please try again.' }, origin);
   }
 });

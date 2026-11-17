@@ -4,7 +4,7 @@
 // submit. Submitting never creates an account or gives portal access.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, FileCheck2, FileText, Lock, Mail, PenLine, ShieldCheck, Upload, UserRound, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Download, ExternalLink, FileCheck2, FileSignature, FileText, Loader2, Lock, Mail, PenLine, RefreshCw, ShieldCheck, Trash2, Upload, UserRound, XCircle } from 'lucide-react';
 import { Alert, Button, Checkbox, Field, Input, Select, Textarea } from '../components/ui';
 import { Logo } from '../components/brand';
 import { ThemeMenu } from '../components/ThemeSwitcher';
@@ -20,8 +20,8 @@ interface OpenState {
 }
 type LoadState = { state: 'loading' } | { state: 'invalid' | 'revoked' | 'expired' | 'closed' | 'error' } | { state: 'submitted'; companyName: string | null; reference: string | null } | OpenState;
 
-const ICONS = { company: Building2, contact: UserRound, business: FileText, documents: FileCheck2, login: Lock, declaration: PenLine };
-const STEPS = [...FORM_SECTIONS.map((s) => ({ id: s.id, title: s.title })), { id: 'review', title: 'Review details' }];
+const ICONS = { company: Building2, contact: UserRound, business: FileText, documents: FileCheck2, login: Lock, declaration: PenLine, agreement: FileSignature };
+const STEPS = [...FORM_SECTIONS.map((s) => ({ id: s.id, title: s.title })), { id: 'review', title: 'Review details' }, { id: 'agreement', title: 'Review Document' }];
 
 // Development only (#/partner-registration/demo): a fake server for layout checks. Never in production builds.
 const isDemo = () => import.meta.env.DEV && window.location.hash.includes('/partner-registration/demo');
@@ -30,6 +30,7 @@ function demoCall(body: Record<string, unknown>): unknown {
     answers: {}, files: {}, verifiedEmail: null, expiresAt: new Date(Date.now() + 14 * 86400000).toISOString(), changeRequest: null, emailVerification: true };
   if (body.action === 'verify_code') return { ok: true, verifiedEmail: String(body.email) };
   if (body.action === 'submit') return { ok: true, reference: 'PR-26-DEMO01' };
+  if (body.action === 'agreement') return { required: true, status: 'ready', date: '2026-11-17', agreement: { name: 'SSI-GLOBAL-Partnership-Agreement-PR-26-DEMO01.pdf', pages: 13, version: 1, previewUrl: 'about:blank', downloadUrl: 'about:blank' }, signed: null, review: null };
   return { ok: true };
 }
 
@@ -51,7 +52,8 @@ export default function PartnerRegistration() {
   const [load, setLoad] = useState<LoadState>({ state: 'loading' });
   const [answers, setAnswers] = useState<Answers>({});
   const [files, setFiles] = useState<Record<string, FileInfo>>({});
-  const [step, setStep] = useState(0);
+  // Development demo only: #/partner-registration/demo?step=agreement opens the last step for layout checks.
+  const [step, setStep] = useState(() => (isDemo() && window.location.hash.includes('step=agreement') ? FORM_SECTIONS.length + 1 : 0));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState(false);
@@ -61,6 +63,9 @@ export default function PartnerRegistration() {
   const [done, setDone] = useState<string | null>(null);
   const [honeypot, setHoneypot] = useState('');
   const [verified, setVerified] = useState<string | null>(null);
+  /** Final step: may the registration be submitted as far as the agreement is concerned? */
+  const [agreementOk, setAgreementOk] = useState(false);
+  const [agreementSigned, setAgreementSigned] = useState(false);
   const idem = useRef(crypto.randomUUID());
   const top = useRef<HTMLDivElement>(null);
 
@@ -132,6 +137,7 @@ export default function PartnerRegistration() {
     top.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const submit = async () => {
+    if (!agreementOk) { setSubmitError('Upload the signed Partnership Agreement before submitting.'); return; }
     const all: Record<string, string> = {};
     FORM_SECTIONS.forEach((_, i) => Object.assign(all, problemsFor(i)));
     if (Object.keys(all).length) {
@@ -146,6 +152,7 @@ export default function PartnerRegistration() {
     const r = await call<{ reference: string }>({ action: 'submit', token, answers, idempotencyKey: idem.current, website_url: honeypot });
     setSubmitting(false);
     if (r.ok) { setDirty(false); setDone(r.data.reference); return; }
+    if (r.problems?.signed_agreement) { setSubmitError(r.error); setAgreementOk(false); return; }
     if (r.problems) {
       setErrors(r.problems);
       const first = FORM_SECTIONS.findIndex((s) => s.fields.some((f) => r.problems![f.key]));
@@ -170,7 +177,9 @@ export default function PartnerRegistration() {
       <div className="rounded-2xl border border-line bg-surface p-6 text-center shadow-card sm:p-10">
         <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" aria-hidden />
         <h1 className="mt-4 font-display text-2xl font-semibold text-heading">Registration Submitted Successfully</h1>
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-ink-soft">Thank you for your interest in partnering with SSI GLOBAL. Your registration has been received and is awaiting review by our team.</p>
+        <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-ink-soft">{done && agreementSigned
+          ? 'Your Partnership Registration and signed Agreement have been received. Our team will review your documents and contact you regarding the next steps.'
+          : 'Thank you for your interest in partnering with SSI GLOBAL. Your registration has been received and is awaiting review by our team.'}</p>
         <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-ink-soft">Submitting this form does not automatically activate a Partner account. We will contact you regarding the next steps.</p>
         {(done || (load.state === 'submitted' && load.reference)) && <p className="mt-5 text-xs text-ink-mute">Registration reference: <b className="text-heading">{done ?? (load.state === 'submitted' ? load.reference : '')}</b></p>}
       </div>,
@@ -195,6 +204,7 @@ export default function PartnerRegistration() {
 
   const section = FORM_SECTIONS[step];
   const isReview = step === FORM_SECTIONS.length;
+  const isAgreement = step === FORM_SECTIONS.length + 1;
   const pct = Math.round(((step + 1) / STEPS.length) * 100);
   const savedText = saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Draft saved' : saved === 'error' ? 'Not saved — check your connection' : '';
   return shell(
@@ -250,7 +260,9 @@ export default function PartnerRegistration() {
             </Alert>
           )}
           <div className="rounded-2xl border border-line bg-surface p-5 shadow-card sm:p-7">
-            {!isReview ? (
+            {isAgreement ? (
+              <AgreementStep token={token} onState={(ok, signed) => { setAgreementOk(ok); setAgreementSigned(signed); }} />
+            ) : !isReview ? (
               <>
                 <div className="mb-5 flex items-start gap-3">
                   {(() => { const I = ICONS[section.id as keyof typeof ICONS] ?? FileText; return <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-rust dark:bg-brand-500/10"><I className="h-5 w-5" /></span>; })()}
@@ -276,10 +288,12 @@ export default function PartnerRegistration() {
             {submitError && <Alert tone="error" className="mt-5">{submitError}</Alert>}
             <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
               <Button variant="secondary" icon={ArrowLeft} disabled={step === 0} onClick={() => void go(step - 1)}>Previous</Button>
-              {!isReview ? (
+              {!isReview && !isAgreement ? (
                 <Button icon={ArrowRight} onClick={() => void go(step + 1)}>{step === FORM_SECTIONS.length - 1 ? 'Review Details' : 'Next'}</Button>
+              ) : isReview ? (
+                <Button icon={ArrowRight} onClick={() => void (async () => { await save(); void go(step + 1); })()}>Next: Review Document</Button>
               ) : (
-                <Button icon={ShieldCheck} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Submitting…' : 'Submit Registration'}</Button>
+                <Button icon={ShieldCheck} disabled={submitting || !agreementOk} onClick={() => void submit()}>{submitting ? 'Submitting…' : 'Submit Partnership Registration'}</Button>
               )}
             </div>
           </div>
@@ -435,6 +449,172 @@ function Review({ answers, files, verified, onEdit }: { answers: Answers; files:
         </section>
       ))}
       <p className="text-xs text-ink-mute">Date of acceptance: {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} (recorded when you submit).</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Review Document (Partnership Agreement)
+interface AgreementInfo {
+  required: boolean; status?: string; reason?: string; missing?: string[]; date?: string;
+  agreement?: { name: string; pages: number; version: number; previewUrl: string; downloadUrl: string };
+  signed?: { id: string; name: string; size: number; pages: number; uploadedAt: string; previewUrl: string } | null;
+  review?: { reasons?: string[]; note?: string | null } | null;
+}
+const REASON_LABEL: Record<string, string> = {
+  missing_signature: 'Missing signature', missing_seal: 'Missing company seal', incomplete_pages: 'Incomplete pages', company_info: 'Incorrect company information',
+  representative: 'Incorrect authorised representative', wrong_version: 'Wrong document version', other: 'Other',
+};
+
+function AgreementStep({ token, onState }: { token: string; onState: (canSubmit: boolean, signed: boolean) => void }) {
+  const [info, setInfo] = useState<AgreementInfo | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'upload' | 'remove' | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [warn, setWarn] = useState<string | null>(null);
+  const report = useRef(onState);
+  report.current = onState;
+  const load = useCallback(async () => {
+    setErr(null);
+    const r = await call<AgreementInfo>({ action: 'agreement', token });
+    if (!r.ok) { setErr(r.error); report.current(false, false); return; }
+    setInfo(r.data);
+    const issued = !!r.data.agreement;
+    report.current(!r.data.required || (!issued && (r.data.status === 'template_missing' || r.data.status === 'annexure_missing')) || !!r.data.signed, !!r.data.signed);
+  }, [token]);
+  useEffect(() => { void load(); }, [load]);
+
+  const upload = async (picked: File) => {
+    setErr(null); setWarn(null);
+    if (!/\.pdf$/i.test(picked.name) && picked.type !== 'application/pdf') return setErr('Upload the signed agreement as a PDF file.');
+    if (picked.size > 10 * 1024 * 1024) return setErr('The file is too large (max 10 MB). Scan at a lower resolution and try again.');
+    if (!supabase) return;
+    setBusy('upload'); setProgress(10);
+    const u = await call<{ path: string; uploadToken: string }>({ action: 'agreement_upload_url', token, size: picked.size });
+    if (!u.ok) { setBusy(null); return setErr(u.error); }
+    setProgress(40);
+    const up = await supabase.storage.from('partner-registration-files').uploadToSignedUrl(u.data.path, u.data.uploadToken, picked, { contentType: 'application/pdf' });
+    if (up.error) { setBusy(null); return setErr('The upload failed. Please try again.'); }
+    setProgress(75);
+    const a = await call<{ ok: boolean; pagesWarning?: string | null }>({ action: 'attach_agreement', token, path: u.data.path, name: picked.name });
+    setProgress(100); setBusy(null);
+    if (!a.ok) return setErr(a.error);
+    if (a.data.pagesWarning) setWarn(a.data.pagesWarning);
+    await load();
+  };
+  const remove = async () => {
+    setBusy('remove');
+    const r = await call({ action: 'remove_agreement', token });
+    setBusy(null);
+    if (!r.ok) return setErr(r.error);
+    await load();
+  };
+
+  const header = (
+    <div className="mb-5 flex items-start gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-rust dark:bg-brand-500/10"><FileSignature className="h-5 w-5" /></span>
+      <div>
+        <h2 className="font-display text-lg font-semibold text-heading">Review Document</h2>
+        <p className="mt-0.5 text-sm text-ink-soft">Please carefully review the SSI GLOBAL Partnership Agreement, download the document, sign it through your authorized representative, and upload the signed copy to complete your registration submission.</p>
+      </div>
+    </div>
+  );
+  if (!info && !err) return <>{header}<div className="flex items-center gap-2 py-10 text-sm text-ink-soft" role="status"><Loader2 className="h-4 w-4 animate-spin" />Preparing your agreement…</div></>;
+  if (!info) return <>{header}<Alert tone="error">{err} <Button size="sm" variant="secondary" className="ml-1" icon={RefreshCw} onClick={() => void load()}>Try again</Button></Alert></>;
+  if (!info.required) return <>{header}<Alert tone="info">No agreement is needed for this registration. You can submit it now.</Alert></>;
+  if (info.missing?.length) {
+    return <>{header}<Alert tone="warning" title="Some details are needed for the agreement">The agreement is prepared from your answers. Please complete: {info.missing.join(', ')}. Use “Previous” to go back.</Alert></>;
+  }
+  if (!info.agreement) {
+    return <>{header}<Alert tone="info" title="Your agreement is being prepared">
+      SSI GLOBAL is finalising the agreement for your organisation{info.status === 'annexure_missing' ? ' (the commission annexure)' : ''}. You can submit your registration now — we will send the agreement for signature before your partnership is activated.
+    </Alert></>;
+  }
+  const a = info.agreement;
+  return (
+    <>
+      {header}
+      {info.review && (
+        <Alert tone="warning" className="mb-4" title="SSI GLOBAL asked for a corrected signed agreement">
+          {(info.review.reasons ?? []).map((r) => REASON_LABEL[r] ?? r).join(' · ')}{info.review.note ? ` — ${info.review.note}` : ''}
+        </Alert>
+      )}
+      <div className="rounded-xl border border-line">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-heading">Partnership Agreement</div>
+            <div className="text-xs text-ink-mute">{a.pages} pages · version {a.version}{info.date ? ` · agreement date ${new Date(`${info.date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}</div>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"><PenLine className="h-3.5 w-3.5" />Signature Required</span>
+        </div>
+        <iframe title="Partnership Agreement preview" src={a.previewUrl} className="hidden h-[70vh] w-full bg-white sm:block" />
+        <div className="flex flex-wrap gap-2 p-4">
+          <a href={a.downloadUrl} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand to-rust px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95"><Download className="h-4 w-4" />Download Agreement</a>
+          <a href={a.previewUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold text-heading hover:bg-canvas"><ExternalLink className="h-4 w-4" />Open full agreement</a>
+        </div>
+      </div>
+      <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-soft">
+        <li>Download and read the complete agreement, including Annexure A.</li>
+        <li>Have your authorised representative sign it (and apply the company seal if required).</li>
+        <li>Scan or save the signed agreement as a PDF and upload it below.</li>
+      </ol>
+      <div className="mt-5">
+        <div className="mb-1.5 text-sm font-medium text-heading">Upload Signed Partnership Agreement</div>
+        <p className="mb-2 text-xs text-ink-mute">Please upload the agreement after it has been signed by your authorized company representative. PDF only, up to 10 MB.</p>
+        {info.signed ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-400 bg-emerald-50/50 px-4 py-3 text-sm dark:bg-emerald-500/10">
+            <FileCheck2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1"><div className="truncate font-medium text-heading">{info.signed.name}</div>
+              <div className="text-xs text-ink-mute">{info.signed.pages} pages · {Math.max(1, Math.round(info.signed.size / 1024))} KB · uploaded {new Date(info.signed.uploadedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</div></div>
+            <a href={info.signed.previewUrl} target="_blank" rel="noreferrer noopener" className="text-xs font-semibold text-rust hover:underline">View</a>
+            <label className="cursor-pointer text-xs font-semibold text-rust hover:underline">Replace<input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} /></label>
+            <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline" disabled={!!busy} onClick={() => void remove()}><Trash2 className="h-3.5 w-3.5" />Remove</button>
+          </div>
+        ) : (
+          <label className={cn('flex cursor-pointer items-center gap-3 rounded-xl border border-dashed bg-canvas px-4 py-4 text-sm transition focus-within:ring-2 focus-within:ring-brand-300', 'border-line hover:border-brand-300')}>
+            {busy ? <Loader2 className="h-5 w-5 shrink-0 animate-spin text-rust" /> : <Upload className="h-5 w-5 shrink-0 text-rust" />}
+            <span className="min-w-0 flex-1 text-ink-soft">{busy === 'upload' ? `Uploading… ${progress}%` : 'Select the signed PDF…'}</span>
+            <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} />
+          </label>
+        )}
+        {busy === 'upload' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full bg-gradient-to-r from-brand to-rust transition-all" style={{ width: `${progress}%` }} /></div>}
+        {warn && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{warn}</p>}
+        {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+        {!info.signed && <p className="mt-2 text-xs text-ink-mute">The signed agreement is required to submit your registration.</p>}
+      </div>
+    </>
+  );
+}
+
+/** #/agreement/<token>: the countersigned agreement, from the email SSI GLOBAL sends (expiring link). */
+export function AgreementDelivery() {
+  const { token = '' } = useParams();
+  const [d, setD] = useState<{ companyName: string | null; reference: string | null; name: string; url: string; previewUrl: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    void call<{ companyName: string | null; reference: string | null; name: string; url: string; previewUrl: string }>({ action: 'delivery', deliveryToken: token })
+      .then((r) => (r.ok ? setD(r.data) : setErr(r.error)));
+  }, [token]);
+  return (
+    <div className="min-h-screen bg-canvas">
+      <header className="border-b border-line bg-surface"><div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-4 sm:px-6"><Logo stacked={false} /><ThemeMenu /></div></header>
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+        <div className="rounded-2xl border border-line bg-surface p-6 text-center shadow-card sm:p-10">
+          {!d && !err && <p className="py-10 text-sm text-ink-soft" role="status">Opening your agreement…</p>}
+          {err && <><XCircle className="mx-auto h-12 w-12 text-red-500" aria-hidden /><h1 className="mt-4 font-display text-xl font-semibold text-heading">{err}</h1></>}
+          {d && (
+            <>
+              <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" aria-hidden />
+              <h1 className="mt-4 font-display text-2xl font-semibold text-heading">Your Partnership Agreement</h1>
+              <p className="mt-2 text-sm text-ink-soft">{d.companyName}{d.reference ? ` · ${d.reference}` : ''} · Status: <b className="text-heading">Completed</b> (signed by both parties)</p>
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                <a href={d.url} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand to-rust px-5 py-2.5 text-sm font-semibold text-white"><Download className="h-4 w-4" />Download Signed Copy</a>
+                <a href={d.previewUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-2 rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-heading"><ExternalLink className="h-4 w-4" />View Agreement</a>
+              </div>
+              <p className="mt-6 text-xs text-ink-mute">This private link expires. Once your partner portal is active, the agreement is also under My Partnership Documents.</p>
+            </>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

@@ -293,7 +293,8 @@ Deno.serve(async (req) => {
             const m = claimErr.message;
             throw new Fail(409, m.includes('ALREADY_ACTIVATED') ? 'This registration already has a partner account.'
               : m.includes('NOT_APPROVED') ? 'Approve the registration before creating the partner.'
-              : m.includes('IN_PROGRESS') ? 'This partner is already being created. Wait a moment and refresh.' : 'The registration could not be used.');
+              : m.includes('IN_PROGRESS') ? 'This partner is already being created. Wait a moment and refresh.'
+              : m.includes('AGREEMENT_INCOMPLETE') ? 'The Partnership Agreement must be countersigned before the partner account is created.' : 'The registration could not be used.');
           }
         }
         const release = async (why: string) => { if (registrationId) await admin.rpc('release_registration_provisioning', { p_id: registrationId, p_actor: me, p_error: why }); };

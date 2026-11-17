@@ -52,7 +52,7 @@ import { CompanyAssets, EmployeeDocuments, MyAssignedTasks, WorkAssignments } fr
 import Management from './pages/hr/Management';
 import Commissions from './pages/shared/Commissions';
 import PartnerRegistrations from './pages/admin/PartnerRegistrations';
-import PartnerRegistration from './pages/PartnerRegistration';
+import PartnerRegistration, { AgreementDelivery } from './pages/PartnerRegistration';
 import ProposalConfirm from './pages/ProposalConfirm';
 import Agencies from './pages/shared/Agencies';
 import AgencyDetail from './pages/shared/AgencyDetail';
@@ -191,6 +191,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/partner-registration/:token" element={<PartnerRegistration />} />
+              <Route path="/agreement/:token" element={<AgreementDelivery />} />
               <Route path="/proposal/:token" element={<ProposalConfirm />} />
             {ChatSearchDemo && (
               <Route

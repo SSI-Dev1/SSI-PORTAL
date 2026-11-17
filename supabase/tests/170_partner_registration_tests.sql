@@ -127,6 +127,8 @@ select pg_temp.denied(format($$select public.begin_registration_provisioning(%L,
 select public.approve_registration(:'rid', 'Good fit');
 select pg_temp.check((select status = 'approved' and link_status = 'closed' and partner_id is null from public.partner_registrations where id = :'rid'), 'approval alone creates no partner');
 select pg_temp.trusted();
+-- This flow tests the registration lifecycle without the agreement step (390 covers that).
+update public.partner_registrations set agreement_required = false where id = :'rid';
 select public.begin_registration_provisioning(:'rid', :super);
 select pg_temp.denied(format($$select public.begin_registration_provisioning(%L, %L)$$, :'rid', :super), 'a second simultaneous attempt is refused', '%IN_PROGRESS%');
 select public.release_registration_provisioning(:'rid', :super, 'Email already used');

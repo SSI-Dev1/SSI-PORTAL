@@ -247,6 +247,9 @@ export interface DailyReport {
   sources: Record<string, string>;
   sourceActivityIds?: number[];
   metricDetails?: Record<string, MetricValue>;
+  /** Frozen at submission (0055): the day's activities and pending work as submitted. */
+  timelineSnapshot?: unknown[] | null;
+  pendingSnapshot?: unknown | null;
   submittedAt: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;

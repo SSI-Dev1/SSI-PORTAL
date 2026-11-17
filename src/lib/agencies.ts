@@ -21,6 +21,9 @@ export interface Agency {
   selected_tier: string | null; registration_id: string | null; partner_id: string | null; created_by: string | null; created_at: string; updated_at: string;
   first_contact_at?: string | null; source?: 'manual' | 'import' | 'linkedin'; import_id?: string | null; source_row?: number | null; source_status?: string | null;
   source_values?: Record<string, unknown> | null; historical_onboarded?: boolean; needs_reconciliation?: boolean; reconciliation_note?: string | null;
+  /** 0055: historical onboarding review. */
+  onboarding_type?: 'normal' | 'historical' | null; historical_status?: 'requested' | 'approved' | 'flagged' | 'declined' | null; historical_request_note?: string | null;
+  historical_reason?: string | null; historical_reviewed_at?: string | null; historical_original_date?: string | null; historical_evidence?: string | null;
   agency_type?: AgencyType | null; agency_type_changed_by?: string | null; agency_type_changed_at?: string | null;
   sub_officer?: string | null; sub_officer_since?: string | null;
 }
@@ -94,7 +97,9 @@ export const ACTIVITY: Record<string, string> = {
   registration_changes_requested: 'Registration changes requested', registration_approved: 'Registration approved', registration_rejected: 'Registration rejected',
   registration_activated: 'Partner account activated', registration_in_progress: 'Agency started the registration form',
   contact_attempt: 'Contact attempt', imported: 'Imported from a spreadsheet', converted_from_linkedin: 'Moved from LinkedIn Outreach',
-  linked_from_linkedin: 'LinkedIn prospect linked to this agency', mou_email_accepted: 'MOU emailed', mou_email_failed: 'MOU email failed',
+  linked_from_linkedin: 'LinkedIn prospect linked to this agency', historical_requested: 'Historical onboarding review requested',
+  historical_approved: 'Historical onboarding approved by an administrator', historical_flagged: 'Historical onboarding flagged for verification',
+  historical_declined: 'Historical onboarding declined', linkedin_unlinked: 'LinkedIn contact moved to its own agency', partner_created: 'Partner added', mou_email_accepted: 'MOU emailed', mou_email_failed: 'MOU email failed',
   mou_email_not_configured: 'MOU not emailed — no MOU published', registration_email_accepted: 'Registration form emailed',
   registration_email_failed: 'Registration email failed', reconciled: 'Reconciled by an administrator', assigned: 'Officer assigned',
   reactivated: 'Reopened', officer_changed: 'Officer changed', contact_status_corrected: 'Contact status corrected by an administrator',
@@ -240,7 +245,7 @@ export const fmtWhen = (d: string | null | undefined) => (d ? new Date(d).toLoca
 
 /** Filters used by the dashboard cards and the list. */
 export type AgencyFilter = 'all' | 'connected' | 'not_connected' | 'unknown' | 'new_added' | 'reconcile' | 'new_contacted' | 'proposal_sent' | 'proposal_confirmed' | 'mou_sent' | 'onboarded' | 'inactive'
-  | 'closed' | 'follow_up' | 'registration_pending';
+  | 'closed' | 'follow_up' | 'registration_pending' | 'historical_requests' | 'historical_candidates';
 export const FILTERS: { value: AgencyFilter; label: string }[] = [
   { value: 'all', label: 'All agencies' }, { value: 'connected', label: 'Connected' }, { value: 'not_connected', label: 'Not connected' },
   { value: 'unknown', label: 'Contact not recorded' }, { value: 'new_added', label: 'Added this month' },
@@ -248,6 +253,7 @@ export const FILTERS: { value: AgencyFilter; label: string }[] = [
   { value: 'proposal_sent', label: 'Proposal sent' }, { value: 'proposal_confirmed', label: 'Proposal confirmed' }, { value: 'mou_sent', label: 'MOU sent' },
   { value: 'registration_pending', label: 'Registration in progress' }, { value: 'onboarded', label: 'Onboarded' }, { value: 'inactive', label: 'Inactive' },
   { value: 'closed', label: 'Closed' }, { value: 'reconcile', label: 'Needs reconciliation' },
+  { value: 'historical_requests', label: 'Historical onboarding requests' }, { value: 'historical_candidates', label: 'Possible historical onboarding' },
 ];
 const inMonth = (d: string | null | undefined, month: string) => !!d && new Date(new Date(d).getTime() + 5.5 * 3_600_000).toISOString().slice(0, 7) === month;
 export function matchesFilter(a: Agency, f: AgencyFilter, d: AgencyData): boolean {
@@ -269,6 +275,10 @@ export function matchesFilter(a: Agency, f: AgencyFilter, d: AgencyData): boolea
     case 'inactive': return a.stage === 'inactive';
     case 'closed': return a.stage === 'closed';
     case 'follow_up': return a.stage === 'follow_up_required' || isOpenFollowUp(a);
+    // Review queue, and records that may predate the portal (imported, or proposal / MOU stages without a portal registration).
+    case 'historical_requests': return a.historical_status === 'requested' || a.historical_status === 'flagged';
+    case 'historical_candidates': return a.stage !== 'onboarded' && a.stage !== 'closed' && !a.registration_id
+      && (a.source === 'import' || a.historical_status === 'requested' || a.historical_status === 'flagged' || ['proposal_sent', 'proposal_confirmed', 'mou_sent'].includes(a.stage));
   }
 }
 

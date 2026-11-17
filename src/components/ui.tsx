@@ -358,7 +358,7 @@ export function Modal({
             aria-labelledby={titleId}
             className={cn(
               'relative flex w-full animate-scale-in flex-col overflow-hidden bg-surface shadow-2xl outline-none sm:rounded-3xl',
-              wide ? 'h-[100dvh] ring-1 ring-line sm:h-auto sm:max-h-[88vh]' : 'max-h-[92vh] rounded-t-3xl',
+              wide ? 'h-[100vh] ring-1 ring-line supports-[height:100dvh]:h-[100dvh] sm:h-auto sm:max-h-[88vh] sm:supports-[height:100dvh]:h-auto' : 'max-h-[92vh] rounded-t-3xl supports-[height:100dvh]:max-h-[92dvh] sm:supports-[height:100dvh]:max-h-[92vh]',
               width,
             )}
             tabIndex={-1}

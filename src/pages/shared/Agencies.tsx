@@ -3,8 +3,11 @@
 // Clients & Branches only after SSI GLOBAL approves its registration and creates the account.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, FileSignature, FileUp, Globe2, Plus, Settings2, Trash2, UserCheck, UserCog, UserPlus, X } from 'lucide-react';
+import { Building2, FileSignature, FileUp, Globe2, History, Plus, Settings2, Trash2, UserCheck, UserCog, UserPlus, X } from 'lucide-react';
 import { PermanentDeleteDialog, useCanPermanentlyDelete } from '../../components/PermanentDelete';
+import { ReviewHistoricalOnboarding } from './HistoricalOnboarding';
+import { useAuth } from '../../auth/AuthProvider';
+import { canManageRegistrations } from '../../auth/roles';
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Pagination, SearchInput, Segmented, Switch, Table, Textarea, usePaged } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
@@ -32,7 +35,10 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const [importing, setImporting] = useState(false);
   // Administrators: selection for bulk officer assignment / contact-status correction.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | 'sub' | 'delete' | null>(null);
+  const [bulk, setBulk] = useState<'officer' | 'contact' | 'type' | 'sub' | 'delete' | 'historical' | null>(null);
+  const { realSession } = useAuth();
+  /** Historical onboarding approval: Super Admin and "Partner registrations" administrators. */
+  const canHistorical = canManageRegistrations(realSession);
   /** Permanent deletion of test records: Super Admin only (the server checks again). */
   const canDelete = useCanPermanentlyDelete();
   const names = useOfficerNames(allowed);
@@ -49,7 +55,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
   const staffName = (id: string | null) => (id ? candidates.find((c) => c.id === id)?.full_name ?? names.get(id) ?? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Former officer') : '—');
   // Bulk Sub Officer: administrators, or a Main Officer for their own agencies (the server enforces it).
   const ownsSome = !!data?.agencies.some((a) => a.assigned_officer === session?.userId);
-  const canSelect = manager || ownsSome || canDelete;
+  const canSelect = manager || ownsSome || canDelete || canHistorical;
   const regOf = (id: string | null) => (id ? data?.registrations.find((r) => r.id === id) : undefined);
 
   const rows = useMemo(() => {
@@ -102,6 +108,7 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                   {manager && <Button size="sm" variant="secondary" icon={UserCog} onClick={() => setBulk('officer')}>Assign officer</Button>}
                   {manager && <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setBulk('contact')}>Set contact status</Button>}
                   {manager && <Button size="sm" variant="secondary" icon={Globe2} onClick={() => setBulk('type')}>Set agency type</Button>}
+                  {canHistorical && <Button size="sm" variant="secondary" icon={History} disabled={selected.size > 200} onClick={() => setBulk('historical')}>Historical onboarding…</Button>}
                   {canDelete && <Button size="sm" variant="danger" icon={Trash2} disabled={selected.size > 100} title={selected.size > 100 ? 'Select at most 100 records' : undefined} onClick={() => setBulk('delete')}>Delete permanently</Button>}
                 </span>
               </>
@@ -130,7 +137,9 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                     <td className="min-w-[180px]"><div className="flex flex-wrap items-center gap-1.5 font-medium text-heading">{agencyName(a)}<AgencyTypeBadge type={a.agency_type} /></div><div className="text-xs text-ink-mute">{a.reference}{a.country ? ` · ${a.country}` : ''}{a.source === 'linkedin' ? ' · Source: LinkedIn Outreach' : a.source === 'import' ? ' · Imported' : ''}</div></td>
                     <td className="min-w-[160px] text-sm">{a.contact_name ?? '—'}<div className="text-xs text-ink-mute">{[a.phone, a.email].filter(Boolean).join(' · ') || '—'}</div></td>
                     <td><Badge tone={CONTACT[a.contact_status].tone} dot>{CONTACT[a.contact_status].label}</Badge></td>
-                    <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>
+                    <td><Badge tone={STAGE[a.stage].tone}>{stageLabel(a)}</Badge>{a.onboarding_type === 'historical' && a.stage === 'onboarded' && <div className="mt-1 text-[11px] text-ink-mute">Historical onboarding</div>}
+                      {(a.historical_status === 'requested' || a.historical_status === 'flagged') && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">{a.historical_status === 'requested' ? 'Historical review requested' : 'Historical — needs verification'}</div>}
+                      {a.needs_reconciliation && <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs reconciliation</div>}</td>
                     <td className="text-sm">{a.assigned_officer ? staffName(a.assigned_officer) : <span className="text-ink-mute">Unassigned</span>}</td>
                     <td className="text-sm">{a.sub_officer ? staffName(a.sub_officer) : <span className="text-ink-mute">Unassigned</span>}</td>
                     <td className="text-sm tabular-nums">{counts?.byAgency.get(a.id) ?? (a.partner_id ? '…' : '—')}</td>
@@ -159,6 +168,8 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
         return <AssignSubOfficerModal ids={[...selected]} title={`${selected.size} selected agencies`} main={main ?? (manager ? session?.userId ?? null : null)}
           mainName={mains.length === 1 ? (mains[0] ? staffName(mains[0]) : 'Unassigned') : `${mains.length} different Main Officers`} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />;
       })()}
+      {canHistorical && bulk === 'historical' && <ReviewHistoricalOnboarding ids={[...selected]} onClose={() => setBulk(null)}
+        onDone={async () => { setSelected(new Set()); await reload(); }} />}
       {canDelete && bulk === 'delete' && <PermanentDeleteDialog kind="agency" ids={[...selected]} onClose={() => setBulk(null)}
         onDeleted={async () => { setSelected(new Set()); await reload(); }} />}
       {manager && bulk === 'type' && <AgencyTypeModal ids={[...selected]} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />}

@@ -183,9 +183,10 @@ export async function buildReportPdf(v: ReportView, logoUrl?: string): Promise<U
   }
 
   // ---------------------------------------------------------------- daily summary
-  const texts = v.sections.flatMap((s) => s.texts);
+  // Only a summary that was actually written (older reports) — same rule as the report screen.
+  const texts = v.sections.flatMap((s) => s.texts).filter((t) => t.value);
   if (texts.length) {
-    heading('Daily summary');
+    heading('Summary written with this report');
     for (const t of texts) {
       const lines = wrap(t.value || '—', font, 9.5, CW - 8);
       need(28);

@@ -4,8 +4,8 @@
 // server figures while the report is open, the snapshot frozen at submission afterwards.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, ChevronDown, ClipboardList, FileDown, History, Hourglass, Lock, PenLine, Save, Send, Sparkles } from 'lucide-react';
-import { Alert, Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Segmented, Textarea } from '../../components/ui';
+import { CalendarClock, CheckCircle2, ChevronDown, ClipboardList, FileDown, History, Hourglass, Lock, PenLine, Send, Sparkles } from 'lucide-react';
+import { Alert, Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Segmented } from '../../components/ui';
 import { WorkTimeline, useWorkTimeline, type TimelineRow } from '../../components/WorkTimeline';
 import { downloadReportPdf } from '../../lib/reportPdf';
 import { buildReportView, type ReportView } from '../../lib/dailyReport';
@@ -217,19 +217,15 @@ export default function MyReport() {
         <div className="xl:col-span-2"><PendingCard view={view} loading={editable && hasQueue && livePending.pending === undefined} failed={editable && livePending.failed} hasQueue={hasQueue} /></div>
       </div>
 
-      {/* Daily summary */}
-      {view && view.sections.some((s) => s.texts.length) && (
+      {/* Written summary: only for older reports that already contain one (read-only, as in the PDF). */}
+      {view && view.sections.some((sec) => sec.texts.some((t) => t.value)) && (
         <Card className="mb-5">
-          <CardHeader title="Daily summary" subtitle={editable ? 'Written by you — saved with the report and included in the PDF.' : 'As submitted.'} />
+          <CardHeader title="Summary written with this report" />
           <div className="grid gap-4 px-5 pb-5 md:grid-cols-2">
-            {view.sections.flatMap((s) => s.texts).map((t) => editable ? (
-              <Field key={t.key} label={t.label}>
-                <Textarea rows={3} maxLength={5000} value={draft.notes[t.key] ?? ''} onChange={(e) => setDraft((d) => ({ ...d, notes: { ...d.notes, [t.key]: e.target.value } }))} />
-              </Field>
-            ) : (
+            {view.sections.flatMap((sec) => sec.texts).filter((t) => t.value).map((t) => (
               <div key={t.key}>
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">{t.label}</div>
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-heading">{t.value || <span className="text-ink-mute">—</span>}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-heading">{t.value}</p>
               </div>
             ))}
           </div>
@@ -241,7 +237,6 @@ export default function MyReport() {
         <Button variant="ghost" icon={History} onClick={history}>View history</Button>
         <Button variant="secondary" icon={FileDown} disabled={!view || pdfBusy} loading={pdfBusy} onClick={() => void downloadPdf()}>Download PDF</Button>
         {editable && template && <>
-          <Button variant="secondary" icon={Save} disabled={!!busy || !dirty} loading={busy === 'save'} onClick={() => void save(false)}>Save draft</Button>
           <Button icon={Send} disabled={!!busy} loading={busy === 'submit'} onClick={() => void save(true)}>Review &amp; Submit</Button>
         </>}
       </div>

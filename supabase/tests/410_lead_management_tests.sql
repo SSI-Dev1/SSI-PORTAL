@@ -118,9 +118,11 @@ select public.add_lead_follow_up(:'dan', public.company_today(), '15:00', 'Send 
 select pg_temp.check(public.add_lead_follow_up(:'dan', public.company_today(), '15:00', 'Send course list', 'aaaaaaaa-0000-4000-8000-000000000003') = :'t1'::uuid, 'Add follow-up is idempotent');
 select pg_temp.denied($$select public.add_lead_follow_up('$$ || :'dan' || $$', public.company_today() - 1, null, null, gen_random_uuid())$$, 'no follow-ups in the past', '%past%');
 select pg_temp.check(pg_temp.m(:ps1, 'tk_pending_tasks') = 1, 'pending follow-up task: 1');
+select pg_temp.check((select next_follow_up = public.company_today() and last_contact_at is not null from public.leads where id = :'dan'), 'list shows next follow-up and last contact');
 select pg_temp.check((select jsonb_array_length(public.my_pending_work() -> 'leads') = 1), 'it is in the work queue / report pending list');
 select public.log_lead_activity(:'dan', 'follow_up_done', null, 'Sent', :'t1', gen_random_uuid());
 select pg_temp.check((select status = 'done' and completed_by = :ps1::uuid from public.lead_tasks where id = :'t1'), 'Follow-up done resolves the task');
+select pg_temp.check((select next_follow_up is null from public.leads where id = :'dan'), 'no open follow-up left: next follow-up cleared');
 select pg_temp.check(pg_temp.m(:ps1, 'lm_student_followups') = 1 and pg_temp.m(:ps1, 'tk_pending_tasks') = 0, 'Student follow-ups 1; pending tasks 0');
 select pg_temp.denied($$select public.log_lead_activity('$$ || :'dan' || $$', 'follow_up_done', null, null, '$$ || :'t1' || $$', gen_random_uuid())$$, 'a completed follow-up cannot be completed again', '%already completed%');
 select public.add_lead_follow_up(:'dan', (public.my_pending_work() ->> 'next_day')::date, '10:30', 'Call about documents', gen_random_uuid()) as t2 \gset

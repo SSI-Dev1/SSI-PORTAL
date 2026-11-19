@@ -16,6 +16,8 @@ export interface Lead {
   partner_id: string | null; source: LeadSource; contact_status: ContactStatus; contact_changed_by: string | null; contact_changed_at: string | null;
   stage: LeadStage; stage_changed_by: string | null; stage_changed_at: string | null; no_response: boolean; no_response_at: string | null;
   assigned_to: string | null; created_by: string | null; created_at: string; updated_at: string; student_id: string | null; converted_by: string | null; converted_at: string | null;
+  /** Kept by triggers (0056): latest contact event and earliest open follow-up. */
+  last_contact_at?: string | null; next_follow_up?: string | null;
 }
 export interface LeadActivity { id: number; lead_id: string; kind: string; outcome: string | null; note: string | null; detail: Record<string, unknown>; actor: string | null; at: string }
 export interface LeadTask {

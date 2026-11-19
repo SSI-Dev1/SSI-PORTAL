@@ -40,20 +40,39 @@ export default function Leads() {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [agent, setAgent] = useState('');
+  const [contact, setContact] = useState('');
+  const [emp, setEmp] = useState('');
   const [modal, setModal] = useState<null | { kind: 'add' } | { kind: 'edit'; l: Lead }>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const canAdd = session?.userRole === 'super_admin' || !!session?.permissions.includes('leads');
   const partnerName = (id: string) => db.partners.find((p) => p.id === id)?.name;
   const staffName = (id: string | null | undefined) => (id ? db.staff.find((s) => s.id === id)?.fullName ?? (id === session?.userId ? session?.name : 'Employee') : '—');
+  // Current figures from the saved leads. Queue, contact outcome and stage are three separate
+  // groupings: each lead is counted once inside each group, never twice within one.
   const counts = useMemo(() => {
     const c: Record<LeadQueue, number> = { pending: 0, no_response: 0, in_progress: 0, converted: 0, closed: 0 };
-    (rows ?? []).forEach((l) => { c[leadQueue(l)] += 1; });
-    return c;
+    const st: Record<LeadStage, number> = { cold: 0, warm: 0, converted: 0, closed: 0 };
+    let connected = 0, notConnected = 0, fresh = 0, due = 0;
+    const d = today();
+    (rows ?? []).forEach((l) => {
+      c[leadQueue(l)] += 1; st[l.stage] += 1;
+      if (l.contact_status === 'connected') connected += 1; else if (l.contact_status === 'not_connected') notConnected += 1;
+      if (new Date(new Date(l.created_at).getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10) === d) fresh += 1;
+      if (l.next_follow_up && l.next_follow_up <= d && l.stage !== 'converted' && l.stage !== 'closed') due += 1;
+    });
+    return { ...c, stage: st, connected, notConnected, fresh, due, total: rows?.length ?? 0 };
   }, [rows]);
   const shown = useMemo(() => (rows ?? []).filter((l) => (tab === 'all' || leadQueue(l) === tab) && (!stage || l.stage === stage)
+    && (!contact || (contact === 'due' ? !!l.next_follow_up && l.next_follow_up <= today() && l.stage !== 'converted' && l.stage !== 'closed' : l.contact_status === contact))
+    && (!emp || l.assigned_to === emp)
     && (!agent || (agent === 'direct' ? !l.partner_id : l.partner_id === agent))
-    && matches(q, l.name, l.phone ?? '', l.email ?? '', l.reference, l.qualification ?? '')), [rows, tab, stage, agent, q]);
-  const paged = usePaged(shown, 20, `${tab}|${q}|${stage}|${agent}`);
+    && matches(q, l.name, l.phone ?? '', l.email ?? '', l.reference, l.qualification ?? '')), [rows, tab, stage, contact, emp, agent, q]);
+  const paged = usePaged(shown, 20, `${tab}|${q}|${stage}|${contact}|${emp}|${agent}`);
+  const employees = useMemo(() => [...new Set((rows ?? []).map((l) => l.assigned_to).filter((x): x is string => !!x))]
+    .map((id) => ({ value: id, label: staffName(id) })).sort((a, b) => a.label.localeCompare(b.label)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, db.staff]);
+  const pick = (f: { tab?: 'all' | LeadQueue; stage?: string; contact?: string }) => { setTab(f.tab ?? 'all'); setStage(f.stage ?? ''); setContact(f.contact ?? ''); };
   const profile = profileId ? rows?.find((r) => r.id === profileId) ?? null : null;
   const agentOptions = useMemo(() => {
     const ids = [...new Set((rows ?? []).map((l) => l.partner_id).filter((x): x is string => !!x))];
@@ -67,21 +86,32 @@ export default function Leads() {
         actions={canAdd ? <Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add Lead</Button> : undefined} />
       {error && <Alert tone="warning" className="mb-4">{error} <Button size="sm" variant="secondary" className="ml-1" onClick={() => void reload()}>Try again</Button></Alert>}
       {rows && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {(['pending', 'no_response', 'in_progress', 'converted', 'closed'] as LeadQueue[]).map((k) => (
-            <button key={k} type="button" onClick={() => setTab(k)} aria-pressed={tab === k}
-              className="rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 aria-pressed:border-brand-400">
-              <span className="block font-display text-xl font-semibold text-heading">{counts[k]}</span>
-              <span className="block text-xs text-ink-soft">{LEAD_QUEUE[k].label}</span><span className="block truncate text-[11px] text-ink-mute">{LEAD_QUEUE[k].hint}</span>
-            </button>
-          ))}
+        <div className="mb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Metric label="Total leads" value={counts.total} hint="All leads you can see" onClick={() => pick({})} />
+            <Metric label="New today" value={counts.fresh} hint="Added today (IST)" onClick={() => pick({})} />
+            {(['pending', 'no_response', 'converted', 'closed'] as LeadQueue[]).map((k) => (
+              <Metric key={k} label={LEAD_QUEUE[k].label} value={counts[k]} hint={LEAD_QUEUE[k].hint} active={tab === k} onClick={() => pick({ tab: k })} />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Metric label="Connected" value={counts.connected} hint="Contact outcome" active={contact === 'connected'} onClick={() => pick({ contact: 'connected' })} />
+            <Metric label="Not connected" value={counts.notConnected} hint="Contact outcome" active={contact === 'not_connected'} onClick={() => pick({ contact: 'not_connected' })} />
+            <Metric label="Cold" value={counts.stage.cold} hint="Stage" active={stage === 'cold'} onClick={() => pick({ stage: 'cold' })} />
+            <Metric label="Warm" value={counts.stage.warm} hint="Stage" active={stage === 'warm'} onClick={() => pick({ stage: 'warm' })} />
+            <Metric label="In progress" value={counts.in_progress} hint={LEAD_QUEUE.in_progress.hint} active={tab === 'in_progress'} onClick={() => pick({ tab: 'in_progress' })} />
+            <Metric label="Follow-ups due" value={counts.due} hint="Today or overdue" active={contact === 'due'} onClick={() => pick({ contact: 'due' })} />
+          </div>
         </div>
       )}
       <Card>
         <Tabs className="px-4" tabs={TABS.map((t) => ({ ...t, count: t.value === 'all' ? rows?.length : counts[t.value] }))} value={tab} onChange={setTab} />
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
           <SearchInput value={q} onChange={setQ} placeholder="Search name, phone, email, reference…" className="w-full sm:w-72" />
+          <FilterSelect label="Contact status" value={contact} onChange={setContact} options={[{ value: '', label: 'Any contact status' }, { value: 'due', label: 'Follow-up due' },
+            ...(Object.keys(CONTACT) as ContactStatus[]).map((k) => ({ value: k, label: CONTACT[k].label }))]} />
           <FilterSelect label="Stage" value={stage} onChange={setStage} options={[{ value: '', label: 'All stages' }, ...(Object.keys(LEAD_STAGE) as LeadStage[]).map((k) => ({ value: k, label: LEAD_STAGE[k].label }))]} />
+          {employees.length > 1 && <FilterSelect label="Employee" value={emp} onChange={setEmp} options={[{ value: '', label: 'All employees' }, ...employees]} />}
           <FilterSelect label="Agent" value={agent} onChange={setAgent} options={agentOptions} />
           <span className="ml-auto text-xs text-ink-mute">{rows ? `${shown.length} of ${rows.length}` : ''}</span>
         </div>
@@ -90,7 +120,7 @@ export default function Leads() {
             action={!rows.length && canAdd ? <Button icon={Plus} onClick={() => setModal({ kind: 'add' })}>Add Lead</Button> : undefined} />
         ) : (
           <>
-            <Table className="hr-table" head={['Lead', 'Contact', 'Qualification', 'Agent', 'Contact outcome', 'Stage', 'Assigned to', 'Added', '']}>
+            <Table className="hr-table" head={['Lead', 'Contact', 'Agent', 'Contact status', 'Stage', 'Last contact', 'Next follow-up', 'Assigned to', '']}>
               {paged.rows.map((l) => {
                 const qd = leadQueue(l);
                 return (
@@ -100,13 +130,13 @@ export default function Leads() {
                       <div className="text-xs text-ink-mute">{l.reference}</div>
                     </td>
                     <td className="text-sm">{l.phone ?? '—'}<div className="text-xs text-ink-mute">{l.email ?? ''}</div></td>
-                    <td className="text-sm">{l.qualification ?? '—'}</td>
                     <td className="text-sm">{agentName(l.partner_id, partnerName)}</td>
                     <td><Badge tone={CONTACT[l.contact_status].tone} dot>{CONTACT[l.contact_status].label}</Badge></td>
                     <td><Badge tone={LEAD_STAGE[l.stage].tone}>{LEAD_STAGE[l.stage].label}</Badge>
                       {(qd === 'pending' || qd === 'no_response') && <div className={`mt-1 text-[11px] font-medium ${qd === 'no_response' ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-300'}`}>{LEAD_QUEUE[qd].label}</div>}</td>
-                    <td className="text-sm">{staffName(l.assigned_to)}</td>
-                    <td className="whitespace-nowrap text-sm">{fmtDate(l.created_at)}</td>
+                    <td className="whitespace-nowrap text-sm">{fmtDate(l.last_contact_at)}</td>
+                    <td className={`whitespace-nowrap text-sm ${l.next_follow_up && l.next_follow_up < today() && qd !== 'converted' && qd !== 'closed' ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(l.next_follow_up)}</td>
+                    <td className="text-sm">{staffName(l.assigned_to)}<div className="text-xs text-ink-mute">Added {fmtDate(l.created_at)}</div></td>
                     <td className="whitespace-nowrap text-right"><Button size="sm" variant="secondary" onClick={() => setProfileId(l.id)}>Open</Button></td>
                   </tr>
                 );
@@ -122,22 +152,38 @@ export default function Leads() {
   );
 }
 
+function Metric({ label, value, hint, active, onClick }: { label: string; value: number; hint: string; active?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={!!active}
+      className="rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 aria-pressed:border-brand-400">
+      <span className="block font-display text-xl font-semibold tabular-nums text-heading">{value}</span>
+      <span className="block text-xs text-ink-soft">{label}</span><span className="block truncate text-[11px] text-ink-mute">{hint}</span>
+    </button>
+  );
+}
+
 // ------------------------------------------------------------------ add / edit
 function LeadForm({ lead, onClose, onSaved }: { lead?: Lead; onClose: () => void; onSaved: (id?: string) => void }) {
-  const { db } = useStore();
+  const { db, session } = useStore();
+  // Super Admin and team managers may assign a lead to someone else (the server allows own team only).
+  const canAssign = session?.userRole === 'super_admin' || !!(session as { hasTeam?: boolean } | null)?.hasTeam;
   const toast = useToast();
   const [f, setF] = useState({ name: lead?.name ?? '', phone: lead?.phone ?? '', email: lead?.email ?? '', qualification: lead?.qualification ?? '',
-    application_details: lead?.application_details ?? '', partner_id: lead?.partner_id ?? 'direct', source: (lead?.source ?? 'direct') as LeadSource });
+    application_details: lead?.application_details ?? '', partner_id: lead?.partner_id ?? 'direct', source: (lead?.source ?? 'direct') as LeadSource,
+    assigned_to: lead?.assigned_to ?? session?.userId ?? '', note: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [req] = useState(() => crypto.randomUUID());
   const partners = useMemo(() => db.partners.filter((p) => !p.internal && !p.archivedAt).sort((a, b) => a.name.localeCompare(b.name)), [db.partners]);
-  const dirty = !lead ? Object.values(f).some((v) => v && v !== 'direct') : false;
+  const dirty = !lead ? [f.name, f.phone, f.email, f.qualification, f.application_details, f.note].some((v) => v.trim()) || f.partner_id !== 'direct' : false;
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
   const save = async () => {
     if (f.name.trim().length < 2) return setErr('Enter the student / lead name.');
     setBusy(true); setErr('');
-    const payload = { ...f, partner_id: f.partner_id === 'direct' ? '' : f.partner_id, source: f.partner_id === 'direct' ? (f.source === 'partner' ? 'direct' : f.source) : 'partner' };
+    const { assigned_to, note, ...rest } = f;
+    const payload: Record<string, string> = { ...rest, partner_id: f.partner_id === 'direct' ? '' : f.partner_id, source: f.partner_id === 'direct' ? (f.source === 'partner' ? 'direct' : f.source) : 'partner' };
+    if (canAssign && assigned_to && assigned_to !== lead?.assigned_to) payload.assigned_to = assigned_to;
+    if (!lead && note.trim()) payload.note = note.trim();
     const r = await leadRpc<{ id: string; reference: string }>('save_lead', { p_id: lead?.id ?? null, p: payload, p_request: req });
     setBusy(false);
     if (!r.ok) return setErr(r.error);
@@ -167,6 +213,19 @@ function LeadForm({ lead, onClose, onSaved }: { lead?: Lead; onClose: () => void
         <Field label="Application details" className="sm:col-span-2" hint="Course, country, intake or anything the student asked about.">
           <Textarea rows={3} value={f.application_details} onChange={(e) => set('application_details', e.target.value)} maxLength={4000} />
         </Field>
+        {canAssign && (
+          <Field label="Assigned employee" hint="You, or a member of your team.">
+            <Select value={f.assigned_to} onChange={(e) => set('assigned_to', e.target.value)} searchable>
+              {db.staff.map((m) => <option key={m.id} value={m.id}>{m.fullName}{m.id === session?.userId ? ' (you)' : ''}</option>)}
+            </Select>
+          </Field>
+        )}
+        {!lead && (
+          <Field label="Notes" className="sm:col-span-2" hint="Saved as the first entry in the lead's history.">
+            <Textarea rows={2} value={f.note} onChange={(e) => set('note', e.target.value)} maxLength={2000} />
+          </Field>
+        )}
+        {lead && <p className="text-xs text-ink-mute sm:col-span-2">Added {fmtWhen(lead.created_at)}. Notes are added from Log activity → Add note, so earlier notes are kept.</p>}
       </div>
     </Modal>
   );
@@ -176,7 +235,7 @@ function LeadForm({ lead, onClose, onSaved }: { lead?: Lead; onClose: () => void
 function LeadProfile({ l, staffName, partnerName, onClose, onEdit }: {
   l: Lead; staffName: (id: string | null | undefined) => string; partnerName: (id: string) => string | undefined; onClose: () => void; onEdit: () => void;
 }) {
-  const { session, actions } = useStore();
+  const { session, actions, db } = useStore();
   const toast = useToast();
   const navigate = useNavigate();
   const { data, error } = useLeadDetail(l.id);
@@ -190,6 +249,9 @@ function LeadProfile({ l, staffName, partnerName, onClose, onEdit }: {
   const closed = l.stage === 'closed';
   const q = leadQueue(l);
   const openTasks = (data?.tasks ?? []).filter((t) => t.status === 'open');
+  // Student and application status come from the existing Student List and Applications (store, realtime).
+  const student = l.student_id ? db.students.find((x) => x.id === l.student_id) : undefined;
+  const apps = l.student_id ? db.applications.filter((a) => a.studentId === l.student_id) : [];
 
   const setContact = async (v: ContactStatus, note: string | null = null) => {
     if (v === l.contact_status) return false;
@@ -240,7 +302,10 @@ function LeadProfile({ l, staffName, partnerName, onClose, onEdit }: {
           </section>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl border border-line p-4 text-sm">
             {([['Phone', l.phone], ['Email ID', l.email], ['Qualification', l.qualification], ['Agent name', agentName(l.partner_id, partnerName)],
-               ['Source', LEAD_SOURCE[l.source]], ['Assigned to', staffName(l.assigned_to)], ['Added', fmtWhen(l.created_at)], ['Added by', staffName(l.created_by)]] as [string, string | null][]).map(([k, v]) => (
+               ['Source', LEAD_SOURCE[l.source]], ['Assigned to', staffName(l.assigned_to)], ['Last contact', l.last_contact_at ? fmtWhen(l.last_contact_at) : 'Not yet'],
+               ['Next follow-up', l.next_follow_up ? fmtDate(l.next_follow_up) : 'None scheduled'], ['Added', fmtWhen(l.created_at)], ['Added by', staffName(l.created_by)],
+               ['Student List', converted ? (student ? `Converted · ${student.firstName} ${student.lastName}` : 'Converted') : 'Not moved yet'],
+               ['Application', apps.length ? apps.map((a) => `${a.ref} · ${a.status}`).join(', ') : converted ? 'No application yet' : '—']] as [string, string | null][]).map(([k, v]) => (
               <div key={k}><dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">{k}</dt><dd className="mt-0.5 break-words text-heading">{v || '—'}</dd></div>
             ))}
             <div className="col-span-2"><dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">Application details</dt>

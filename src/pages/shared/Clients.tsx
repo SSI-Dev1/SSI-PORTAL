@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Award, Briefcase, Building2, CalendarClock, ClipboardList, FileStack, Hourglass, NotebookPen, Plus, Send, Users } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, FilterSelect, Modal, PageHeader, Pagination, SearchInput, Segmented, Select, Table, Textarea, usePaged } from '../../components/ui';
 import { KPI } from '../../components/hr';
+import { leadQueue, useLeads } from '../../lib/leads';
 import { useToast } from '../../components/feedback';
 import { useStore } from '../../store/store';
 import { greeting, matches } from '../../lib/utils';
@@ -228,6 +229,35 @@ export function ClientActivityLog() {
 }
 
 // ------------------------------------------------------------------ dashboard
+/** My leads at a glance (Lead Management, realtime): current queue and follow-ups due. */
+function LeadsSummary() {
+  const navigate = useNavigate();
+  const { data } = useLeads();
+  const c = useMemo(() => {
+    const d = today();
+    const r = { pending: 0, no_response: 0, converted: 0, due: 0 };
+    (data ?? []).forEach((l) => {
+      const q = leadQueue(l);
+      if (q === 'pending' || q === 'no_response' || q === 'converted') r[q] += 1;
+      if (l.next_follow_up && l.next_follow_up <= d && q !== 'converted' && q !== 'closed') r.due += 1;
+    });
+    return r;
+  }, [data]);
+  const v = (n: number) => (data ? n : '…');
+  const open = () => navigate('../leads', { relative: 'path' });
+  return (
+    <>
+      <h2 className="mb-3 mt-6 font-display text-base font-semibold text-heading">My leads</h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KPI label="Pending leads" value={v(c.pending)} hint="Not connected yet" icon={Hourglass} tone="amber" onClick={open} />
+        <KPI label="No response" value={v(c.no_response)} hint="Still open for follow-up" icon={CalendarClock} tone="orange" onClick={open} />
+        <KPI label="Follow-ups due" value={v(c.due)} hint="Today or overdue" icon={ClipboardList} tone="navy" onClick={open} />
+        <KPI label="Converted" value={v(c.converted)} hint="Moved to the Student List" icon={Award} tone="green" onClick={open} />
+      </div>
+    </>
+  );
+}
+
 export function PartnerSuccessDashboard() {
   const { session } = useStore();
   const navigate = useNavigate();
@@ -258,6 +288,7 @@ export function PartnerSuccessDashboard() {
         <KPI label="Today: applications" value={p.data ? p.data.today?.applications ?? 0 : '…'} hint="Created today through my clients" icon={Plus} tone="orange" />
         <KPI label="Today: offers" value={p.data ? p.data.today?.offers ?? 0 : '…'} hint="First offer today" icon={Award} tone="green" />
       </div>
+      {(session?.userRole === 'super_admin' || session?.permissions.includes('leads')) && <LeadsSummary />}
       {team && Number(team.agencies ?? 0) > 0 && (
         <Card className="mt-6">
           <CardHeader title="My team (as Main Officer)" subtitle={`${n(team, 'applications')} applications in total — each counted once`} />

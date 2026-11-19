@@ -172,6 +172,42 @@ do $$ begin
   begin alter publication supabase_realtime add table public.lead_tasks; exception when others then null; end;
 end $$;
 
+-- Last contact and next follow-up shown in the list and profile, kept by triggers so every path
+-- (activities, follow-ups, rollover, conversion) updates them the same way.
+alter table public.leads add column if not exists last_contact_at timestamptz;
+alter table public.leads add column if not exists next_follow_up date;
+create index if not exists leads_next_follow_up_idx on public.leads (assigned_to, next_follow_up) where next_follow_up is not null;
+
+create or replace function public.lead_task_sync()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare lid uuid := coalesce(new.lead_id, old.lead_id);
+begin
+  update public.leads set next_follow_up = (select min(t.due_date) from public.lead_tasks t where t.lead_id = lid and t.status = 'open')
+  where id = lid and next_follow_up is distinct from (select min(t.due_date) from public.lead_tasks t where t.lead_id = lid and t.status = 'open');
+  return null;
+end $$;
+revoke all on function public.lead_task_sync() from public, anon, authenticated;
+drop trigger if exists lead_tasks_sync on public.lead_tasks;
+create trigger lead_tasks_sync after insert or update of status, due_date or delete on public.lead_tasks for each row execute function public.lead_task_sync();
+
+-- Contact attempts, calls, completed follow-ups and contact outcomes are contact events.
+create or replace function public.lead_contact_sync()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.kind in ('contact_status', 'contact_attempt', 'call_done', 'follow_up_done', 'no_response') then
+    update public.leads set last_contact_at = greatest(coalesce(last_contact_at, new.at), new.at) where id = new.lead_id;
+  end if;
+  return null;
+end $$;
+revoke all on function public.lead_contact_sync() from public, anon, authenticated;
+drop trigger if exists lead_activities_contact_sync on public.lead_activities;
+create trigger lead_activities_contact_sync after insert on public.lead_activities for each row execute function public.lead_contact_sync();
+
+update public.leads l set
+  next_follow_up = (select min(t.due_date) from public.lead_tasks t where t.lead_id = l.id and t.status = 'open'),
+  last_contact_at = (select max(a.at) from public.lead_activities a where a.lead_id = l.id and a.kind in ('contact_status', 'contact_attempt', 'call_done', 'follow_up_done', 'no_response'))
+where l.id is not null;
+
 -- =============================================================== activity types
 insert into public.work_activity_types (id, label, source, description, sort) values
   ('lead_created',         'New lead added',               'crm', 'You added a lead', 90),

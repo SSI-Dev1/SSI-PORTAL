@@ -221,7 +221,7 @@ const LEADS_SAMPLE = {
   leads: [
     { ...leadBase, id: 'ld1', reference: 'LD-26-DEMO01', name: 'Sample Lead (demo)', phone: '+00 0000 000001', qualification: 'BTech (demo)', contact_status: 'unknown', stage: 'cold', no_response: false, created_at: '2026-11-18T04:00:00Z' },
     { ...leadBase, id: 'ld2', reference: 'LD-26-DEMO02', name: 'Second Lead (demo)', email: 'lead2@example.invalid', contact_status: 'not_connected', stage: 'cold', no_response: true, no_response_at: '2026-11-18T06:00:00Z', created_at: '2026-11-17T04:00:00Z' },
-    { ...leadBase, id: 'ld3', reference: 'LD-26-DEMO03', name: 'Third Lead (demo)', email: 'lead3@example.invalid', application_details: 'MSc, Sep intake (demo)', contact_status: 'connected', stage: 'warm', no_response: false, created_at: '2026-11-16T04:00:00Z' },
+    { ...leadBase, id: 'ld3', reference: 'LD-26-DEMO03', name: 'Third Lead (demo)', email: 'lead3@example.invalid', application_details: 'MSc, Sep intake (demo)', contact_status: 'connected', stage: 'warm', no_response: false, created_at: '2026-11-16T04:00:00Z', last_contact_at: '2026-11-17T09:00:00Z', next_follow_up: '2026-11-18' },
   ] as Lead[],
   activities: [{ id: 1, lead_id: 'ld2', kind: 'contact_attempt', outcome: 'no_answer', note: 'Rang twice (demo)', detail: {}, actor: null, at: '2026-11-18T05:30:00Z' }],
   tasks: [{ id: 't1', lead_id: 'ld3', due_date: '2026-11-18', due_time: '15:00', note: 'Send course list (demo)', status: 'open' as const, assigned_to: null, created_by: null, created_at: '2026-11-17T04:00:00Z', completed_at: null, carry_count: 1 }],

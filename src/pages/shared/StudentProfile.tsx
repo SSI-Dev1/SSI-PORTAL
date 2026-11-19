@@ -30,6 +30,7 @@ import { countryFlag, fileSize, formatDate, fullName, timeAgo } from '../../lib/
 import { studentTone } from './Students';
 import { docTone } from './Documents';
 import { partnerCan } from '../../auth/roles';
+import { StudentActivityCard } from '../../components/StudentActivity';
 
 type Tab = 'overview' | 'applications' | 'documents';
 
@@ -95,11 +96,13 @@ export default function StudentProfile() {
             <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-soft">
               <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{s.email}</span>
               <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{s.phone}</span>
-              {scoped.isAdmin && scoped.base === '/admin' && (
+              {scoped.isAdmin && scoped.base === '/admin' && !partner?.internal ? (
                 <Link to={`/admin/partners/${s.partnerId}`} className="flex items-center gap-1.5 hover:text-rust">
                   <Building2 className="h-3.5 w-3.5" />
                   {partner?.name}
                 </Link>
+              ) : session?.role !== 'client' && (
+                <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />Agent: {partner?.internal ? 'Direct' : partner?.name ?? '—'}</span>
               )}
             </div>
           </div>
@@ -197,6 +200,7 @@ export default function StudentProfile() {
               Delete student
             </Button>
           </div>
+          {session?.role !== 'client' && <StudentActivityCard studentId={s.id} apps={apps} />}
         </div>
       )}
 

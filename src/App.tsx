@@ -58,6 +58,7 @@ import Agencies from './pages/shared/Agencies';
 import AgencyDetail from './pages/shared/AgencyDetail';
 import AgencyProposals from './pages/shared/AgencyProposals';
 import LinkedInOutreach from './pages/shared/LinkedInOutreach';
+import Leads from './pages/shared/Leads';
 import { ClientActivityLog, ClientDetail, ClientDirectory, MyClientsPage } from './pages/shared/Clients';
 import UniversityPartnerships from './pages/shared/UniversityPartnerships';
 import ResetPassword from './pages/ResetPassword';
@@ -288,6 +289,7 @@ export default function App() {
                 <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
                 <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
                 <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
+                <Route path="leads" element={<Leads />} />
                 <Route path="clients" element={<ClientDirectory />} />
                 <Route path="clients/mine" element={<MyClientsPage />} />
                 <Route path="clients/activity" element={<ClientActivityLog />} />
@@ -324,6 +326,7 @@ export default function App() {
                 <Route path="agencies/proposals" element={<AgencyProposals mode="proposals" />} />
                 <Route path="agencies/registrations" element={<AgencyProposals mode="registrations" />} />
                 <Route path="agencies/linkedin" element={<LinkedInOutreach />} />
+                <Route path="leads" element={<Leads />} />
                 <Route path="clients" element={<ClientDirectory />} />
                 <Route path="clients/mine" element={<MyClientsPage />} />
                 <Route path="clients/activity" element={<ClientActivityLog />} />

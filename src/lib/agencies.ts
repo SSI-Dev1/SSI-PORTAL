@@ -319,9 +319,14 @@ export const fmtTime = (t: string | null | undefined) => {
 };
 export interface PendingWork {
   date: string;
-  tasks: { id: string; kind: AgencyTask['kind']; prospect_id: string; agency: string; reference: string; due_date: string; due_time: string | null; attendee: string | null; note: string | null; overdue: boolean; carry_count: number }[];
-  linkedin: { id: string; name: string; reference: string; due_date: string; overdue: boolean; contact_status?: ContactStatus; auto?: boolean }[];
-  linkedin_pending_contacts?: number; not_connected: number; open_attempts: number;
+  tasks?: { id: string; kind: AgencyTask['kind']; prospect_id: string; agency: string; reference: string; due_date: string; due_time: string | null; attendee: string | null; note: string | null; overdue: boolean; carry_count: number }[];
+  linkedin?: { id: string; name: string; reference: string; due_date: string; overdue: boolean; contact_status?: ContactStatus; auto?: boolean }[];
+  linkedin_pending_contacts?: number; not_connected?: number; open_attempts?: number;
+  /** 0056: lead follow-ups due today or earlier, lead queues, Tomorrow's Plan and open support requests. */
+  leads?: { id: string; lead_id: string; name: string; reference: string; due_date: string; due_time: string | null; note: string | null; overdue: boolean; carry_count: number }[];
+  lead_pending?: number; lead_no_response?: number; next_day?: string;
+  tomorrow?: { title: string; reference: string | null; due_date: string; due_time: string | null; note: string | null }[];
+  support?: { id: string; title: string; created_at: string; escalated: boolean }[];
 }
 
 export type LinkedInStatus = 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested' | 'converted';

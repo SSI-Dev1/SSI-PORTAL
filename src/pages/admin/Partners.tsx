@@ -94,7 +94,8 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
     }
   }, [params, setParams]);
 
-  const live = db.partners.filter((p) => !p.archivedAt);
+  // The internal "Direct" agent (0056) is not a client organisation.
+  const live = db.partners.filter((p) => !p.archivedAt && !p.internal);
   // Business onboarding and portal access come from the server (partner_directory_status, 0042).
   const business = (p: Partner): BusinessStatus => statusMap?.get(p.id)?.business_status ?? (accountState(p).key === 'provisioning' ? 'not_onboarded' : 'verified');
   const portal = (p: Partner): PortalStatus => statusMap?.get(p.id)?.portal_status ?? (accountState(p).key === 'active' ? 'active' : accountState(p).key === 'suspended' ? 'suspended' : 'no_account');

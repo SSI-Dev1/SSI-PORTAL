@@ -139,12 +139,12 @@ export async function buildReportPdf(v: ReportView, logoUrl?: string): Promise<U
   }
 
   // ---------------------------------------------------------------- activity timeline
-  heading(`Activity timeline (IST) — ${v.timeline.length} ${v.timeline.length === 1 ? 'entry' : 'entries'}`);
+  heading(`End of day summary · Time / Action done (IST) — ${v.timeline.length} ${v.timeline.length === 1 ? 'entry' : 'entries'}`);
   if (!v.timeline.length) { need(16); text('No activities recorded on this day.', M + 4, 9.5, font, MUTE); y -= 16; }
   const tCol = 64, aCol = 230;
   if (v.timeline.length) {
     need(18);
-    text('TIME', M + 4, 7, bold, MUTE); text('ACTIVITY', M + tCol, 7, bold, MUTE); text('RECORD / DETAILS', M + tCol + aCol, 7, bold, MUTE);
+    text('TIME', M + 4, 7, bold, MUTE); text('ACTION DONE', M + tCol, 7, bold, MUTE); text('RECORD / DETAILS', M + tCol + aCol, 7, bold, MUTE);
     y -= 12;
   }
   for (const r of v.timeline) {
@@ -180,6 +180,34 @@ export async function buildReportPdf(v: ReportView, logoUrl?: string): Promise<U
       y -= 11;
     }
     for (const n of v.pendingNotes) { need(14); text(`• ${n}`, M + 4, 9, font, MUTE); y -= 13; }
+  }
+
+  // ---------------------------------------------------------------- Tomorrow's Plan + support (automatic)
+  const tomorrow = v.tomorrow ?? [];
+  const support = v.support ?? [];
+  if (v.pending !== null) {
+    heading("Tomorrow's Plan");
+    if (!tomorrow.length) { need(16); text('Nothing scheduled for the next working day.', M + 4, 9.5, font, MUTE); y -= 16; }
+    for (const p of tomorrow) {
+      const lines = wrap(`• ${p.title}`, font, 9.5, CW - 150);
+      need(lines.length * 12 + 4);
+      const y0 = y;
+      lines.forEach((l, i) => { y = y0 - i * 12; text(l, M + 4, 9.5, font, INK); });
+      y = y0;
+      page.drawText(safe(p.when), { x: W - M - 4 - font.widthOfTextAtSize(safe(p.when), 9), y, size: 9, font, color: c(MUTE) });
+      y -= (lines.length - 1) * 12 + 14;
+    }
+    heading('Support required');
+    if (!support.length) { need(16); text('No open support requests.', M + 4, 9.5, font, MUTE); y -= 16; }
+    for (const r of support) {
+      const lines = wrap(`• ${r.title}${r.escalated ? ' (escalated to the team manager)' : ''}`, font, 9.5, CW - 110);
+      need(lines.length * 12 + 4);
+      const y0 = y;
+      lines.forEach((l, i) => { y = y0 - i * 12; text(l, M + 4, 9.5, font, INK); });
+      y = y0;
+      page.drawText(safe(`Raised ${r.when}`), { x: W - M - 4 - font.widthOfTextAtSize(safe(`Raised ${r.when}`), 9), y, size: 9, font, color: c(MUTE) });
+      y -= (lines.length - 1) * 12 + 14;
+    }
   }
 
   // ---------------------------------------------------------------- daily summary

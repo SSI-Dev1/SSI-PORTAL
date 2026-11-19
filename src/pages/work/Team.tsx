@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ClipboardList, Users } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Table } from '../../components/ui';
+import { TeamSupportQueue } from '../../components/SupportRequests';
 import { ApprovalsPanel, AttendanceTable, KPI, ReportDetailModal, ReviewAutoCloseModal, reportTone } from '../../components/hr';
 import { useHR, useHRLookup } from '../../store/hr';
 import { useStore } from '../../store/store';
@@ -27,6 +28,7 @@ export default function Team() {
   return (
     <>
       <PageHeader title="My Team" subtitle={`${team.length} people · approvals, daily reports and attendance`} />
+      <TeamSupportQueue />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KPI icon={Users} label="Team members" value={team.length} />
         <KPI icon={Users} tone="green" label="Present" value={att.length} hint={fmtDay(date)} />

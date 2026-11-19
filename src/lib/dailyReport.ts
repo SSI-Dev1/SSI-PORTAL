@@ -33,6 +33,10 @@ export interface ReportView {
   /** null when the employee has no agency work queue (the report heads still show open counts). */
   pending: PendingItem[] | null;
   pendingNotes: string[];
+  /** Tomorrow's Plan: open follow-ups and meetings due on the next working day (automatic). */
+  tomorrow: PendingItem[];
+  /** Support required: the employee's open support requests. */
+  support: { title: string; when: string; escalated: boolean }[];
 }
 
 const valueOf = (m: MetricValue | number | undefined) => (typeof m === 'number' ? m : m?.value ?? 0);
@@ -43,11 +47,14 @@ export function pendingItems(pw: PendingWork | null | undefined, date: string): 
   const items: PendingItem[] = [
     ...(pw.tasks ?? []).filter((t) => t.due_date <= date).map((t) => ({ title: `${TASK_KIND[t.kind]} · ${t.agency}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: !!t.overdue })),
     ...(pw.linkedin ?? []).map((l) => ({ title: `LinkedIn follow-up · ${l.name}`, when: fmtDate(l.due_date), overdue: !!l.overdue })),
+    ...(pw.leads ?? []).map((t) => ({ title: `Lead follow-up · ${t.name}${t.note ? ` — ${t.note}` : ''}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: !!t.overdue })),
   ];
   const notes = [
     ...(pw.not_connected ? [`${pw.not_connected} agenc${pw.not_connected === 1 ? 'y' : 'ies'} not connected yet`] : []),
     ...(pw.open_attempts ? [`${pw.open_attempts} open contact attempt${pw.open_attempts === 1 ? '' : 's'}`] : []),
     ...(pw.linkedin_pending_contacts ? [`${pw.linkedin_pending_contacts} LinkedIn contact${pw.linkedin_pending_contacts === 1 ? '' : 's'} not attempted yet`] : []),
+    ...(pw.lead_pending ? [`${pw.lead_pending} lead${pw.lead_pending === 1 ? '' : 's'} pending (not connected yet)`] : []),
+    ...(pw.lead_no_response ? [`${pw.lead_no_response} lead${pw.lead_no_response === 1 ? '' : 's'} with no response`] : []),
   ];
   return { items, notes };
 }
@@ -65,12 +72,14 @@ export function buildReportView(a: {
   }));
   const counts = sections.flatMap((s) => s.counts);
   const p = pendingItems(a.pending, a.date);
+  const tomorrow = (a.pending?.tomorrow ?? []).map((t) => ({ title: `${t.title}${t.note ? ` — ${t.note}` : ''}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: false }));
+  const support = (a.pending?.support ?? []).map((r) => ({ title: r.title, when: fmtDate(r.created_at), escalated: r.escalated }));
   return {
     employee: a.employee, designation: a.designation, department: a.department, date: a.date, templateName: a.template.name, status: a.status,
     submittedAt: a.submittedAt, live: a.live, sections,
     completed: counts.filter((c) => c.kind === 'activity').reduce((n, c) => n + c.value, 0),
     openWork: counts.filter((c) => c.kind !== 'activity').reduce((n, c) => n + c.value, 0),
     timeline: (a.timeline ?? []).filter((r) => !r.voided),
-    pending: p.items, pendingNotes: p.notes,
+    pending: p.items, pendingNotes: p.notes, tomorrow, support,
   };
 }

@@ -79,6 +79,7 @@ const adminNav: NavSection[] = [
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
     { to: 'partners/manage', label: 'Partner Management', icon: UserPlus },
     { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
+    { to: 'leads', label: 'Leads', icon: UserPlus },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -114,6 +115,7 @@ const staffNav: NavSection[] = [
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners/manage', label: 'Partner Management', icon: UserPlus },
     { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
+    { to: 'leads', label: 'Leads', icon: UserPlus },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
@@ -161,6 +163,7 @@ const employeeNav: NavSection[] = [
     { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
     { to: 'applications', label: 'Applications', icon: FileStack },
     { to: 'messages', label: 'Messages', icon: MessagesSquare },
+    { to: 'leads', label: 'Leads', icon: UserPlus },
     { to: 'students', label: 'Students', icon: Users },
     { to: 'course-finder', label: 'Course Finder', icon: Sparkles },
     { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
@@ -326,25 +329,28 @@ const partnershipNav: NavSection[] = [
  */
 // Partner Success Officers: their clients and their own work — no partnership development,
 // registrations, proposals, imports or partner administration.
+// Partner Success workspace (approved order): Dashboard, Work Tool, My Work and Operations,
+// My Workspace, Self Service.
 const partnerSuccessNav: NavSection[] = [
   { id: 'ps-overview', title: 'Dashboard', items: [{ to: 'dashboard', label: 'Overview', icon: LayoutDashboard }] },
-  { id: 'ps-clients', title: 'Client Management', items: [
-    { to: 'clients', label: 'Agency List', icon: Building2 },
-    { to: 'clients/mine', label: 'My Clients', icon: Briefcase },
+  { id: 'ps-tools', title: 'Work Tool', items: [
+    { to: 'leads', label: 'Leads', icon: UserPlus },
+    { to: 'students', label: 'Student List', icon: Users },
+    { to: 'applications', label: 'Applications', icon: FileStack },
+    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
+    { to: 'messages', label: 'Messages', icon: MessagesSquare },
   ] },
-  { id: 'ps-work', title: 'My Work', items: [
-    { to: 'clients/activity', label: 'Activity Log', icon: ListChecks },
-    { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
-    { to: 'work/reports', label: 'Report History', icon: History },
+  { id: 'ps-work', title: 'My Work and Operations', items: [
+    { to: 'clients', label: 'Onboarded Client List', icon: Building2 },
+    { to: 'clients/mine', label: 'My Clients', icon: Briefcase },
+    { to: 'clients/activity', label: 'Partner Activity Log', icon: ListChecks },
     { to: 'work/assigned', label: 'My Assigned Tasks', icon: ListTodo },
   ] },
-  { id: 'ps-tools', title: 'Work Tools', items: [
-    { to: 'applications', label: 'Applications', icon: FileStack },
-    { to: 'students', label: 'Students', icon: Users },
-    { to: 'messages', label: 'Messages', icon: MessagesSquare },
-    { to: 'course-search', label: 'Advanced Course Search', icon: ListFilter },
+  { id: 'ps-workspace', title: 'My Workspace', items: [
+    { to: 'work/report', label: 'My Daily Work Report', icon: ClipboardList },
+    { to: 'work/reports', label: 'Report History', icon: History },
   ] },
-  { id: 'ps-self', title: 'Employee Self-Service', items: [
+  { id: 'ps-self', title: 'Self Service', items: [
     { to: 'work/profile', label: 'My Profile', icon: UserCircle2 },
     { to: 'work/attendance', label: 'My Attendance', icon: Clock },
     { to: 'work/leave', label: 'My Leave', icon: Palmtree },

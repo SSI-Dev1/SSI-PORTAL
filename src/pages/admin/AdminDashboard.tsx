@@ -76,7 +76,7 @@ function BusinessAdminDashboard() {
   })();
 
   const stats = [
-    { label: 'Total Clients', value: partner ? 1 : db.partners.filter((p) => !p.archivedAt).length, icon: Building2, to: '/admin/partners', tone: 'navy' as const, delta: growth(db.partners.map((p) => p.joinedAt)) },
+    { label: 'Total Clients', value: partner ? 1 : db.partners.filter((p) => !p.archivedAt && !p.internal).length, icon: Building2, to: '/admin/partners', tone: 'navy' as const, delta: growth(db.partners.map((p) => p.joinedAt)) },
     { label: 'Total Students', value: students.length, icon: Users, to: '/admin/students', delta: growth(students.map((s) => s.createdAt)), spark: studentSpark },
     { label: 'Total Applications', value: apps.length, icon: FileStack, to: '/admin/applications', delta: growth(apps.map((a) => a.appliedAt)), spark },
     { label: 'Pending Assessments', value: assessments.filter((a) => a.status === 'Pending' || a.status === 'In Review').length + count('Pending Assessment'), icon: ClipboardCheck, to: '/admin/assessments' },
@@ -116,7 +116,7 @@ function BusinessAdminDashboard() {
           <p className="mt-1 text-sm text-ink-soft">Here’s what’s happening across your partner network today.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <FilterSelect label="All partners" value={partner} onChange={setPartner} options={db.partners.map((p) => ({ value: p.id, label: p.name }))} />
+          <FilterSelect label="All partners" value={partner} onChange={setPartner} options={db.partners.filter((p) => !p.internal).map((p) => ({ value: p.id, label: p.name }))} />
           <div className="hidden h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3.5 text-sm font-medium text-heading sm:flex">
             <CalendarClock className="h-4 w-4 text-ink-mute" />
             {formatDate(new Date().toISOString())}
@@ -218,7 +218,7 @@ function BusinessAdminDashboard() {
           <Card>
             <CardHeader title="Partner Performance" subtitle="Applications and conversion per consultancy partner" action={<button onClick={() => navigate('/admin/partners')} className="text-xs font-semibold text-rust hover:underline">Manage partners</button>} />
             <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-              {db.partners.map((p) => {
+              {db.partners.filter((p) => !p.internal).map((p) => {
                 const pa = db.applications.filter((a) => a.partnerId === p.id);
                 const granted = pa.filter((a) => a.status === 'Visa Granted').length;
                 const offers = pa.filter((a) => ['Conditional Offer', 'Unconditional Offer', 'Visa Lodged', 'Visa Granted'].includes(a.status)).length;

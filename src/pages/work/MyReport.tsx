@@ -18,6 +18,7 @@ import { supabase } from '../../auth/auth';
 import { companyDate, fmtDay, type MetricValue } from '../../data/hr';
 import { chosenDesignation } from '../../layouts/Sidebar';
 import { agencyAccess, type PendingWork } from '../../lib/agencies';
+import { SupportCard, useQueueRev } from '../../components/SupportRequests';
 import { cn } from '../../lib/utils';
 
 const blank = (): ReportDraft => ({ notes: {} });
@@ -89,8 +90,11 @@ export default function MyReport() {
   const liveTimeline = useWorkTimeline(date, undefined, data.activities);
   const snapshotTimeline = !editable && Array.isArray(existing?.timelineSnapshot) ? (existing!.timelineSnapshot as TimelineRow[]) : null;
   const timelineRows = snapshotTimeline ?? liveTimeline.rows;
-  const hasQueue = agencyAccess(session ?? null);
-  const livePending = usePendingWork(date, editable && hasQueue, data.activities);
+  // Work queue: agency work (Partnerships) and lead follow-ups (Lead Management), plus Tomorrow's Plan and support.
+  const hasQueue = agencyAccess(session ?? null) || session?.userRole === 'super_admin' || !!session?.permissions.includes('leads');
+  const queueRev = useQueueRev(editable && hasQueue);
+  const pendingRev = useMemo(() => ({}), [data.activities, queueRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const livePending = usePendingWork(date, editable && hasQueue, pendingRev);
   const pending = editable ? livePending.pending : ((existing?.pendingSnapshot ?? null) as PendingWork | null);
   const options = useMemo(() => data.myTemplates.map((t) => ({ value: t.id, label: t.designation })), [data.myTemplates]);
   const me = data.directory.find((d) => d.id === session?.userId);
@@ -213,9 +217,16 @@ export default function MyReport() {
       {/* Timeline + pending */}
       <div className="mb-5 grid gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3"><WorkTimeline rows={timelineRows} error={snapshotTimeline ? undefined : liveTimeline.error} onRetry={snapshotTimeline ? undefined : () => void liveTimeline.reload()}
-          title={snapshotTimeline ? 'Activity timeline (as submitted)' : 'Activity timeline'} /></div>
+          title={snapshotTimeline ? 'Time / Action done (as submitted)' : 'Time / Action done'} /></div>
         <div className="xl:col-span-2"><PendingCard view={view} loading={editable && hasQueue && livePending.pending === undefined} failed={editable && livePending.failed} hasQueue={hasQueue} /></div>
       </div>
+      {/* End of the report: Tomorrow's Plan (automatic) and Support required — the same as the PDF. */}
+      {hasQueue && view && (view.pending !== null || !editable) && (
+        <div className="mb-5 grid gap-5 lg:grid-cols-2">
+          <TomorrowCard view={view} />
+          <SupportCard items={view.support} editable={editable && date === today} onRaised={() => undefined} />
+        </div>
+      )}
 
       {/* Written summary: only for older reports that already contain one (read-only, as in the PDF). */}
       {view && view.sections.some((sec) => sec.texts.some((t) => t.value)) && (
@@ -281,6 +292,23 @@ export function ActivityBreakdown({ view, onShow }: { view: ReportView; onShow?:
             </section>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+function TomorrowCard({ view }: { view: ReportView }) {
+  return (
+    <Card>
+      <CardHeader title="Tomorrow's Plan" subtitle="Filled automatically from your open follow-ups and meetings for the next working day" />
+      <div className="px-5 pb-5">
+        {view.tomorrow.length === 0 ? <p className="text-sm text-ink-soft">Nothing scheduled for the next working day.</p> : (
+          <ul className="space-y-2 text-sm">{view.tomorrow.map((i, n) => (
+            <li key={n} className="flex items-start justify-between gap-3 rounded-lg border border-line px-3 py-2">
+              <span className="min-w-0 break-words text-heading">{i.title}</span><span className="shrink-0 text-xs text-ink-mute">{i.when}</span>
+            </li>
+          ))}</ul>
+        )}
       </div>
     </Card>
   );

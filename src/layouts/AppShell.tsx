@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { releaseOrphanedScrollLock } from '../lib/scrollLock';
 import { Bell, BellOff, Building2, CheckCheck, ChevronDown, Eye, Lock, LogOut, Menu as MenuIcon, Search, Settings, Trash2, UserCircle2, WifiOff } from 'lucide-react';
-import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
+import { DesktopSidebar, MobileDrawer, chosenDesignation, navFor, navSetKey, useSidebarPrefs, workspaceOf, workspacesFor } from './Sidebar';
+import { orderSections, useSidebarOrder } from '../lib/sidebarOrder';
 import { useHR } from '../store/hr';
 import { useChat } from '../store/chat';
 import { AttendanceControl } from '../components/AttendanceControl';
@@ -25,6 +26,8 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const closeDrawer = useCallback(() => setMobileOpen(false), []);
   const sidebarPrefs = useSidebarPrefs();
+  /** This account's own sidebar section order (0057), same on every device. */
+  const sidebarOrder = useSidebarOrder(auth.realSession?.userId);
   const base = scoped.base;
 
   useEffect(() => {
@@ -79,8 +82,10 @@ export default function AppShell() {
     if (exc) hrBadges['hr/exceptions'] = exc;
     if (lv) hrBadges['hr/leave'] = lv;
   }
+  const navSet = navSetKey(session, workspace);
   const sharedNav = {
-    sections: navFor(session, workspace),
+    sections: orderSections(navFor(session, workspace), sidebarOrder.orders[navSet]),
+    customize: session ? { onSave: (ids: string[] | null) => sidebarOrder.save(navSet, ids) } : undefined,
     workspaces,
     currentWorkspace,
     base,

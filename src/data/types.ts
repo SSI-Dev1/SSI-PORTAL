@@ -29,6 +29,8 @@ export interface Partner {
   portalEnabled?: boolean;
   modules?: string[];
   archivedAt?: string | null;
+  /** The internal "Direct" agent (0056): students without a partner agency. Never a client. */
+  internal?: boolean;
   address?: string | null;
   /** Employee responsible for this partner; takes part in its application chats. */
   partnershipOfficerId?: string | null;
@@ -221,6 +223,9 @@ export interface Application {
   timeline: TimelineEntry[];
   /** Employee responsible for this application. */
   assignedTo?: string | null;
+  /** Tuition deposit / CAS milestones (0056), set through set_application_milestone. */
+  depositStatus?: string;
+  casStatus?: string;
 }
 
 export type DocStatus = 'Verified' | 'Pending' | 'Rejected';

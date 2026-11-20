@@ -7,11 +7,14 @@ import { Badge, Button, Card, CardHeader, DatePicker, DateRangePicker, EmptyStat
 import { ExportButtons, KPI, ReportDetailModal, reportTone } from '../../components/hr';
 import { useHR, useHRLookup } from '../../store/hr';
 import { supabase } from '../../auth/auth';
+import { TeamSupportQueue } from '../../components/SupportRequests';
+import { useStore } from '../../store/store';
 import { REPORT_STATUSES, addDays, companyDate, fmtDay, isoDow, type DailyReport } from '../../data/hr';
 
 interface Expectation { employeeId: string; fullName: string; designationId: string; departmentId: string | null; managerId: string | null; templateId: string; reportId: string | null; status: string | null; onLeave: boolean; workingDay: boolean }
 
 export default function WorkReports() {
+  const { session: me } = useStore();
   const { data, now } = useHR();
   const lk = useHRLookup();
   const today = companyDate(now());
@@ -85,6 +88,7 @@ export default function WorkReports() {
           const fields = Object.fromEntries((t?.sections ?? []).flatMap((s) => s.fields).map((f) => [f.label + (f.type === 'count' ? '' : ' (text)'), f.type === 'count' ? r.metrics[f.key] ?? '' : r.notes[f.key] ?? '']));
           return { Date: r.reportDate, Employee: lk.name(r.employeeId), Designation: lk.designation.get(r.designationId)?.name, Department: lk.department.get(r.departmentId ?? '')?.name ?? '', Manager: r.managerId ? lk.name(r.managerId) : '', Status: r.status, Submitted: r.submittedAt ?? '', ...fields };
         })} />} />
+      {me?.userRole === 'super_admin' && <TeamSupportQueue />}
       <Card className="mb-5 flex flex-wrap items-end gap-3 p-4">
         <FilterSelect label="Employee" value={emp} onChange={setEmp} options={[{ value: '', label: 'Everyone' }, ...data.directory.map((d) => ({ value: d.id, label: d.fullName }))]} />
         <FilterSelect label="Designation" value={desig} onChange={setDesig} options={[{ value: '', label: 'All designations' }, ...data.designations.filter((d) => d.reportTemplate).map((d) => ({ value: d.id, label: d.name }))]} />

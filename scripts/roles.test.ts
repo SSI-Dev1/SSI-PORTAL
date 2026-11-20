@@ -139,3 +139,13 @@ test('Partner Management (0051): only employees with "Partners · Add partner"',
   assert.equal(canOpenPath(partner, 'partners/manage'), false, 'partner organisations');
   assert.equal(canOpenPath(superAdmin, 'partners/manage'), false, 'Super Admins add partners from Clients & Branches');
 });
+
+test('Leads: Lead Management permission (Partner Success Officers), team managers and Super Admin; never partners', () => {
+  const pso = { ...base, userRole: 'support_staff' as const, permissions: ['students', 'applications', 'partner_success', 'leads'], employee: true, hasTeam: false };
+  const appTeam = { ...base, userRole: 'application_manager' as const, permissions: ['students', 'applications'], employee: true, hasTeam: false };
+  assert.equal(canOpenPath(pso, 'leads'), true);
+  assert.equal(canOpenPath(manager, 'leads'), true);
+  assert.equal(canOpenPath(appTeam, 'leads'), false);
+  assert.equal(canOpenPath(employee, 'leads'), false);
+  assert.equal(canOpenPath(partner, 'leads'), false);
+});

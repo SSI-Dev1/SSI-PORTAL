@@ -26,7 +26,7 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success' | 'partner_create' | 'agreement_countersign';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success' | 'partner_create' | 'agreement_countersign' | 'leads';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
@@ -50,6 +50,7 @@ export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] =
   { id: 'partner_accounts', label: 'Partner accounts · create logins', hint: 'Create partner login accounts for existing onboarded clients. Portal access stays a Super Admin decision (Super Admin grants)' },
   { id: 'partner_create', label: 'Partners · Add partner', hint: 'Partner Management: add a partner and its Partner Admin login with the standard form. It waits for Super Admin approval — portal closed, no login email until approved (Super Admin grants)' },
   { id: 'agreement_countersign', label: 'Agreements · Countersign', hint: 'Authorised SSI GLOBAL signatory: countersigns approved Partnership Agreements and uploads the final copy (Super Admin grants)' },
+  { id: 'leads', label: 'Lead Management', hint: 'Prospective students from first inquiry to the Student List: contact outcome, stage, follow-ups and conversion (Partner Success Officers)' },
   { id: 'partner_success', label: 'Partner Success · My Clients', hint: 'Agency List of onboarded clients (read-only) and My Clients where the employee is Sub Officer; logs relationship activities. No partner, proposal or commission management' },
   { id: 'partner_onboarding', label: 'Partner registrations', hint: 'Registration links, review and approval of new partners — Admin Staff only (Super Admin grants)' },
   { id: 'agency_outreach', label: 'Agencies & proposals', hint: 'Agency prospects, follow-ups and partnership proposals (Partnership Officers). Not registration approval or partner accounts' },
@@ -205,6 +206,8 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'agencies') return session.userRole === 'super_admin' || canManageRegistrations(session) || session.permissions.includes('agency_outreach');
     // Onboarded client directory / My Clients: Partner Success, partnership staff and administrators.
     if (segment === 'clients') return session.userRole === 'super_admin' || session.permissions.includes('partner_success') || session.permissions.includes('agency_outreach') || session.permissions.includes('partners');
+    // Leads: Lead Management (Partner Success Officers); team managers read team leads (server rule).
+    if (segment === 'leads') return session.userRole === 'super_admin' || session.permissions.includes('leads') || !!(session as { hasTeam?: boolean }).hasTeam;
     // Messages (application chat) belongs to student / application work.
     if (segment === 'messages') return session.userRole === 'super_admin' || session.permissions.includes('applications') || session.permissions.includes('students');
     if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
@@ -220,7 +223,7 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     return session.permissions.includes(m);
   }
   // Internal pages are never open to partner organisations.
-  if (segment === 'commissions' || segment === 'agencies' || segment === 'clients' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
+  if (segment === 'commissions' || segment === 'agencies' || segment === 'clients' || segment === 'leads' || segment === 'users' || segment === 'hr' || segment === 'work') return false;
   // Commission agreements: the Partner Admin only, while SSI GLOBAL lets them see commission.
   if (segment === 'commission') return canSeePartnerCommission(session);
   const m = CLIENT_ROUTE_MODULE[segment];

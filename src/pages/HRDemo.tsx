@@ -33,6 +33,8 @@ import PartnershipDashboard from './shared/PartnershipDashboard';
 import LinkedInOutreach from './shared/LinkedInOutreach';
 import { ClientActivityLog, ClientDetail, ClientDirectory, MyClientsPage, PartnerSuccessDashboard } from './shared/Clients';
 import { ClientsDemo } from '../lib/clients';
+import { LeadsDemo, type Lead } from '../lib/leads';
+import Leads from './shared/Leads';
 import { AttendanceControl } from '../components/AttendanceControl';
 import HRAttendance from './hr/HRAttendance';
 
@@ -136,7 +138,7 @@ const PAGES: [string, string, React.ReactNode][] = [
   ['leave', 'My leave', <MyLeave key="l" />], ['team', 'Team', <Team key="t" />], ['holidays', 'Holidays', <Holidays key="h" />],
   ['hr', 'HR dashboard', <HRDashboard key="hd" />], ['employees', 'Employees', <Employees key="e" />], ['hr-attendance', 'HR attendance', <HRAttendance key="ha" />],
   ['hr-leave', 'HR leave', <HRLeave key="hl" />], ['reports', 'Work reports', <WorkReports key="wr" />], ['settings', 'HR settings', <HRSettings key="s" />],
-  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['linkedin', 'LinkedIn', <LinkedInOutreach key="li" />], ['ps', 'PSO dashboard', <PartnerSuccessDashboard key="psd" />], ['clients', 'PSO agency list', <ClientDirectory key="cd" />], ['clients/mine', 'My Clients', <MyClientsPage key="mc" />], ['clients/activity', 'Activity log', <ClientActivityLog key="cal" />], ['designations', 'Designations', <Designations key="dg" />],
+  ['departments', 'Departments', <Departments key="dp" />], ['exceptions', 'Exceptions', <AttendanceExceptions key="ex" />], ['leave-calendar', 'Leave calendar', <LeaveCalendar key="lc" />], ['workforce', 'Workforce calendar', <WorkforceCalendar key="wf" />], ['work-assign', 'Work assignment', <WorkAssignments key="wa" />], ['my-tasks', 'My tasks', <MyAssignedTasks key="mt" />], ['assets', 'Assets', <CompanyAssets key="as" />], ['documents', 'Documents', <EmployeeDocuments key="dc" />], ['my-docs', 'My docs & assets', <MyDocumentsAndAssets key="md" />], ['reports-hr', 'HR reports', <HRReports key="hrr" />], ['management', 'Management', <Management key="mg" />], ['my-documents', 'My documents', <MyDocuments key="mdx" />], ['team-members', 'Team members', <MyTeamMembers key="tm" />], ['commissions', 'Commissions', <Commissions key="cm" />], ['partnership', 'Partnership dashboard', <PartnershipDashboard key="pd" />], ['agencies', 'Agencies', <Agencies key="ag" />], ['linkedin', 'LinkedIn', <LinkedInOutreach key="li" />], ['leads', 'Leads', <Leads key="ld" />], ['ps', 'PSO dashboard', <PartnerSuccessDashboard key="psd" />], ['clients', 'PSO agency list', <ClientDirectory key="cd" />], ['clients/mine', 'My Clients', <MyClientsPage key="mc" />], ['clients/activity', 'Activity log', <ClientActivityLog key="cal" />], ['designations', 'Designations', <Designations key="dg" />],
 ];
 
 // Clearly fake commission data (not from any real agreement) for layout checks only.
@@ -213,6 +215,17 @@ const AGENCY_SAMPLE: AgencyData = {
 };
 
 // Clearly fake Partner Success data for layout checks only.
+const leadBase = { phone: null, email: null, qualification: null, application_details: null, partner_id: null, source: 'direct' as const, contact_changed_by: null, contact_changed_at: null,
+  stage_changed_by: null, stage_changed_at: null, no_response_at: null, assigned_to: null, created_by: null, updated_at: '2026-11-18T05:00:00Z', student_id: null, converted_by: null, converted_at: null };
+const LEADS_SAMPLE = {
+  leads: [
+    { ...leadBase, id: 'ld1', reference: 'LD-26-DEMO01', name: 'Sample Lead (demo)', phone: '+00 0000 000001', qualification: 'BTech (demo)', contact_status: 'unknown', stage: 'cold', no_response: false, created_at: '2026-11-18T04:00:00Z' },
+    { ...leadBase, id: 'ld2', reference: 'LD-26-DEMO02', name: 'Second Lead (demo)', email: 'lead2@example.invalid', contact_status: 'not_connected', stage: 'cold', no_response: true, no_response_at: '2026-11-18T06:00:00Z', created_at: '2026-11-17T04:00:00Z' },
+    { ...leadBase, id: 'ld3', reference: 'LD-26-DEMO03', name: 'Third Lead (demo)', email: 'lead3@example.invalid', application_details: 'MSc, Sep intake (demo)', contact_status: 'connected', stage: 'warm', no_response: false, created_at: '2026-11-16T04:00:00Z', last_contact_at: '2026-11-17T09:00:00Z', next_follow_up: '2026-11-18' },
+  ] as Lead[],
+  activities: [{ id: 1, lead_id: 'ld2', kind: 'contact_attempt', outcome: 'no_answer', note: 'Rang twice (demo)', detail: {}, actor: null, at: '2026-11-18T05:30:00Z' }],
+  tasks: [{ id: 't1', lead_id: 'ld3', due_date: '2026-11-18', due_time: '15:00', note: 'Send course list (demo)', status: 'open' as const, assigned_to: null, created_by: null, created_at: '2026-11-17T04:00:00Z', completed_at: null, carry_count: 1 }],
+};
 const CLIENTS_SAMPLE = {
   directory: [
     { key: 'p:d1', partner_id: 'd1', agency_id: null, name: 'Sample Client One (demo)', country: 'Sampleland', city: 'Sample City', agency_type: 'domestic', business_status: 'verified' as const, onboarded_on: '2026-10-01',
@@ -276,6 +289,7 @@ export default function HRDemo() {
       <CommissionDemo.Provider value={COMMISSION_SAMPLE}>
       <AgencyDemo.Provider value={AGENCY_SAMPLE}>
       <ClientsDemo.Provider value={CLIENTS_SAMPLE}>
+      <LeadsDemo.Provider value={LEADS_SAMPLE}>
       <HRContext.Provider value={hr}>
         <div className="min-h-screen bg-canvas">
           <div className="sticky top-0 z-30 flex flex-wrap gap-1.5 border-b border-line bg-surface/90 p-3 text-xs backdrop-blur">
@@ -289,6 +303,7 @@ export default function HRDemo() {
           </div>
         </div>
       </HRContext.Provider>
+      </LeadsDemo.Provider>
       </ClientsDemo.Provider>
       </AgencyDemo.Provider>
       </CommissionDemo.Provider>

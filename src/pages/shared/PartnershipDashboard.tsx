@@ -142,7 +142,7 @@ export default function PartnershipDashboard() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader title="My task queue" subtitle={queue ? `${queue.tasks.filter((t) => t.due_date <= today()).length + queue.linkedin.length} due${queue.linkedin_pending_contacts ? ` · ${queue.linkedin_pending_contacts} LinkedIn contacts pending` : ''} · unfinished items move to the next working day` : undefined} />
+          <CardHeader title="My task queue" subtitle={queue ? `${(queue.tasks ?? []).filter((t) => t.due_date <= today()).length + (queue.linkedin ?? []).length} due${queue.linkedin_pending_contacts ? ` · ${queue.linkedin_pending_contacts} LinkedIn contacts pending` : ''} · unfinished items move to the next working day` : undefined} />
           <List empty="Nothing due. Follow-ups, meetings and visits you schedule appear here." items={[
             ...(queue?.tasks ?? []).map((t) => ({
               key: t.id, title: `${TASK_KIND[t.kind]} · ${t.agency}`, sub: `${t.attendee ? `${t.attendee} · ` : ''}${t.carry_count ? `carried over ${t.carry_count}× · ` : ''}${t.reference}`,

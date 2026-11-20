@@ -138,7 +138,7 @@ function Catalogue({ data, lk, caps, partnerName, staffName }: { data: Data; lk:
           <FilterSelect label="Route" value={route} onChange={setRoute} options={[{ value: '', label: 'Direct & portal' }, { value: 'direct', label: 'Direct' }, { value: 'portal', label: 'Through a portal' }]} />
           <FilterSelect label="Portal" value={provider} onChange={setProvider} options={[{ value: '', label: 'Any portal' }, ...data.providers.map((p) => ({ value: p.id, label: p.name }))]} />
           <FilterSelect label="Tier" value={tier} onChange={setTier} options={[{ value: '', label: 'All tiers' }, ...data.tiers.map((t) => ({ value: t.id, label: t.label }))]} />
-          <FilterSelect label="Agency" value={partner} onChange={setPartner} options={[{ value: '', label: 'Any agency' }, ...db.partners.map((p) => ({ value: p.id, label: p.name }))]} />
+          <FilterSelect label="Agency" value={partner} onChange={setPartner} options={[{ value: '', label: 'Any agency' }, ...db.partners.filter((p) => !p.internal).map((p) => ({ value: p.id, label: p.name }))]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: '', label: 'All' }]} />
           <Checkbox checked={review} onCheckedChange={setReview} label="Needs review" />
           {filtered && <Button size="sm" variant="ghost" onClick={clear}>Clear filters</Button>}
@@ -290,7 +290,7 @@ function TagModal({ record, data, lk, caps, onClose, onCustom }: { record: Commi
         <Field label="Partner agency" required>
           <Select value={f.partner} searchable onChange={(e) => setF({ ...f, partner: e.target.value })}>
             <option value="">Choose agency</option>
-            {db.partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {db.partners.filter((p) => !p.internal).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </Field>
         {current && <Alert tone={needsApproval ? 'warning' : 'info'}>This agency already has {lk.tier.get(current.tierId)?.label}{current.isCustom ? ' (custom)' : ''} on this record. {needsApproval ? 'Your change waits for a commission manager to approve; the current agreement stays until then.' : 'Saving replaces it; the earlier agreement is kept in the history.'}</Alert>}
@@ -345,7 +345,7 @@ function CustomModal({ value, data, lk, onClose }: { value: { record: Commission
         <Field label="Partner agency" required>
           <Select value={f.partner} searchable onChange={(e) => setF({ ...f, partner: e.target.value })}>
             <option value="">Choose agency</option>
-            {db.partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {db.partners.filter((p) => !p.internal).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </Field>
         <Field label="Tier label" hint={standard ? `Standard ${lk.tier.get(f.tier)?.label} rate: ${fmtCommission(standard.valueKind, standard.value, standard.currency, standard.rawValue)}` : undefined}>
@@ -496,7 +496,7 @@ function Agreements({ data, lk, caps, partnerName, staffName }: { data: Data; lk
     <>
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
-          <FilterSelect label="Agency" value={partner} onChange={setPartner} options={[{ value: '', label: 'All agencies' }, ...db.partners.map((p) => ({ value: p.id, label: p.name }))]} />
+          <FilterSelect label="Agency" value={partner} onChange={setPartner} options={[{ value: '', label: 'All agencies' }, ...db.partners.filter((p) => !p.internal).map((p) => ({ value: p.id, label: p.name }))]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={[{ value: 'active', label: 'Active' }, { value: 'pending_approval', label: 'Waiting for approval' }, { value: 'open', label: 'Active + waiting' }, { value: 'inactive', label: 'Ended' }, { value: 'rejected', label: 'Rejected' }, { value: '', label: 'All' }]} />
           <FilterSelect label="Tier" value={tier} onChange={setTier} options={[{ value: '', label: 'All tiers' }, ...data.tiers.map((t) => ({ value: t.id, label: t.label }))]} />
           <FilterSelect label="Type" value={type} onChange={setType} options={[{ value: '', label: 'Standard & custom' }, { value: 'standard', label: 'Standard tier' }, { value: 'custom', label: 'Custom' }]} />
@@ -818,7 +818,7 @@ function BulkAssign({ data, lk }: { data: Data; lk: Lk }) {
           <Field label="Partner company" required>
             <Select value={partner} searchable onChange={(e) => { setPartner(e.target.value); setPreview(null); }}>
               <option value="">Choose partner</option>
-              {db.partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {db.partners.filter((p) => !p.internal).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           </Field>
           <Field label="Default tier" hint="Applied to every selected university unless you change it in the row">

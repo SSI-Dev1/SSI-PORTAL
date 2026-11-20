@@ -19,6 +19,8 @@ const view: ReportView = {
     { id: 'updates', title: 'Key Updates', counts: [], texts: [{ key: 'achievements', label: "Today's Achievements", value: 'Line one\nLine two '.repeat(20) }, { key: 'tomorrow_plan', label: "Tomorrow's Plan", value: '' }] },
   ],
   completed: 3, openWork: 4, timeline, pending: [{ title: 'Follow-up · Sample Agency', when: '16 Nov 2026', overdue: true }], pendingNotes: ['2 agencies not connected yet'],
+  tomorrow: [{ title: 'Lead follow-up · Dan Kumar — send course list', when: '18 Nov 2026 10:30 am', overdue: false }],
+  support: [{ title: 'Access to the UCAS portal', when: '17 Nov 2026', escalated: true }],
 };
 
 test('builds a multi-page PDF with every activity and page numbers', async () => {
@@ -30,7 +32,7 @@ test('builds a multi-page PDF with every activity and page numbers', async () =>
 });
 
 test('an empty report is one page', async () => {
-  const bytes = await buildReportPdf({ ...view, timeline: [], pending: null, pendingNotes: [], sections: [] });
+  const bytes = await buildReportPdf({ ...view, timeline: [], pending: null, pendingNotes: [], sections: [], tomorrow: [], support: [] });
   assert.equal((await PDFDocument.load(bytes)).getPageCount(), 1);
 });
 

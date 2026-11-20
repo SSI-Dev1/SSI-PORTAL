@@ -7,18 +7,22 @@ import { DesktopSidebar, MobileDrawer, navFor, useSidebarPrefs } from '../layout
 import { Button, Card, CardHeader, IconButton } from '../components/ui';
 import { ThemeMenu } from '../components/ThemeSwitcher';
 import { cn } from '../lib/utils';
+import { orderSections } from '../lib/navOrder';
 
 export default function ShellDemo() {
   const prefs = useSidebarPrefs();
   const [drawer, setDrawer] = useState(false);
   const [client, setClient] = useState(false);
   const close = useCallback(() => setDrawer(false), []);
+  // Customize Sidebar in the harness: kept in memory only (the app saves it to the account).
+  const [order, setOrder] = useState<string[] | null>(null);
   const shared = {
-    sections: navFor({
+    customize: { onSave: async (ids: string[] | null) => { setOrder(ids); return true; } },
+    sections: orderSections(navFor({
       role: client ? 'client' : 'admin', userRole: client ? 'partner_staff' : 'super_admin', userId: 'demo', name: 'Demo User', email: 'demo@example.com', title: '',
       permissions: ['partners', 'students', 'applications', 'assessments', 'documents', 'finance', 'catalogue', 'tasks', 'updates', 'reports'],
       partnerModules: ['students', 'applications', 'course_finder', 'assessments', 'documents', 'updates'],
-    }),
+    }), order),
     base: '/ui/shell',
     portal: (client ? 'client' : 'admin') as 'client' | 'admin',
     orgName: 'Demo Partner Pvt Ltd',

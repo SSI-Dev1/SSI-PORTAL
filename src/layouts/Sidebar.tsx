@@ -46,6 +46,8 @@ import { GraduationCap, Linkedin, Plus, Send, Handshake, AlertTriangle, BadgePer
   Wallet,
   X,
   type LucideIcon,
+  GripVertical,
+  ChevronUp,
 } from 'lucide-react';
 import { Logo, LogoMark } from '../components/brand';
 import { Menu, Tooltip } from '../components/ui';
@@ -386,6 +388,18 @@ function singleWorkspaceNav(session: Session): NavSection[] {
   }));
 }
 
+/** Which navigation set a user sees — saved sidebar orders are kept per set. */
+export function navSetKey(session: Session | null, workspace: WorkspaceId = 'business'): string {
+  if (!session) return 'none';
+  return session.role === 'client' ? 'client'
+    : !canSwitchPortals(session) ? 'single'
+    : workspace === 'hr' ? 'hr'
+    : partnershipFocused(session) && (session as { employee?: boolean }).employee ? 'partnership'
+    : partnerSuccessFocused(session) && (session as { employee?: boolean }).employee ? 'partner_success'
+    : workspace === 'work' ? 'work'
+    : session.role === 'admin' ? 'admin' : 'staff';
+}
+
 export function navFor(session: Session | null, workspace: WorkspaceId = 'business'): NavSection[] {
   if (!session) return [];
   const sets = session.role === 'client' ? clientNav
@@ -462,6 +476,8 @@ interface ContentProps {
   onClose?: () => void;
   closedSections: string[];
   onToggleSection: (id: string) => void;
+  /** Sidebar customization: reorder the sections the user can see (presentation only). */
+  customize?: { onSave: (ids: string[] | null) => Promise<boolean> };
 }
 
 function SidebarContent({
@@ -477,8 +493,10 @@ function SidebarContent({
   onClose,
   closedSections,
   onToggleSection,
+  customize,
 }: ContentProps) {
   const navigate = useNavigate();
+  const [customizing, setCustomizing] = useState(false);
   const current = workspaces.find((w) => w.id === currentWorkspace);
   const fade = cn('whitespace-nowrap transition-[opacity,transform] duration-200', collapsed ? 'pointer-events-none -translate-x-1 opacity-0' : 'opacity-100');
   return (
@@ -531,6 +549,10 @@ function SidebarContent({
         </div>
       </div>
 
+      {customizing && customize ? (
+        <SidebarCustomizer sections={sections} onSave={customize.onSave} onDone={() => setCustomizing(false)} />
+      ) : (
+      <>
       {/* Navigation */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4" aria-label="Main">
         {sections.map((section, si) => {
@@ -595,7 +617,89 @@ function SidebarContent({
           );
         })}
       </nav>
+      {customize && !collapsed && sections.length > 2 && (
+        <div className="shrink-0 border-t border-line px-3 py-2">
+          <button type="button" onClick={() => setCustomizing(true)}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-ink-mute transition hover:bg-canvas hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+            <GripVertical className="h-4 w-4" />Customize sidebar
+          </button>
+        </div>
+      )}
+      </>
+      )}
+    </div>
+  );
+}
 
+/**
+ * Customize Sidebar: reorder the visible sections (the first, Dashboard, stays first). Drag by the
+ * handle on desktop, or use Move up / Move down (touch and keyboard). Only sections the user can
+ * already see are listed — nothing new can be revealed. Save keeps it for this account on every
+ * device; Cancel restores the saved order; Reset to Default restores the standard order.
+ */
+function SidebarCustomizer({ sections, onSave, onDone }: { sections: NavSection[]; onSave: (ids: string[] | null) => Promise<boolean>; onDone: () => void }) {
+  const [first, ...rest] = sections;
+  const [order, setOrder] = useState(rest.map((x) => x.id));
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const byId = new Map(sections.map((x) => [x.id, x]));
+  const move = (from: number, to: number) => setOrder((o) => {
+    if (to < 0 || to >= o.length || from === to) return o;
+    const n = [...o];
+    const [x] = n.splice(from, 1);
+    n.splice(to, 0, x);
+    return n;
+  });
+  const finish = async (ids: string[] | null) => {
+    setBusy(true); setError('');
+    const ok = await onSave(ids);
+    setBusy(false);
+    if (ok) onDone(); else setError('Not saved — check your connection and try again.');
+  };
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="px-5 pb-2">
+        <div className="text-sm font-semibold text-heading">Customize sidebar</div>
+        <p className="text-xs text-ink-mute">Drag a section by its handle, or use the arrows. Saved to your account on every device.</p>
+      </div>
+      <ol className="sidebar-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-3" aria-label="Sidebar sections">
+        <li className="flex items-center gap-2 rounded-xl border border-dashed border-line px-3 py-2.5 text-sm text-ink-mute">
+          <LayoutDashboard className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate font-medium">{first.title}</span><span className="text-[10px] uppercase tracking-wider">Always first</span>
+        </li>
+        {order.map((id, i) => {
+          const sec = byId.get(id);
+          if (!sec) return null;
+          return (
+            <li key={id} draggable onDragStart={(e) => { setDragging(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); }}
+              onDragEnd={() => setDragging(null)}
+              onDragOver={(e) => { e.preventDefault(); if (dragging && dragging !== id) { const from = order.indexOf(dragging); if (from >= 0) move(from, i); } }}
+              onDrop={(e) => { e.preventDefault(); setDragging(null); }}
+              className={cn('flex items-center gap-2 rounded-xl border bg-surface px-2 py-2 text-sm transition', dragging === id ? 'border-brand-300 opacity-60 shadow-lift' : 'border-line')}>
+              <span className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center text-ink-mute active:cursor-grabbing" aria-hidden><GripVertical className="h-4 w-4" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-heading">{sec.title}</span>
+                <span className="block truncate text-[11px] text-ink-mute">{sec.items.map((x) => x.label).join(' · ')}</span>
+              </span>
+              <button type="button" aria-label={`Move ${sec.title} up`} disabled={i === 0} onClick={() => move(i, i - 1)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-mute hover:bg-canvas hover:text-heading disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 md:h-8 md:w-8"><ChevronUp className="h-4 w-4" /></button>
+              <button type="button" aria-label={`Move ${sec.title} down`} disabled={i === order.length - 1} onClick={() => move(i, i + 1)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-mute hover:bg-canvas hover:text-heading disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 md:h-8 md:w-8"><ChevronDown className="h-4 w-4" /></button>
+            </li>
+          );
+        })}
+      </ol>
+      {error && <p className="px-5 pb-2 text-xs text-red-600" role="alert">{error}</p>}
+      <div className="shrink-0 space-y-2 border-t border-line px-3 py-3">
+        <div className="flex gap-2">
+          <button type="button" disabled={busy} onClick={onDone}
+            className="flex-1 rounded-xl border border-line px-3 py-2 text-sm font-semibold text-heading hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Cancel</button>
+          <button type="button" disabled={busy} onClick={() => void finish(order)}
+            className="flex-1 rounded-xl bg-gradient-to-r from-brand to-rust px-3 py-2 text-sm font-semibold text-white disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">{busy ? 'Saving…' : 'Save layout'}</button>
+        </div>
+        <button type="button" disabled={busy} onClick={() => void finish(null)}
+          className="w-full rounded-xl px-3 py-1.5 text-xs font-semibold text-ink-mute hover:text-rust focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Reset to default</button>
+      </div>
     </div>
   );
 }

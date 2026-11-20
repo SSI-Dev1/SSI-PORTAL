@@ -20,6 +20,7 @@ import {
 } from '../../data/hr';
 import { cn, matches } from '../../lib/utils';
 import { ReviewDocumentModal } from '../work/SelfService';
+import { MyTaskModal, type TaskOrigin } from '../../components/MyTaskModal';
 
 const HR_BUCKET = 'hr-documents';
 const statusTone: Record<AssignmentStatus, 'slate' | 'blue' | 'amber' | 'green' | 'red'> = {
@@ -323,18 +324,37 @@ export function MyAssignedTasks() {
   const lk = useHRLookup();
   const { me } = useWho();
   const today = companyDate(now());
-  const [tab, setTab] = useState<'open' | 'done'>('open');
+  const [tab, setTab] = useState<'open' | 'planned' | 'done'>('open');
   const [progressOf, setProgressOf] = useState<Assignment | null>(null);
   const [historyOf, setHistoryOf] = useState<Assignment | null>(null);
+  const [taskModal, setTaskModal] = useState<{ origin: TaskOrigin; taskId?: string } | null>(null);
+  const [nextDay, setNextDay] = useState<string | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    let alive = true;
+    void supabase.rpc('my_pending_work', { p_date: today }).then(({ data: w }) => { if (alive) setNextDay((w as { next_day?: string } | null)?.next_day ?? null); });
+    return () => { alive = false; };
+  }, [today]);
   const mine = data.assignments.filter((a) => a.assignedTo === me);
-  const open = mine.filter(isOpen).sort((a, b) => a.due.localeCompare(b.due));
+  // A task planned for a later day becomes actionable (Open) on that day — the same task, decided by its date.
+  const open = mine.filter((a) => isOpen(a) && (!a.startDate || a.startDate <= today)).sort((a, b) => a.due.localeCompare(b.due));
+  const planned = mine.filter((a) => isOpen(a) && !!a.startDate && a.startDate > today).sort((a, b) => (a.startDate ?? '').localeCompare(b.startDate ?? ''));
   const closed = mine.filter((a) => !isOpen(a)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const list = tab === 'open' ? open : closed;
+  const list = tab === 'open' ? open : tab === 'planned' ? planned : closed;
+  const ownTask = (a: Assignment) => a.assignedBy === me;
   return (
     <>
-      <PageHeader title="My Assigned Tasks" subtitle="Work assigned to you. Keep the status and progress up to date — whoever assigned it sees changes straight away." />
-      <Tabs className="mb-4" value={tab} onChange={setTab} tabs={[{ value: 'open', label: 'Open', count: open.length }, { value: 'done', label: 'Completed & cancelled', count: closed.length }]} />
-      {list.length === 0 ? <Card><EmptyState icon={Briefcase} title={tab === 'open' ? 'Nothing assigned to you' : 'Nothing here yet'} /></Card> : (
+      <PageHeader title="My Assigned Tasks" subtitle="Work assigned to you and tasks you planned. Keep the status up to date — whoever assigned it sees changes straight away."
+        actions={<>
+          <Button variant="secondary" icon={Plus} onClick={() => setTaskModal({ origin: 'pending_work' })}>Add task</Button>
+          <Button variant="secondary" icon={Plus} onClick={() => setTaskModal({ origin: 'tomorrows_plan' })}>Plan for next working day</Button>
+        </>} />
+      <Tabs className="mb-4" value={tab} onChange={setTab} tabs={[
+        { value: 'open', label: 'Open', count: open.length },
+        { value: 'planned', label: 'Planned', count: planned.length },
+        { value: 'done', label: 'Completed & cancelled', count: closed.length },
+      ]} />
+      {list.length === 0 ? <Card><EmptyState icon={Briefcase} title={tab === 'open' ? 'Nothing to do right now' : tab === 'planned' ? 'Nothing planned for later days' : 'Nothing here yet'} /></Card> : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {list.map((a) => {
             const late = isOpen(a) && istDate(a.due) < today;
@@ -345,14 +365,17 @@ export function MyAssignedTasks() {
                   <Badge tone={priorityTone[a.priority]}>{a.priority}</Badge>
                 </div>
                 {a.description && <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-ink-soft">{a.description}</p>}
+                {a.related && <p className="mt-1 text-xs text-ink-soft">Related: <span className="font-medium text-heading">{a.related}</span></p>}
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
                   <Badge tone={statusTone[a.status]}>{a.status}</Badge>
+                  {a.startDate && a.startDate > today && <span>Planned {fmtDay(a.startDate)} ·</span>}
                   <span className={cn(late && 'font-semibold text-red-600')}>Due {fmtDay(istDate(a.due))}{late ? ' · overdue' : ''}</span>
-                  {a.assignedBy && <span>· from {lk.name(a.assignedBy)}</span>}
+                  {ownTask(a) ? <span>· added by you {fmtDay(istDate(a.createdAt))}</span> : a.assignedBy && <span>· from {lk.name(a.assignedBy)}</span>}
                 </div>
                 <div className="mt-3 flex items-center gap-2"><Progress value={a.progress} className="dark:bg-white/10" /><span className="w-9 text-right text-xs tabular-nums text-ink-soft">{a.progress}%</span></div>
-                <div className="mt-4 flex justify-end gap-2 border-t border-line pt-3">
+                <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-line pt-3">
                   <Button size="sm" variant="ghost" icon={History} onClick={() => setHistoryOf(a)}>History</Button>
+                  {ownTask(a) && isOpen(a) && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setTaskModal({ origin: a.origin ?? 'pending_work', taskId: a.id })}>Edit</Button>}
                   {isOpen(a) && <Button size="sm" onClick={() => setProgressOf(a)}>Update progress</Button>}
                 </div>
               </Card>
@@ -362,6 +385,7 @@ export function MyAssignedTasks() {
       )}
       <ProgressDialog value={progressOf} onClose={() => setProgressOf(null)} />
       <AssignmentHistory value={historyOf} onClose={() => setHistoryOf(null)} />
+      <MyTaskModal open={!!taskModal} onClose={() => setTaskModal(null)} origin={taskModal?.origin ?? 'pending_work'} taskId={taskModal?.taskId} nextDay={nextDay} />
     </>
   );
 }

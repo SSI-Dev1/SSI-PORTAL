@@ -4,7 +4,7 @@
 // server figures while the report is open, the snapshot frozen at submission afterwards.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, ChevronDown, ClipboardList, FileDown, History, Hourglass, Lock, PenLine, Send, Sparkles } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ChevronDown, ClipboardList, FileDown, History, Hourglass, Lock, PenLine, Plus, Send, Sparkles } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardHeader, DatePicker, EmptyState, Field, PageHeader, Segmented } from '../../components/ui';
 import { WorkTimeline, useWorkTimeline, type TimelineRow } from '../../components/WorkTimeline';
 import { downloadReportPdf } from '../../lib/reportPdf';
@@ -19,6 +19,8 @@ import { companyDate, fmtDay, type MetricValue } from '../../data/hr';
 import { chosenDesignation } from '../../layouts/Sidebar';
 import { agencyAccess, type PendingWork } from '../../lib/agencies';
 import { SupportCard, useQueueRev } from '../../components/SupportRequests';
+import { MyTaskModal, type TaskOrigin } from '../../components/MyTaskModal';
+import type { PendingItem } from '../../lib/dailyReport';
 import { cn } from '../../lib/utils';
 
 const blank = (): ReportDraft => ({ notes: {} });
@@ -90,10 +92,14 @@ export default function MyReport() {
   const liveTimeline = useWorkTimeline(date, undefined, data.activities);
   const snapshotTimeline = !editable && Array.isArray(existing?.timelineSnapshot) ? (existing!.timelineSnapshot as TimelineRow[]) : null;
   const timelineRows = snapshotTimeline ?? liveTimeline.rows;
-  // Work queue: agency work (Partnerships) and lead follow-ups (Lead Management), plus Tomorrow's Plan and support.
-  const hasQueue = agencyAccess(session ?? null) || session?.userRole === 'super_admin' || !!session?.permissions.includes('leads');
+  // Work queue for every employee: their open tasks (manual and assigned), plus agency work (Partnerships) and
+  // lead follow-ups (Lead Management) where they have that access, Tomorrow's Plan and support.
+  const agencyQueue = agencyAccess(session ?? null) || session?.userRole === 'super_admin' || !!session?.permissions.includes('leads');
+  const hasQueue = session?.role === 'admin' || session?.role === 'staff';
   const queueRev = useQueueRev(editable && hasQueue);
-  const pendingRev = useMemo(() => ({}), [data.activities, queueRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingRev = useMemo(() => ({}), [data.activities, data.assignments, queueRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [taskModal, setTaskModal] = useState<{ origin: TaskOrigin; taskId?: string } | null>(null);
+  const canAddTasks = editable && date === today && hasQueue && !session?.previewOf;
   const livePending = usePendingWork(date, editable && hasQueue, pendingRev);
   const pending = editable ? livePending.pending : ((existing?.pendingSnapshot ?? null) as PendingWork | null);
   const options = useMemo(() => data.myTemplates.map((t) => ({ value: t.id, label: t.designation })), [data.myTemplates]);
@@ -218,12 +224,14 @@ export default function MyReport() {
       <div className="mb-5 grid gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3"><WorkTimeline rows={timelineRows} error={snapshotTimeline ? undefined : liveTimeline.error} onRetry={snapshotTimeline ? undefined : () => void liveTimeline.reload()}
           title={snapshotTimeline ? 'Time / Action done (as submitted)' : 'Time / Action done'} /></div>
-        <div className="xl:col-span-2"><PendingCard view={view} loading={editable && hasQueue && livePending.pending === undefined} failed={editable && livePending.failed} hasQueue={hasQueue} /></div>
+        <div className="xl:col-span-2"><PendingCard view={view} loading={editable && hasQueue && livePending.pending === undefined} failed={editable && livePending.failed} hasQueue={hasQueue} agencyQueue={agencyQueue}
+          onAdd={canAddTasks ? () => setTaskModal({ origin: 'pending_work' }) : undefined} onOpen={editable ? (id) => setTaskModal({ origin: 'pending_work', taskId: id }) : undefined} /></div>
       </div>
       {/* End of the report: Tomorrow's Plan (automatic) and Support required — the same as the PDF. */}
       {hasQueue && view && (view.pending !== null || !editable) && (
         <div className="mb-5 grid gap-5 lg:grid-cols-2">
-          <TomorrowCard view={view} />
+          <TomorrowCard view={view} onAdd={canAddTasks ? () => setTaskModal({ origin: 'tomorrows_plan' }) : undefined}
+            onOpen={editable ? (id) => setTaskModal({ origin: 'tomorrows_plan', taskId: id }) : undefined} />
           <SupportCard items={view.support} editable={editable && date === today} onRaised={() => undefined} />
         </div>
       )}
@@ -254,6 +262,8 @@ export default function MyReport() {
       <MetricActivitiesModal open={!!showing} onClose={() => setShowing(null)} label={showing?.label ?? ''} canVoid={editable}
         metric={showing ? (typeof metrics[showing.key] === 'number' ? { value: metrics[showing.key] as number, kind: 'activity' } : (metrics[showing.key] as MetricValue | undefined)) : undefined} />
       <QuickLogModal open={!!logFor} onClose={() => setLogFor(null)} types={logFor ?? []} />
+      <MyTaskModal open={!!taskModal} onClose={() => setTaskModal(null)} origin={taskModal?.origin ?? 'pending_work'} taskId={taskModal?.taskId}
+        nextDay={(livePending.pending as { next_day?: string } | null | undefined)?.next_day ?? null} />
     </>
   );
 }
@@ -297,43 +307,78 @@ export function ActivityBreakdown({ view, onShow }: { view: ReportView; onShow?:
   );
 }
 
-function TomorrowCard({ view }: { view: ReportView }) {
+/** One list of report items; long lists collapse (expand to see all). Task items open the task. */
+function ItemList({ items, onOpen }: { items: PendingItem[]; onOpen?: (taskId: string) => void }) {
+  const [all, setAll] = useState(false);
+  const LIMIT = 6;
+  const shown = all ? items : items.slice(0, LIMIT);
+  return (
+    <>
+      <ul className="space-y-2 text-sm">
+        {shown.map((i, n) => {
+          const body = (
+            <>
+              <span className="min-w-0 break-words text-heading">
+                {i.title}
+                {i.manual && <Badge tone="slate" className="ml-1.5 align-middle">Added by you</Badge>}
+              </span>
+              <span className={`shrink-0 text-xs ${i.overdue ? 'font-semibold text-red-600 dark:text-red-400' : 'text-ink-mute'}`}>{i.overdue ? 'Overdue · ' : ''}{i.when}</span>
+            </>
+          );
+          return (
+            <li key={`${i.taskId ?? ''}${n}`}>
+              {i.taskId && onOpen ? (
+                <button type="button" onClick={() => onOpen(i.taskId!)} className="flex w-full items-start justify-between gap-3 rounded-lg border border-line px-3 py-2 text-left transition hover:border-brand-200 hover:bg-brand-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 dark:hover:bg-brand-500/10">{body}</button>
+              ) : (
+                <div className="flex items-start justify-between gap-3 rounded-lg border border-line px-3 py-2">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {items.length > LIMIT && (
+        <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rust hover:underline" aria-expanded={all} onClick={() => setAll(!all)}>
+          <ChevronDown className={cn('h-3.5 w-3.5 transition', all && 'rotate-180')} />{all ? 'Show fewer' : `Show all ${items.length}`}
+        </button>
+      )}
+    </>
+  );
+}
+
+function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return <Button size="sm" variant="secondary" icon={Plus} onClick={onClick}>{label}</Button>;
+}
+
+function TomorrowCard({ view, onAdd, onOpen }: { view: ReportView; onAdd?: () => void; onOpen?: (taskId: string) => void }) {
   return (
     <Card>
-      <CardHeader title="Tomorrow's Plan" subtitle="Filled automatically from your open follow-ups and meetings for the next working day" />
+      <CardHeader title="Tomorrow's Plan" subtitle="Your follow-ups, meetings and planned tasks for the next working day"
+        action={onAdd && <AddButton onClick={onAdd} label="Add task" />} />
       <div className="px-5 pb-5">
-        {view.tomorrow.length === 0 ? <p className="text-sm text-ink-soft">Nothing scheduled for the next working day.</p> : (
-          <ul className="space-y-2 text-sm">{view.tomorrow.map((i, n) => (
-            <li key={n} className="flex items-start justify-between gap-3 rounded-lg border border-line px-3 py-2">
-              <span className="min-w-0 break-words text-heading">{i.title}</span><span className="shrink-0 text-xs text-ink-mute">{i.when}</span>
-            </li>
-          ))}</ul>
-        )}
+        {view.tomorrow.length === 0 ? <p className="text-sm text-ink-soft">Nothing scheduled for the next working day.</p> : <ItemList items={view.tomorrow} onOpen={onOpen} />}
       </div>
     </Card>
   );
 }
 
-function PendingCard({ view, loading, failed, hasQueue }: { view: ReportView | null; loading: boolean; failed: boolean; hasQueue: boolean }) {
+function PendingCard({ view, loading, failed, hasQueue, agencyQueue, onAdd, onOpen }: {
+  view: ReportView | null; loading: boolean; failed: boolean; hasQueue: boolean; agencyQueue: boolean; onAdd?: () => void; onOpen?: (taskId: string) => void;
+}) {
   const items = view?.pending ?? [];
   return (
     <Card>
-      <CardHeader title="Pending work" subtitle={hasQueue ? 'Carried forward with the original due date until completed' : 'Open items are counted in the report heads; they are not completed work.'} />
+      <CardHeader title="Pending work" subtitle={agencyQueue ? 'Carried forward with the original due date until completed' : 'Your open tasks, carried forward until completed or cancelled'}
+        action={onAdd && <AddButton onClick={onAdd} label="Add pending work" />} />
       <div className="px-5 pb-5">
         {failed ? <p className="text-sm text-amber-700 dark:text-amber-300">Pending work could not be loaded.</p>
           : loading ? <p className="text-sm text-ink-soft" role="status">Loading…</p>
           : !hasQueue && view?.pending === null ? <p className="text-sm text-ink-soft">{view?.openWork ? `${view.openWork} open item${view.openWork === 1 ? '' : 's'} in your queue.` : 'Nothing pending.'}</p>
           : items.length === 0 && !view?.pendingNotes.length ? <p className="text-sm text-ink-soft">Nothing pending.</p>
           : (
-            <ul className="space-y-2 text-sm">
-              {items.map((i, n) => (
-                <li key={n} className="flex items-start justify-between gap-3 rounded-lg border border-line px-3 py-2">
-                  <span className="min-w-0 break-words text-heading">{i.title}</span>
-                  <span className={`shrink-0 text-xs ${i.overdue ? 'font-semibold text-red-600 dark:text-red-400' : 'text-ink-mute'}`}>{i.overdue ? 'Overdue · ' : ''}{i.when}</span>
-                </li>
-              ))}
-              {view?.pendingNotes.map((n) => <li key={n} className="text-xs text-ink-soft">{n}</li>)}
-            </ul>
+            <>
+              <ItemList items={items} onOpen={onOpen} />
+              {!!view?.pendingNotes.length && <ul className="mt-2 space-y-1">{view.pendingNotes.map((n) => <li key={n} className="text-xs text-ink-soft">{n}</li>)}</ul>}
+            </>
           )}
       </div>
     </Card>

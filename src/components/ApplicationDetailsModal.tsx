@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, CheckCircle2, Circle, ExternalLink, Save, Trash2 } from 'lucide-react';
-import { Badge, Button, Field, Input, Modal, Progress, Select } from './ui';
+import { Badge, Button, Field, Input, Modal, Progress, Select, SelectMenu, type SelectOption } from './ui';
 import { ChatButton } from './ApplicationChat';
 import { useConfirm, useToast } from './feedback';
 import { useLookup, useScoped, useStore } from '../store/store';
@@ -9,6 +9,9 @@ import { APP_STATUSES, type AppStatus, type Application } from '../data/types';
 import { appStatusColor, appStatusTone, cn, countryFlag, formatDate, formatDateTime, fullName, money } from '../lib/utils';
 import { ApplicationMilestones } from './ApplicationMilestones';
 import { ApplicationCommission } from './ApplicationCommission';
+import { supabase } from '../auth/auth';
+import { ROLE_LABEL } from '../auth/roles';
+import type { UserRole } from '../data/types';
 
 export function StatusBadge({ status }: { status: AppStatus }) {
   return (
@@ -64,8 +67,25 @@ export function PipelineStepper({ status }: { status: AppStatus }) {
  * with access can tick the document checklist. Changes save through the store (RLS applies)
  * and the open modal updates live when someone else changes the application.
  */
+interface Assignee { id: string; full_name: string; designation: string | null; role: UserRole; open_applications: number; application_team: boolean }
+
+/** Who this user may pick as Assigned staff for one application (server-checked; empty = not allowed). */
+function useAssignees(appId: string | undefined, enabled: boolean, rev: unknown) {
+  const [list, setList] = useState<Assignee[] | null>(null);
+  useEffect(() => {
+    if (!appId || !enabled || !supabase) { setList([]); return; }
+    let alive = true;
+    setList(null);
+    void supabase.rpc('application_assignees', { p_app: appId }).then(({ data, error }) => {
+      if (alive) setList(error ? [] : ((data ?? []) as Assignee[]));
+    });
+    return () => { alive = false; };
+  }, [appId, enabled, rev]);
+  return list;
+}
+
 export function ApplicationDetailsModal({ app, onClose }: { app?: Application; onClose: () => void }) {
-  const { actions, db, session } = useStore();
+  const { actions, db, session, canDelete } = useStore();
   const scoped = useScoped();
   const lk = useLookup();
   const toast = useToast();
@@ -73,14 +93,24 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
   const [nextStatus, setNextStatus] = useState<AppStatus>('Draft');
   const [note, setNote] = useState('');
   const [assignee, setAssignee] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [assignError, setAssignError] = useState('');
 
   useEffect(() => {
     if (app) {
       setNextStatus(app.status);
       setNote('');
       setAssignee(app.assignedTo ?? '');
+      setReason('');
+      setAssignError('');
     }
   }, [app?.id, app?.status, app?.assignedTo]);
+  // Admin Portal users with Applications, and Partner Success Officers for their own clients and leads.
+  const perms = session?.permissions ?? [];
+  const mayAssign = !!session && (session.userRole === 'super_admin' || (session.role === 'admin' && perms.includes('applications'))
+    || (perms.includes('partner_success') && perms.includes('applications')));
+  const assignees = useAssignees(app?.id, mayAssign, app?.assignedTo);
 
   if (!app) return null;
   const student = lk.student.get(app.studentId);
@@ -90,23 +120,51 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
   const docs = scoped.documents.filter((d) => d.studentId === app.studentId);
   const done = app.checklist.filter((c) => c.done).length;
   const internal = scoped.isAdmin;
-  const canAssign = session?.role === 'admin';
+  const isAdminAssigner = session?.userRole === 'super_admin' || (session?.role === 'admin' && perms.includes('applications'));
+  const canAssign = mayAssign && !!assignees?.length;
   const statusChanged = nextStatus !== app.status;
   const assignChanged = canAssign && assignee !== (app.assignedTo ?? '');
   const dirty = internal && (statusChanged || assignChanged || note.trim() !== '');
+  const nameOf = (id: string | null | undefined) => (id ? assignees?.find((m) => m.id === id)?.full_name ?? db.staff.find((m) => m.id === id)?.fullName ?? 'Assigned' : 'Unassigned');
+  const assigneeOptions: SelectOption[] = (assignees ?? []).map((m) => ({
+    value: m.id,
+    label: `${m.full_name} · ${m.designation ?? ROLE_LABEL[m.role] ?? m.role} · ${m.open_applications} open application${m.open_applications === 1 ? '' : 's'}${m.id === app.assignedTo ? ' (current)' : ''}`,
+    group: isAdminAssigner ? (m.application_team ? 'Application Team' : 'Other employees') : undefined,
+  }));
+  if (app.assignedTo && !assigneeOptions.some((o) => o.value === app.assignedTo)) {
+    assigneeOptions.unshift({ value: app.assignedTo, label: `${nameOf(app.assignedTo)} (current)`, disabled: true });
+  }
+  const assignHint = !mayAssign ? 'Only Admin and the client\'s Partner Success Officer can assign'
+    : assignees === null ? 'Loading Application Team…'
+    : !canAssign ? 'You can assign applications of your own clients and leads only'
+    : 'The employee is notified instantly';
 
-  const save = () => {
+  const save = async () => {
     if (!statusChanged && !assignChanged) return toast.info('No changes', note.trim() ? 'A note is saved together with a status change.' : 'Pick a different status or assignee.');
+    setAssignError('');
+    if (assignChanged) {
+      setSaving(true);
+      try {
+        // Wait for the database: nothing is reported as saved until it is.
+        await actions.assignApplication(app.id, assignee || null, app.assignedTo ? reason : undefined);
+      } catch (e) {
+        setSaving(false);
+        const msg = e instanceof Error ? e.message : 'The assignment could not be saved.';
+        setAssignError(msg);
+        return toast.error('Assignment not saved', msg);
+      }
+      setSaving(false);
+    }
     if (statusChanged) actions.setApplicationStatus(app.id, nextStatus, note);
-    if (assignChanged) actions.updateApplication(app.id, { assignedTo: assignee || null });
-    toast.success('Application updated', statusChanged ? `${app.ref} is now “${nextStatus}”. The partner sees this immediately.` : `${app.ref} reassigned.`);
+    toast.success('Application updated', [statusChanged && `${app.ref} is now “${nextStatus}”. The partner sees this immediately.`, assignChanged && `${app.ref} assigned to ${nameOf(assignee || null)}.`].filter(Boolean).join(' '));
     setNote('');
+    setReason('');
   };
 
   const remove = async () => {
-    const ok = await confirm({ title: 'Delete application?', message: `${app.ref} for ${fullName(student)} will be permanently removed.`, confirmLabel: 'Delete', danger: true });
+    const ok = await confirm({ title: 'Delete application permanently?', message: `${app.ref} for ${fullName(student)} will be permanently removed with its chat and milestones. This cannot be undone.`, confirmLabel: 'Delete', danger: true });
     if (!ok) return;
-    actions.removeApplication(app.id);
+    if (!(await actions.removeApplication(app.id))) return;
     toast.success('Application deleted');
     onClose();
   };
@@ -137,18 +195,18 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
       }
       footer={
         <>
-          {internal && (
+          {internal && canDelete && (
             <Button variant="ghost" icon={Trash2} className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10" onClick={remove}>
               Delete
             </Button>
           )}
-          <ChatButton applicationId={app.id} label className={internal ? undefined : 'mr-auto'} />
+          <ChatButton applicationId={app.id} label className={internal && canDelete ? undefined : 'mr-auto'} />
           {/* On phones the header × closes; keep the footer to the main actions. */}
           <Button variant="secondary" onClick={onClose} className={internal ? 'hidden sm:inline-flex' : undefined}>
             {internal ? 'Cancel' : 'Close'}
           </Button>
           {internal && (
-            <Button icon={Save} onClick={save} disabled={!statusChanged && !assignChanged}>
+            <Button icon={Save} onClick={() => void save()} disabled={(!statusChanged && !assignChanged) || saving} loading={saving}>
               Save changes
             </Button>
           )}
@@ -187,7 +245,7 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
                 <Info label="Intake">{app.intake || '—'}</Info>
                 <Info label="Tuition fees / yr">{course ? money(course.tuition, course.currency) : '—'}</Info>
                 <Info label="Application created">{formatDateTime(app.appliedAt)}</Info>
-                {internal && <Info label="Assigned to">{db.staff.find((m) => m.id === app.assignedTo)?.fullName ?? 'Unassigned'}</Info>}
+                {internal && <Info label="Assigned to">{nameOf(app.assignedTo)}</Info>}
               </dl>
             </section>
 
@@ -244,14 +302,15 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
                   <Field label="Note (optional)" hint="Visible to the partner in the timeline">
                     <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Offer letter received" />
                   </Field>
-                  <Field label="Assigned staff" hint={canAssign ? 'The employee is notified instantly' : 'Only Admin can reassign'}>
-                    <Select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Assigned employee" disabled={!canAssign}>
-                      <option value="">Unassigned</option>
-                      {db.staff.map((m) => (
-                        <option key={m.id} value={m.id}>{m.fullName}{m.department ? ` · ${m.department}` : ''}</option>
-                      ))}
-                    </Select>
+                  <Field label="Assigned staff" hint={assignError ? undefined : assignHint} error={assignError || undefined}>
+                    <SelectMenu value={assignee} onChange={(v) => { setAssignee(v); setAssignError(''); }} options={assigneeOptions} searchable
+                      placeholder="Unassigned" clearable={isAdminAssigner} disabled={!canAssign} aria-label="Assigned employee" />
                   </Field>
+                  {assignChanged && app.assignedTo && (
+                    <Field label="Reason for reassignment (optional)">
+                      <Input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Workload balance" />
+                    </Field>
+                  )}
                   {dirty && <p className="text-xs font-semibold text-rust">Unsaved changes — use “Save changes” below.</p>}
                 </div>
               </section>

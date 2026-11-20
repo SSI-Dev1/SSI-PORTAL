@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Circle, ListTodo, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Tabs, TimePicker } from '../../components/ui';
-import { useToast } from '../../components/feedback';
+import { useConfirm, useToast } from '../../components/feedback';
 import { priorityTone } from '../../components/UpdateCard';
 import { useStore } from '../../store/store';
 import type { Priority, Task } from '../../data/types';
@@ -11,8 +11,9 @@ import { cn, daysUntil, formatDateTime, fromDateInput, toDateInput } from '../..
 type View = 'open' | 'today' | 'upcoming' | 'done';
 
 export default function Tasks() {
-  const { db, actions } = useStore();
+  const { db, actions, canDelete } = useStore();
   const toast = useToast();
+  const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<View>('open');
   const [open, setOpen] = useState(false);
@@ -77,9 +78,9 @@ export default function Tasks() {
                   </div>
                   <Badge tone={priorityTone[t.priority]}>{t.priority}</Badge>
                   {!t.done && <Badge tone={d < 0 ? 'red' : d === 0 ? 'orange' : 'slate'}>{d < 0 ? 'Overdue' : d === 0 ? 'Today' : `${d}d`}</Badge>}
-                  <button type="button" aria-label="Delete task" onClick={() => { actions.removeTask(t.id); toast.info('Task removed'); }} className="rounded-lg p-1.5 text-ink-mute opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100">
+                  {canDelete && <button type="button" aria-label="Delete task" onClick={async () => { if (await confirm({ title: 'Delete task permanently?', message: `“${t.title}” will be removed. Marking it done keeps it on record.`, confirmLabel: 'Delete', danger: true })) actions.removeTask(t.id); }} className="rounded-lg p-1.5 text-ink-mute opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100">
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </button>}
                 </li>
               );
             })}

@@ -15,7 +15,7 @@ import { countryFlag, matches, money } from '../../lib/utils';
 const LEVELS: StudyLevel[] = ['Foundation', 'Diploma', 'Undergraduate', 'Postgraduate', 'PhD'];
 
 export default function Courses() {
-  const { db, actions, session } = useStore();
+  const { db, actions, session, canDelete } = useStore();
   const lk = useLookup();
   const toast = useToast();
   const confirm = useConfirm();
@@ -112,18 +112,17 @@ export default function Courses() {
                             ? [
                                 { label: 'Edit course & intakes', icon: Pencil, onClick: () => { setEditing(c); setOpen(true); } },
                                 { label: c.active === false ? 'Activate' : 'Deactivate', icon: Power, onClick: () => { actions.updateCourse(c.id, { active: c.active === false }); toast.success(c.active === false ? 'Course activated' : 'Course deactivated', c.name); } },
-                                {
+                                ...(canDelete ? [{
                                   label: 'Delete',
                                   icon: Trash2,
                                   danger: true,
                                   onClick: async () => {
                                     if (db.applications.some((a) => a.courseId === c.id)) return toast.error('Course has applications', 'Deactivate it instead so existing applications keep their course.');
                                     if (await confirm({ title: 'Delete course?', message: `${c.name} and its intakes will be removed. Deactivating keeps it on record.`, danger: true, confirmLabel: 'Delete' })) {
-                                      actions.removeCourse(c.id);
-                                      toast.success('Course deleted');
+                                      if (await actions.removeCourse(c.id)) toast.success('Course deleted');
                                     }
                                   },
-                                },
+                                }] : []),
                               ]
                             : []),
                         ]}

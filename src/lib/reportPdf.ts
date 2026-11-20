@@ -168,7 +168,7 @@ export async function buildReportPdf(v: ReportView, logoUrl?: string): Promise<U
     const items = v.pending ?? [];
     if (!items.length && !v.pendingNotes.length) { need(16); text('Nothing pending.', M + 4, 9.5, font, MUTE); y -= 16; }
     for (const p of items) {
-      const lines = wrap(p.title, font, 9.5, CW - 150);
+      const lines = wrap(`${p.title}${p.manual ? ' (added manually)' : ''}`, font, 9.5, CW - 150);
       need(lines.length * 12 + 6);
       const y0 = y;
       lines.forEach((l, i) => { y = y0 - i * 12; text(l, M + 4, 9.5, font, INK); });
@@ -189,7 +189,7 @@ export async function buildReportPdf(v: ReportView, logoUrl?: string): Promise<U
     heading("Tomorrow's Plan");
     if (!tomorrow.length) { need(16); text('Nothing scheduled for the next working day.', M + 4, 9.5, font, MUTE); y -= 16; }
     for (const p of tomorrow) {
-      const lines = wrap(`• ${p.title}`, font, 9.5, CW - 150);
+      const lines = wrap(`• ${p.title}${p.manual ? ' (added manually)' : ''}`, font, 9.5, CW - 150);
       need(lines.length * 12 + 4);
       const y0 = y;
       lines.forEach((l, i) => { y = y0 - i * 12; text(l, M + 4, 9.5, font, INK); });

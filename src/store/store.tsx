@@ -414,9 +414,18 @@ function useStoreValue() {
     }
     if (await commit(Promise.resolve(res), failMsg) && res.data?.[0]) upsertLocal(key, fromRow<DB[K][number]>(res.data[0] as unknown as Row));
   };
-  const remove = async (key: TableKey, id: ID, failMsg?: string) => {
+  // Permanent deletion is Super Admin only (RLS, 0058). A refused delete returns no rows rather than an
+  // error, so the record is only dropped locally once the server confirms it is gone.
+  const remove = async (key: TableKey, id: ID, failMsg = 'Only a Super Admin can permanently delete records.') => {
+    const res = await sb().from(TABLES[key]).delete().eq('id', id).select('id');
+    if (res.error || !res.data?.length) {
+      toastRef.current.error('Not deleted', failMsg);
+      await load([key]);
+      return false;
+    }
     removeLocal(key, id);
-    await commit(sb().from(TABLES[key]).delete().eq('id', id), failMsg);
+    void refreshActivities();
+    return true;
   };
 
   const now = () => new Date().toISOString();
@@ -464,13 +473,15 @@ function useStoreValue() {
     updateStudent(id: ID, patch: Partial<Student>) {
       void update('students', id, patch);
     },
-    async removeStudent(id: ID) {
+    /** Super Admin only (0058). Returns false when the server refused (e.g. the student still has applications). */
+    async removeStudent(id: ID): Promise<boolean> {
       const s = db.students.find((x) => x.id === id);
-      // Delete the student's files first so no orphaned personal documents remain in storage.
-      if (s) {
-        const folder = `${s.partnerId}/${id}`;
-        const { data: files } = await sb().storage.from(BUCKET).list(folder);
-        if (files?.length) await sb().storage.from(BUCKET).remove(files.map((f) => `${folder}/${f.name}`));
+      const res = await sb().from('students').delete().eq('id', id).select('id');
+      if (res.error || !res.data?.length) {
+        const msg = res.error && typeof res.error === 'object' && 'message' in res.error ? String((res.error as { message: string }).message) : '';
+        toastRef.current.error('Not deleted', /applications first/i.test(msg) ? 'This student has applications. Delete the applications first.' : 'Only a Super Admin can permanently delete records.');
+        await load(['students']);
+        return false;
       }
       setDb((d) => ({
         ...d,
@@ -479,7 +490,14 @@ function useStoreValue() {
         documents: d.documents.filter((x) => x.studentId !== id),
         assessments: d.assessments.filter((x) => x.studentId !== id),
       }));
-      await commit(sb().from('students').delete().eq('id', id));
+      // Then the student's files (their records went with the student), so no orphaned personal documents remain.
+      if (s) {
+        const folder = `${s.partnerId}/${id}`;
+        const { data: files } = await sb().storage.from(BUCKET).list(folder);
+        if (files?.length) await sb().storage.from(BUCKET).remove(files.map((f) => `${folder}/${f.name}`));
+      }
+      void refreshActivities();
+      return true;
     },
 
     // ---------- applications (ref, tenant and timeline are set by the server)
@@ -528,8 +546,18 @@ function useStoreValue() {
     updateApplication(id: ID, patch: Partial<Application>) {
       void update('applications', id, patch);
     },
+    /** Super Admin only; resolves true once the server has deleted it. */
     removeApplication(id: ID) {
-      void remove('applications', id);
+      return remove('applications', id);
+    },
+    /** Assigned staff through the server (0058): scope, eligibility and history are checked there.
+     *  Resolves only after the database confirms; throws the server's reason otherwise. */
+    async assignApplication(id: ID, assignee: ID | null, reason?: string) {
+      const { data, error } = await sb().rpc('assign_application', { p_app: id, p_assignee: assignee, p_reason: reason?.trim() || null });
+      if (error) throw new Error(error.message || 'The assignment could not be saved.');
+      const r = data as { assigned_to: ID | null };
+      setDb((d) => ({ ...d, applications: d.applications.map((a) => (a.id === id ? { ...a, assignedTo: r.assigned_to } : a)) }));
+      return r;
     },
 
     // ---------- documents (private storage + metadata row)
@@ -563,8 +591,9 @@ function useStoreValue() {
     },
     async removeDocument(id: ID) {
       const d = db.documents.find((x) => x.id === id);
-      removeLocal('documents', id);
-      if (await commit(sb().from('documents').delete().eq('id', id)) && d?.storagePath) await sb().storage.from(BUCKET).remove([d.storagePath]);
+      if (!(await remove('documents', id))) return false;
+      if (d?.storagePath) await sb().storage.from(BUCKET).remove([d.storagePath]);
+      return true;
     },
 
     // ---------- assessments
@@ -589,7 +618,7 @@ function useStoreValue() {
       void update('payments', id, { paid, status: paid >= p.amount ? 'Paid' : 'Partially Paid' });
     },
     removePayment(id: ID) {
-      void remove('payments', id);
+      return remove('payments', id);
     },
 
     // ---------- tasks (staff only)
@@ -602,7 +631,7 @@ function useStoreValue() {
       if (t) void update('tasks', id, { done: !t.done });
     },
     removeTask(id: ID) {
-      void remove('tasks', id);
+      return remove('tasks', id);
     },
 
     // ---------- announcements (staff only on the server)
@@ -627,8 +656,7 @@ function useStoreValue() {
       void insert('universities', { ...u, id }, toRow({ ...u, id }));
     },
     removeUniversity(id: ID) {
-      setDb((d) => ({ ...d, courses: d.courses.filter((c) => c.universityId !== id) }));
-      void remove('universities', id);
+      void remove('universities', id).then((ok) => ok && setDb((d) => ({ ...d, courses: d.courses.filter((c) => c.universityId !== id) })));
     },
     addCourse(c: Without<Course, 'id'>) {
       const id = newId();
@@ -638,7 +666,7 @@ function useStoreValue() {
       void update('courses', id, patch);
     },
     removeCourse(id: ID) {
-      void remove('courses', id);
+      return remove('courses', id);
     },
     updateUniversity(id: ID, patch: Partial<University>) {
       void update('universities', id, patch);
@@ -651,7 +679,7 @@ function useStoreValue() {
       void update('courseIntakes', id, patch, 'This intake could not be saved (another intake may use the same month and year).');
     },
     removeIntake(id: ID) {
-      void remove('courseIntakes', id);
+      return remove('courseIntakes', id);
     },
     /** Server-side, validated, transactional import (public.import_catalogue). */
     async importCatalogue(payload: unknown, overwrite: boolean) {
@@ -662,7 +690,9 @@ function useStoreValue() {
     },
   };
 
-  return { db, session, actions, loading, loadError, retryLoad: firstLoad, live, profilesRev };
+  // Permanent deletion: Super Admin only, never while previewing another account (enforced again by RLS).
+  const canDelete = session?.userRole === 'super_admin' && !session?.previewOf;
+  return { db, session, actions, loading, loadError, retryLoad: firstLoad, live, profilesRev, canDelete };
 }
 
 type StoreValue = ReturnType<typeof useStoreValue>;

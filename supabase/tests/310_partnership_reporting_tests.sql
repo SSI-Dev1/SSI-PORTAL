@@ -183,7 +183,7 @@ update public.profiles set permissions = array_append(permissions, 'partner_acco
 select pg_temp.check((select 'partner_accounts' = any (permissions) from public.profiles where id = :po), 'a Super Admin can grant "partner accounts" to one employee');
 select pg_temp.act_as(:app);
 select pg_temp.denied(format($$select public.agency_action(%L, 'call', '{}'::jsonb, gen_random_uuid())$$, :'a1'), 'staff without Agencies access cannot log', '%Not allowed%');
-select pg_temp.check(public.my_pending_work() is null and (select count(*) from public.agency_tasks) = 0 and (select count(*) from public.university_partnerships) = 0, 'and see no tasks or university partnerships');
+select pg_temp.check(public.my_pending_work() -> 'tasks' is null and public.my_pending_work() -> 'leads' is null and (select count(*) from public.agency_tasks) = 0 and (select count(*) from public.university_partnerships) = 0, 'and see no tasks or university partnerships');
 select pg_temp.denied($$select public.rollover_pending_work()$$, 'employees cannot run the rollover', '%Not allowed%');
 select pg_temp.act_as(:partner);
 select pg_temp.denied($$select public.save_university_partnership(null, '{"institution_name": "X Uni"}'::jsonb, gen_random_uuid())$$, 'partners cannot add university partnerships', '%Not allowed%');

@@ -355,6 +355,10 @@ export interface Assignment {
   lastNote: string | null;
   createdAt: string;
   updatedAt: string;
+  /** 0058: tasks the employee added themself (Pending Work / Tomorrow's Plan). */
+  origin?: 'pending_work' | 'tomorrows_plan' | null;
+  related?: string | null;
+  notes?: string | null;
 }
 export interface TaskEvent { id: string; taskId: string; at: string; actor: string | null; action: string; detail: Record<string, unknown> | null }
 

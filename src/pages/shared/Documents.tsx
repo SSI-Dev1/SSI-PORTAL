@@ -14,7 +14,7 @@ export const docTone: Record<DocStatus, Tone> = { Verified: 'green', Pending: 'a
 export default function Documents() {
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions, session } = useStore();
+  const { actions, session, canDelete } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
   const [q, setQ] = useState('');
@@ -57,8 +57,7 @@ export default function Documents() {
 
   const remove = async (d: DocumentRecord) => {
     if (await confirm({ title: 'Delete document?', message: `${d.fileName} will be permanently removed.`, confirmLabel: 'Delete', danger: true })) {
-      actions.removeDocument(d.id);
-      toast.success('Document deleted');
+      if (await actions.removeDocument(d.id)) toast.success('Document deleted');
     }
   };
 
@@ -149,7 +148,7 @@ export default function Documents() {
                                 { label: 'Reject', icon: XCircle, onClick: () => setDocStatus(d, 'Rejected') },
                               ]
                             : []),
-                          ...(session?.role !== 'client' || session.userRole === 'partner_admin' ? [{ label: 'Delete', icon: Trash2, onClick: () => remove(d), danger: true }] : []),
+                          ...(canDelete ? [{ label: 'Delete', icon: Trash2, onClick: () => remove(d), danger: true }] : []),
                         ]}
                       />
                     </td>

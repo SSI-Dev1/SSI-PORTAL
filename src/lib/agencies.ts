@@ -317,6 +317,10 @@ export const fmtTime = (t: string | null | undefined) => {
   const [h, m] = t.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 };
+export interface MyTaskItem {
+  id: string; title: string; description: string | null; priority: 'High' | 'Medium' | 'Normal'; due_date: string; planned_date: string | null;
+  related: string | null; notes: string | null; status: string; manual: boolean; origin: 'pending_work' | 'tomorrows_plan' | null; overdue: boolean; created_at: string;
+}
 export interface PendingWork {
   date: string;
   tasks?: { id: string; kind: AgencyTask['kind']; prospect_id: string; agency: string; reference: string; due_date: string; due_time: string | null; attendee: string | null; note: string | null; overdue: boolean; carry_count: number }[];
@@ -325,7 +329,9 @@ export interface PendingWork {
   /** 0056: lead follow-ups due today or earlier, lead queues, Tomorrow's Plan and open support requests. */
   leads?: { id: string; lead_id: string; name: string; reference: string; due_date: string; due_time: string | null; note: string | null; overdue: boolean; carry_count: number }[];
   lead_pending?: number; lead_no_response?: number; next_day?: string;
-  tomorrow?: { title: string; reference: string | null; due_date: string; due_time: string | null; note: string | null }[];
+  tomorrow?: { title: string; reference: string | null; due_date: string; due_time: string | null; note: string | null; task_id?: string; manual?: boolean; priority?: string }[];
+  /** 0058: the employee's open tasks actionable on this day (manual ones flagged) — the same rows as My Assigned Tasks. */
+  my_tasks?: MyTaskItem[];
   support?: { id: string; title: string; created_at: string; escalated: boolean }[];
 }
 

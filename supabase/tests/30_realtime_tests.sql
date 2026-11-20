@@ -184,7 +184,12 @@ rollback;
 begin; select pg_temp.act_as(:staff);
 delete from public.students where id = 's1';
 select pg_temp.trusted();
-select pg_temp.check(exists (select 1 from public.activities where title = 'Student removed' and actor_role = 'admin_staff'), 'student deletion is recorded with the actor');
+select pg_temp.check(exists (select 1 from public.students where id = 's1'), 'admin staff cannot permanently delete a student (0058: Super Admin only)');
+insert into public.students (id, partner_id, first_name, last_name, email) select 's-del', partner_id, 'Del', 'Me', 'del@x.test' from public.students where id = 's1';
+select pg_temp.act_as(:super);
+delete from public.students where id = 's-del';
+select pg_temp.trusted();
+select pg_temp.check(exists (select 1 from public.activities where title = 'Student removed' and actor_role = 'super_admin'), 'student deletion is recorded with the actor');
 rollback;
 
 begin; select pg_temp.act_as(:staff);

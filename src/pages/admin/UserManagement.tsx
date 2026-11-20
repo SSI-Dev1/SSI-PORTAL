@@ -497,7 +497,7 @@ function PartnersPanel({
   onDelete: (p: Partner) => void;
   onOpen: (p: Partner) => void;
 }) {
-  const { db } = useStore();
+  const { db, canDelete } = useStore();
   const [q, setQ] = useState('');
   const [show, setShow] = useState('current');
   const rows = partners
@@ -555,7 +555,7 @@ function PartnersPanel({
                               { label: 'Add partner user', icon: UserPlus, onClick: () => onAddUser(p.id) },
                               { label: 'Archive partner', icon: Archive, onClick: () => onArchive(p), danger: true },
                             ]),
-                        { label: 'Delete partner', icon: Trash2, onClick: () => onDelete(p), danger: true },
+                        ...(canDelete ? [{ label: 'Delete partner', icon: Trash2, onClick: () => onDelete(p), danger: true }] : []),
                       ]}
                     />
                   </td>

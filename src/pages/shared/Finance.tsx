@@ -16,7 +16,7 @@ const effectiveStatus = (p: Payment): PaymentStatus => (p.status !== 'Paid' && d
 export default function Finance() {
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions } = useStore();
+  const { actions, canDelete } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
   const c = useChartColors();
@@ -154,7 +154,7 @@ export default function Finance() {
                           ...(scoped.isAdmin && p.status !== 'Paid'
                             ? [{ label: 'Record payment', icon: Banknote, onClick: () => setPaying(p) }]
                             : []),
-                          ...(scoped.isAdmin
+                          ...(scoped.isAdmin && canDelete
                             ? [
                                 {
                                   label: 'Delete',
@@ -162,8 +162,7 @@ export default function Finance() {
                                   danger: true,
                                   onClick: async () => {
                                     if (await confirm({ title: 'Delete invoice?', message: `${p.invoiceNo} will be removed.`, danger: true, confirmLabel: 'Delete' })) {
-                                      actions.removePayment(p.id);
-                                      toast.success('Invoice deleted');
+                                      if (await actions.removePayment(p.id)) toast.success('Invoice deleted');
                                     }
                                   },
                                 },

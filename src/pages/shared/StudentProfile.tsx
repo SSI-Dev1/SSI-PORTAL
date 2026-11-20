@@ -38,7 +38,7 @@ export default function StudentProfile() {
   const { id } = useParams();
   const scoped = useScoped();
   const lk = useLookup();
-  const { actions, session } = useStore();
+  const { actions, session, canDelete } = useStore();
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -66,9 +66,9 @@ export default function StudentProfile() {
   const partner = lk.partner.get(s.partnerId);
 
   const remove = async () => {
-    const ok = await confirm({ title: 'Delete student?', message: `${fullName(s)} and all related records will be permanently removed.`, confirmLabel: 'Delete', danger: true });
+    const ok = await confirm({ title: 'Delete student?', message: `${fullName(s)} will be permanently removed. A student with applications cannot be deleted — delete the applications first.`, confirmLabel: 'Delete', danger: true });
     if (!ok) return;
-    actions.removeStudent(s.id);
+    if (!(await actions.removeStudent(s.id))) return;
     toast.success('Student deleted');
     navigate(`${scoped.base}/students`);
   };
@@ -196,9 +196,11 @@ export default function StudentProfile() {
                 ))}
               </div>
             </Card>
-            <Button variant="ghost" icon={Trash2} className="w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={remove}>
-              Delete student
-            </Button>
+            {canDelete && (
+              <Button variant="ghost" icon={Trash2} className="w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={remove}>
+                Delete student
+              </Button>
+            )}
           </div>
           {session?.role !== 'client' && <StudentActivityCard studentId={s.id} apps={apps} />}
         </div>

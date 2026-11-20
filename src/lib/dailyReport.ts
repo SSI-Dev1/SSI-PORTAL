@@ -14,7 +14,8 @@ export interface ReportTimelineRow {
 export interface ReportCount { key: string; label: string; value: number; kind: 'activity' | 'workload' | 'pending' }
 export interface ReportText { key: string; label: string; value: string }
 export interface ReportSection { id: string; title: string; counts: ReportCount[]; texts: ReportText[] }
-export interface PendingItem { title: string; when: string; overdue: boolean }
+/** taskId/manual: a task of the shared task system (manual = added by the employee themself). */
+export interface PendingItem { title: string; when: string; overdue: boolean; taskId?: string; manual?: boolean }
 
 export interface ReportView {
   employee: string;
@@ -48,6 +49,10 @@ export function pendingItems(pw: PendingWork | null | undefined, date: string): 
     ...(pw.tasks ?? []).filter((t) => t.due_date <= date).map((t) => ({ title: `${TASK_KIND[t.kind]} · ${t.agency}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: !!t.overdue })),
     ...(pw.linkedin ?? []).map((l) => ({ title: `LinkedIn follow-up · ${l.name}`, when: fmtDate(l.due_date), overdue: !!l.overdue })),
     ...(pw.leads ?? []).map((t) => ({ title: `Lead follow-up · ${t.name}${t.note ? ` — ${t.note}` : ''}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: !!t.overdue })),
+    ...(pw.my_tasks ?? []).map((t) => ({
+      title: `${t.manual ? '' : 'Assigned task · '}${t.title}${t.related ? ` · ${t.related}` : ''}${t.priority === 'High' ? ' (High priority)' : ''}`,
+      when: fmtDate(t.due_date), overdue: !!t.overdue, taskId: t.id, manual: t.manual,
+    })),
   ];
   const notes = [
     ...(pw.not_connected ? [`${pw.not_connected} agenc${pw.not_connected === 1 ? 'y' : 'ies'} not connected yet`] : []),
@@ -72,7 +77,10 @@ export function buildReportView(a: {
   }));
   const counts = sections.flatMap((s) => s.counts);
   const p = pendingItems(a.pending, a.date);
-  const tomorrow = (a.pending?.tomorrow ?? []).map((t) => ({ title: `${t.title}${t.note ? ` — ${t.note}` : ''}`, when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: false }));
+  const tomorrow = (a.pending?.tomorrow ?? []).map((t) => ({
+    title: t.task_id ? `${t.manual ? '' : 'Assigned task · '}${t.title}${t.reference ? ` · ${t.reference}` : ''}${t.priority === 'High' ? ' (High priority)' : ''}` : `${t.title}${t.note ? ` — ${t.note}` : ''}`,
+    when: `${fmtDate(t.due_date)}${t.due_time ? ` ${fmtTime(t.due_time)}` : ''}`, overdue: false, taskId: t.task_id, manual: t.manual,
+  }));
   const support = (a.pending?.support ?? []).map((r) => ({ title: r.title, when: fmtDate(r.created_at), escalated: r.escalated }));
   return {
     employee: a.employee, designation: a.designation, department: a.department, date: a.date, templateName: a.template.name, status: a.status,

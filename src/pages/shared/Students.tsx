@@ -19,9 +19,8 @@ export default function Students() {
   const { actions } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
-  const { session } = useStore();
+  const { session, canDelete } = useStore();
   const can = (p: PartnerPermission) => partnerCan(session, p);
-  const canDelete = session?.role !== 'client' || session.userRole === 'partner_admin';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
@@ -62,13 +61,12 @@ export default function Students() {
   const remove = async (s: Student) => {
     const ok = await confirm({
       title: 'Delete student?',
-      message: `${fullName(s)} and all related applications and documents will be permanently removed.`,
+      message: `${fullName(s)} will be permanently removed. A student with applications cannot be deleted — delete the applications first.`,
       confirmLabel: 'Delete student',
       danger: true,
     });
     if (ok) {
-      actions.removeStudent(s.id);
-      toast.success('Student deleted', fullName(s));
+      if (await actions.removeStudent(s.id)) toast.success('Student deleted', fullName(s));
     }
   };
 

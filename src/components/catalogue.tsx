@@ -391,7 +391,7 @@ const toNull = (d: Draft) => ({
 
 /** Add, edit, close, disable or delete the intakes of one course. */
 export function IntakeManager({ course }: { course: Course }) {
-  const { actions } = useStore();
+  const { actions, canDelete } = useStore();
   const toast = useToast();
   const confirm = useConfirm();
   const intakes = useCourseIntakes(course.id, true);
@@ -411,12 +411,11 @@ export function IntakeManager({ course }: { course: Course }) {
             actions.updateIntake(i.id, rest);
             toast.success('Intake saved', `${MONTH_NAMES[d.intakeMonth - 1]} ${d.intakeYear} · visible to partners and staff instantly.`);
           }}
-          onRemove={async () => {
+          onRemove={canDelete ? async () => {
             if (await confirm({ title: `Delete ${intakeLabel(i)}?`, message: 'To keep it on record, mark it Closed or disable it instead.', confirmLabel: 'Delete intake', danger: true })) {
-              actions.removeIntake(i.id);
-              toast.success('Intake deleted');
+              if (await actions.removeIntake(i.id)) toast.success('Intake deleted');
             }
-          }}
+          } : undefined}
         />
       ))}
       {adding ? (

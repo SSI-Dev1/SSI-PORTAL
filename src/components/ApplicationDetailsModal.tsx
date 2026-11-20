@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, CheckCircle2, Circle, ExternalLink, Save, Trash2 } from 'lucide-react';
+import { Check, CheckCircle2, Circle, ExternalLink, ListChecks, Save, Trash2 } from 'lucide-react';
 import { Badge, Button, Field, Input, Modal, Progress, Select, SelectMenu, type SelectOption } from './ui';
 import { ChatButton } from './ApplicationChat';
 import { useConfirm, useToast } from './feedback';
@@ -10,6 +10,7 @@ import { appStatusColor, appStatusTone, cn, countryFlag, formatDate, formatDateT
 import { ApplicationMilestones } from './ApplicationMilestones';
 import { ApplicationCommission } from './ApplicationCommission';
 import { supabase } from '../auth/auth';
+import { RecordTaskHistory, RecordTaskModal, canRaiseRecordTasks } from './RecordTaskModal';
 import { ROLE_LABEL } from '../auth/roles';
 import type { UserRole } from '../data/types';
 
@@ -96,6 +97,8 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [assignError, setAssignError] = useState('');
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskRev, setTaskRev] = useState(0);
 
   useEffect(() => {
     if (app) {
@@ -316,6 +319,19 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
               </section>
             )}
 
+            {internal && canRaiseRecordTasks(session) && (
+              <section className="rounded-2xl border border-line p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-display text-sm font-semibold text-heading">Follow-up work</h4>
+                    <p className="text-xs text-ink-soft">Delegate a task or escalate an issue. Assigned staff does not change.</p>
+                  </div>
+                  <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => setTaskOpen(true)}>Assign task or escalate</Button>
+                </div>
+                <RecordTaskHistory applicationId={app.id} rev={taskRev} className="mt-4 border-0 p-0" />
+              </section>
+            )}
+
             {internal && <ApplicationCommission applicationId={app.id} partnerId={app.partnerId} universityId={app.universityId} />}
 
             {internal && <ApplicationMilestones applicationId={app.id} deposit={app.depositStatus} cas={app.casStatus} />}
@@ -339,6 +355,10 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
           </div>
         </div>
       </div>
+      {internal && canRaiseRecordTasks(session) && (
+        <RecordTaskModal open={taskOpen} onClose={() => setTaskOpen(false)} applicationId={app.id}
+          recordLabel={`${app.ref} · ${fullName(student)}${uni ? ` — ${uni.name}` : ''}`} onSaved={() => setTaskRev((n) => n + 1)} />
+      )}
     </Modal>
   );
 }

@@ -4,7 +4,7 @@
 // make it (0027_hr_work_assets_documents.sql). HR documents live in a private bucket and are
 // opened only through 60-second signed links after the server records the download.
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Archive, ArchiveRestore, Briefcase, Download, Eye, EyeOff, FileText, History, Laptop, PackageCheck, PackagePlus, Pencil, Plus, Undo2, Upload, Users, XCircle } from 'lucide-react';
 import { Alert, Avatar, Badge, Button, Card, CardHeader, Checkbox, DatePicker, EmptyState, Field, FilterSelect, Input, Modal, PageHeader, Progress, SearchInput, Select, Table, Tabs, Textarea, usePaged, Pagination } from '../../components/ui';
 import { ExportButtons, KPI } from '../../components/hr';
@@ -319,6 +319,27 @@ function AssignmentHistory({ value, onClose }: { value: Assignment | null; onClo
 
 // ------------------------------------------------------------------ my assigned tasks
 
+/** Link to the Student / Application a task was raised from — only when this user can open that record. */
+function RelatedRecord({ a }: { a: Assignment }) {
+  const { db, session } = useStore();
+  if (!a.studentId && !a.applicationId && !a.related) return null;
+  const base = session?.role === 'admin' ? '/admin' : '/staff';
+  const app = a.applicationId ? db.applications.find((x) => x.id === a.applicationId) : undefined;
+  const student = a.studentId ? db.students.find((x) => x.id === a.studentId) : undefined;
+  const to = app ? `${base}/applications?open=${app.id}` : student ? `${base}/students/${student.id}` : null;
+  return (
+    <p className="mt-1 text-xs text-ink-soft">
+      Related: {to ? <Link to={to} className="font-medium text-rust hover:underline">{a.related ?? 'Open record'}</Link> : <span className="font-medium text-heading">{a.related}</span>}
+    </p>
+  );
+}
+
+const dueLabel = (a: Assignment, today: string) => {
+  if (!isOpen(a)) return null;
+  const d = istDate(a.due);
+  return d < today ? { text: 'Overdue', tone: 'red' as const } : d === today ? { text: 'Due today', tone: 'amber' as const } : { text: 'Upcoming', tone: 'slate' as const };
+};
+
 export function MyAssignedTasks() {
   const { data, now } = useHR();
   const lk = useHRLookup();
@@ -365,12 +386,16 @@ export function MyAssignedTasks() {
                   <Badge tone={priorityTone[a.priority]}>{a.priority}</Badge>
                 </div>
                 {a.description && <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-ink-soft">{a.description}</p>}
-                {a.related && <p className="mt-1 text-xs text-ink-soft">Related: <span className="font-medium text-heading">{a.related}</span></p>}
+                {a.category === 'escalation' && a.escalationReason && <p className="mt-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">Reason: {a.escalationReason}</p>}
+                <RelatedRecord a={a} />
+                {a.notes && <p className="mt-1 text-xs text-ink-soft">Notes: {a.notes}</p>}
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
-                  <Badge tone={statusTone[a.status]}>{a.status}</Badge>
+                  {a.category === 'escalation' && <Badge tone="amber">Escalation</Badge>}
+                  <Badge tone={statusTone[a.status]}>{a.category === 'escalation' && a.status === 'Not Started' ? 'Awaiting your response' : a.status === 'Not Started' ? 'Pending' : a.status}</Badge>
+                  {(() => { const l = dueLabel(a, today); return l && <Badge tone={l.tone}>{l.text}</Badge>; })()}
                   {a.startDate && a.startDate > today && <span>Planned {fmtDay(a.startDate)} ·</span>}
                   <span className={cn(late && 'font-semibold text-red-600')}>Due {fmtDay(istDate(a.due))}{late ? ' · overdue' : ''}</span>
-                  {ownTask(a) ? <span>· added by you {fmtDay(istDate(a.createdAt))}</span> : a.assignedBy && <span>· from {lk.name(a.assignedBy)}</span>}
+                  {ownTask(a) ? <span>· added by you {fmtDay(istDate(a.createdAt))}</span> : a.assignedBy && <span>· from {lk.name(a.assignedBy)} on {fmtDay(istDate(a.createdAt))}</span>}
                 </div>
                 <div className="mt-3 flex items-center gap-2"><Progress value={a.progress} className="dark:bg-white/10" /><span className="w-9 text-right text-xs tabular-nums text-ink-soft">{a.progress}%</span></div>
                 <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-line pt-3">

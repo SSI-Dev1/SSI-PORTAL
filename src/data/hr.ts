@@ -359,6 +359,11 @@ export interface Assignment {
   origin?: 'pending_work' | 'tomorrows_plan' | null;
   related?: string | null;
   notes?: string | null;
+  /** 0059: raised from a Student / Application (Assign Task or Escalate). */
+  category?: 'task' | 'escalation' | null;
+  studentId?: string | null;
+  applicationId?: string | null;
+  escalationReason?: string | null;
 }
 export interface TaskEvent { id: string; taskId: string; at: string; actor: string | null; action: string; detail: Record<string, unknown> | null }
 

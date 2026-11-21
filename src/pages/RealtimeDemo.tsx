@@ -7,6 +7,7 @@ import { Button } from '../components/ui';
 import { PartnerDialog } from './admin/UserManagement';
 import { CatalogueImportDialog } from '../components/catalogue';
 import { ApplicationDetailsModal } from '../components/ApplicationDetailsModal';
+import { RecordTaskModal } from '../components/RecordTaskModal';
 import type { Application } from '../data/types';
 import type { Activity } from '../data/types';
 
@@ -33,6 +34,7 @@ export default function RealtimeDemo() {
   const [open, setOpen] = useState(false);
   const [imp, setImp] = useState(false);
   const [app, setApp] = useState(false);
+  const [task, setTask] = useState(false);
   return (
     <div className="min-h-screen space-y-4 bg-canvas p-6 lg:p-10">
       <div className="flex flex-wrap gap-2">
@@ -46,9 +48,11 @@ export default function RealtimeDemo() {
         <Button variant="secondary" onClick={() => setOpen(true)}>Open Add Partner form</Button>
         <Button variant="secondary" onClick={() => setImp(true)}>Open course import</Button>
         <Button variant="secondary" onClick={() => setApp(true)}>Open application details</Button>
+        <Button variant="secondary" onClick={() => setTask(true)}>Assign task or escalate</Button>
       </div>
       <LiveActivity items={items} />
       <ApplicationDetailsModal app={app ? sampleApp : undefined} onClose={() => setApp(false)} />
+      <RecordTaskModal open={task} onClose={() => setTask(false)} applicationId={sampleApp.id} recordLabel={`${sampleApp.ref} · Sample Student A — Sample University`} />
       <CatalogueImportDialog open={imp} onClose={() => setImp(false)} />
       <PartnerDialog open={open} onClose={() => setOpen(false)} onCreated={async () => setOpen(false)} />
     </div>

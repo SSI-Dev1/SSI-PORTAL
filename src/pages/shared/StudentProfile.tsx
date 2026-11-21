@@ -10,6 +10,7 @@ import {
   FileUp,
   Globe2,
   GraduationCap,
+  ListChecks,
   Mail,
   MapPin,
   Pencil,
@@ -31,6 +32,7 @@ import { studentTone } from './Students';
 import { docTone } from './Documents';
 import { partnerCan } from '../../auth/roles';
 import { StudentActivityCard } from '../../components/StudentActivity';
+import { RecordTaskHistory, RecordTaskModal, canRaiseRecordTasks } from '../../components/RecordTaskModal';
 
 type Tab = 'overview' | 'applications' | 'documents';
 
@@ -47,6 +49,8 @@ export default function StudentProfile() {
   const [newApp, setNewApp] = useState(false);
   const [upload, setUpload] = useState(false);
   const [openApp, setOpenApp] = useState<string>();
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskRev, setTaskRev] = useState(0);
 
   const s = scoped.students.find((x) => x.id === id);
   if (!s)
@@ -196,6 +200,10 @@ export default function StudentProfile() {
                 ))}
               </div>
             </Card>
+            {canRaiseRecordTasks(session) && (
+              <Button variant="secondary" icon={ListChecks} className="w-full" onClick={() => setTaskOpen(true)}>Assign task or escalate</Button>
+            )}
+            {canRaiseRecordTasks(session) && <RecordTaskHistory studentId={s.id} rev={taskRev} className="bg-surface" />}
             {canDelete && (
               <Button variant="ghost" icon={Trash2} className="w-full text-red-600 hover:bg-red-50 hover:text-red-700" onClick={remove}>
                 Delete student
@@ -203,6 +211,7 @@ export default function StudentProfile() {
             )}
           </div>
           {session?.role !== 'client' && <StudentActivityCard studentId={s.id} apps={apps} />}
+          <RecordTaskModal open={taskOpen} onClose={() => setTaskOpen(false)} studentId={s.id} recordLabel={`Student · ${fullName(s)}`} onSaved={() => setTaskRev((n) => n + 1)} />
         </div>
       )}
 

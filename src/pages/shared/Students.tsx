@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, FilePlus2, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
+import { Eye, FilePlus2, ListChecks, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { Avatar, Badge, Button, Card, EmptyState, FilterSelect, Menu, PageHeader, Pagination, SearchInput, Table, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { StudentForm } from '../../components/forms/StudentForm';
@@ -10,6 +10,7 @@ import { COUNTRIES } from '../../data/seed';
 import type { Student, StudentStatus } from '../../data/types';
 import { countryFlag, formatDate, fullName, matches, type Tone } from '../../lib/utils';
 import { partnerCan, type PartnerPermission } from '../../auth/roles';
+import { RecordTaskModal, canRaiseRecordTasks } from '../../components/RecordTaskModal';
 
 export const studentTone: Record<StudentStatus, Tone> = { Lead: 'blue', Active: 'green', Enrolled: 'navy', 'On Hold': 'amber' };
 
@@ -30,6 +31,7 @@ export default function Students() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | undefined>();
   const [appFor, setAppFor] = useState<string | undefined>();
+  const [taskFor, setTaskFor] = useState<Student | null>(null);
 
   useEffect(() => {
     if (params.get('new') === '1') {
@@ -162,6 +164,7 @@ export default function Students() {
                         { label: 'View profile', icon: Eye, onClick: () => navigate(`${scoped.base}/students/${s.id}`) },
                         ...(can('students.edit') ? [{ label: 'Edit student', icon: Pencil, onClick: () => { setEditing(s); setFormOpen(true); } }] : []),
                         ...(can('applications.create') ? [{ label: 'New application', icon: FilePlus2, onClick: () => setAppFor(s.id) }] : []),
+                        ...(canRaiseRecordTasks(session) ? [{ label: 'Assign task or escalate', icon: ListChecks, onClick: () => setTaskFor(s) }] : []),
                         ...(canDelete ? [{ label: 'Delete', icon: Trash2, onClick: () => remove(s), danger: true }] : []),
                       ]}
                     />
@@ -176,6 +179,7 @@ export default function Students() {
 
       <StudentForm open={formOpen} onClose={() => setFormOpen(false)} student={editing} onSaved={(id) => !editing && navigate(`${scoped.base}/students/${id}`)} />
       <ApplicationForm open={!!appFor} onClose={() => setAppFor(undefined)} studentId={appFor} onSaved={() => navigate(`${scoped.base}/applications`)} />
+      <RecordTaskModal open={!!taskFor} onClose={() => setTaskFor(null)} studentId={taskFor?.id} recordLabel={taskFor ? `Student · ${fullName(taskFor)}` : ''} />
     </>
   );
 }

@@ -1,14 +1,14 @@
 // Development-only gallery (route #/ui/live): the Live Activity table, the Add Partner
 // form and the course import dialog, for visual checks without signing in. The rows below are clearly fake sample data
 // and this file is excluded from production builds.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { LiveActivity } from '../components/LiveActivity';
 import { Button } from '../components/ui';
 import { PartnerDialog } from './admin/UserManagement';
 import { CatalogueImportDialog } from '../components/catalogue';
 import { ApplicationDetailsModal } from '../components/ApplicationDetailsModal';
-import { RecordTaskModal } from '../components/RecordTaskModal';
-import type { Application } from '../data/types';
+import { StoreContext, useStore } from '../store/store';
+import type { Application, Session } from '../data/types';
 import type { Activity } from '../data/types';
 
 const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -34,7 +34,20 @@ export default function RealtimeDemo() {
   const [open, setOpen] = useState(false);
   const [imp, setImp] = useState(false);
   const [app, setApp] = useState(false);
-  const [task, setTask] = useState(false);
+  // Application details as an employee of each portal (sample sessions; the server is not called with them).
+  const [as, setAs] = useState<'admin' | 'po' | 'sirm' | 'pso' | 'app'>('admin');
+  const real = useStore();
+  const asStaff = useMemo(() => {
+    const base = { userId: 'demo-user', email: '', partnerModules: [], employee: true } as const;
+    const s: Record<typeof as, Session> = {
+      admin: { ...base, role: 'admin', userRole: 'super_admin', name: 'Sample Admin', title: 'Super Admin', permissions: ['applications', 'students'] } as unknown as Session,
+      po: { ...base, role: 'admin', userRole: 'admin_staff', name: 'Sample Partnerships', title: 'Partnership Officer', permissions: ['applications', 'agency_outreach'] } as unknown as Session,
+      sirm: { ...base, role: 'admin', userRole: 'admin_staff', name: 'Sample Senior IRM', title: 'Senior IRM', permissions: ['applications', 'students'] } as unknown as Session,
+      pso: { ...base, role: 'staff', userRole: 'support_staff', name: 'Sample PSO', title: 'Partner Success Officer', permissions: ['applications', 'partner_success'] } as unknown as Session,
+      app: { ...base, role: 'staff', userRole: 'application_manager', name: 'Sample Application Team', title: 'Application Team', permissions: ['applications'] } as unknown as Session,
+    };
+    return { ...real, session: s[as] };
+  }, [real, as]);
   return (
     <div className="min-h-screen space-y-4 bg-canvas p-6 lg:p-10">
       <div className="flex flex-wrap gap-2">
@@ -48,11 +61,15 @@ export default function RealtimeDemo() {
         <Button variant="secondary" onClick={() => setOpen(true)}>Open Add Partner form</Button>
         <Button variant="secondary" onClick={() => setImp(true)}>Open course import</Button>
         <Button variant="secondary" onClick={() => setApp(true)}>Open application details</Button>
-        <Button variant="secondary" onClick={() => setTask(true)}>Assign task or escalate</Button>
+        <select aria-label="Open application details as" value={as} onChange={(e) => setAs(e.target.value as typeof as)} className="rounded-xl border border-line bg-surface px-3 text-sm">
+          <option value="admin">as Admin</option><option value="po">as Partnership Officer</option><option value="sirm">as Senior IRM</option>
+          <option value="pso">as Partner Success Officer</option><option value="app">as Application Team</option>
+        </select>
       </div>
       <LiveActivity items={items} />
-      <ApplicationDetailsModal app={app ? sampleApp : undefined} onClose={() => setApp(false)} />
-      <RecordTaskModal open={task} onClose={() => setTask(false)} applicationId={sampleApp.id} recordLabel={`${sampleApp.ref} · Sample Student A — Sample University`} />
+      <StoreContext.Provider value={asStaff}>
+        <ApplicationDetailsModal app={app ? sampleApp : undefined} onClose={() => setApp(false)} />
+      </StoreContext.Provider>
       <CatalogueImportDialog open={imp} onClose={() => setImp(false)} />
       <PartnerDialog open={open} onClose={() => setOpen(false)} onCreated={async () => setOpen(false)} />
     </div>

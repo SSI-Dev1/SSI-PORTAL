@@ -178,6 +178,13 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
       size="wide"
       dirty={dirty}
       onClose={onClose}
+      headerActions={internal && canRaiseRecordTasks(session) ? (
+        // Same place in every portal (Admin, Partnerships, Senior IRM, Partner Success, Application Team …).
+        // Who can be chosen is decided by the server from the employee's permissions and reporting line.
+        <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => setTaskOpen(true)} className="sm:-mt-1">
+          Assign Task or Escalate
+        </Button>
+      ) : undefined}
       title={
         <span className="flex flex-wrap items-center gap-2">
           {app.ref} <StatusBadge status={app.status} />
@@ -319,18 +326,7 @@ export function ApplicationDetailsModal({ app, onClose }: { app?: Application; o
               </section>
             )}
 
-            {internal && canRaiseRecordTasks(session) && (
-              <section className="rounded-2xl border border-line p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h4 className="font-display text-sm font-semibold text-heading">Follow-up work</h4>
-                    <p className="text-xs text-ink-soft">Delegate a task or escalate an issue. Assigned staff does not change.</p>
-                  </div>
-                  <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => setTaskOpen(true)}>Assign task or escalate</Button>
-                </div>
-                <RecordTaskHistory applicationId={app.id} rev={taskRev} className="mt-4 border-0 p-0" />
-              </section>
-            )}
+            {internal && canRaiseRecordTasks(session) && <RecordTaskHistory applicationId={app.id} rev={taskRev} />}
 
             {internal && <ApplicationCommission applicationId={app.id} partnerId={app.partnerId} universityId={app.universityId} />}
 

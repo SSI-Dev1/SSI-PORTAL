@@ -316,11 +316,14 @@ export function Modal({
   footer,
   size = 'md',
   dirty,
+  headerActions,
 }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   subtitle?: ReactNode;
+  /** Actions in the header toolbar, next to the close button (same place on desktop and phones). */
+  headerActions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   /** `wide`: ~960px detail view; full screen on phones. */
@@ -363,14 +366,16 @@ export function Modal({
             )}
             tabIndex={-1}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-line px-6 py-5">
+              <div className="min-w-0 flex-1">
                 <h2 id={titleId} className="font-display text-lg font-semibold text-heading">
                   {title}
                 </h2>
                 {subtitle && <p className="mt-0.5 text-sm text-ink-soft">{subtitle}</p>}
               </div>
-              <IconButton icon={X} label="Close" onClick={requestClose} className="-mr-2 -mt-1" />
+              {/* Phones: actions on their own row under the title; wider screens: beside the close button. */}
+              {headerActions && <div className="order-last flex w-full items-start gap-2 sm:order-none sm:w-auto">{headerActions}</div>}
+              <IconButton icon={X} label="Close" onClick={requestClose} className="-mr-2 -mt-1 shrink-0" />
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
             {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line bg-canvas/60 px-6 py-4">{footer}</div>}

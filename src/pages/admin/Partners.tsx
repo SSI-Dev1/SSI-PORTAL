@@ -125,7 +125,9 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
     () =>
       live
         .filter((p) => inTab(p, tab))
-        .filter((p) => matches(q, p.name, p.code, p.city, p.contactName, p.email))
+        // Also by the linked agency (Agency List name, AG- reference, contact, email, phone): a client record
+        // linked to an agency under another name is still found by the agency's name.
+        .filter((p) => { const ag = agencyOf.get(p.id); return matches(q, p.name, p.code, p.city, p.contactName, p.email, ag?.company_name ?? '', ag?.reference ?? '', ag?.contact_name ?? '', ag?.email ?? '', ag?.phone ?? ''); })
         .filter((p) => !status || p.status === status)
         .filter((p) => !tier || p.tier === tier)
         .filter((p) => !country || p.country === country)
@@ -133,7 +135,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
         .filter((p) => matchesType(ptype(p), typeF))
         .filter((p) => !subF || (subF === 'none' ? !subOf(p) : subOf(p) === subF)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [db.partners, q, status, tier, activeOnly, tab, country, officerF, typeF, subF, statusMap, session?.userId],
+    [db.partners, q, status, tier, activeOnly, tab, country, officerF, typeF, subF, statusMap, session?.userId, agencyOf],
   );
   const countries = [...new Set([...live.map((p) => p.country), ...(onboarded ?? []).map((a) => a.country ?? '')].filter(Boolean))].sort();
   const officers = [...new Set([...live.map((p) => p.partnershipOfficerId), ...(onboarded ?? []).map((a) => a.assigned_officer)].filter(Boolean) as string[])];

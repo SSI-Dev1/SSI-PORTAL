@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Card, CardHeader, Checkbox, Field, Modal, Select,
 import { useToast } from './feedback';
 import { supabase } from '../auth/auth';
 import { rpc } from '../lib/agencies';
+import { prepareUpload, UploadError } from '../lib/files';
 import { cn } from '../lib/utils';
 
 interface Plan { action: 'none' | 'link' | 'create' | 'conflict'; reason: string; partner_id?: string; partner_name?: string; candidates?: { id: string; name: string }[] }
@@ -152,47 +153,161 @@ export function OnboardingProgress({ agencyId, rev }: { agencyId: string; rev?: 
   );
 }
 
-// ------------------------------------------------------------------ one-click verification (0062)
-type VerifyResult = { status: 'created' | 'linked' | 'already' | 'review'; partner_id: string | null; partner_name: string | null; reason: string | null; candidates?: { id: string; name: string }[] };
+// ------------------------------------------------------------------ Complete Historical Onboarding (0065)
+type CompleteResult = { status: 'completed' | 'attached' | 'repeat'; partner_id: string | null; partner_name: string | null; version?: number; from?: string };
+interface AgencyFacts { stage: string; source: string | null; source_status: string | null; historical_status: string | null; partner_id: string | null;
+  historical_original_date: string | null; historical_evidence: string | null }
+interface MouDoc { id: string; file_name: string; version: number; uploaded_at: string; storage_path: string }
+const STAGE_LABEL: Record<string, string> = { new_prospect: 'New prospect', contacted: 'Contacted', proposal_sent: 'Proposal sent', mou_sent: 'MOU sent',
+  approved: 'Approved', onboarded: 'Onboarded', closed: 'Closed', inactive: 'Inactive' };
+const DOC_BUCKET = 'agency-documents';
 
-/** Verify → Done. Uses the agency's own record: links its exact client match or creates its client record.
- *  No partner search, no login, no password, no email. Conflicts are flagged for review, never guessed. */
+/** Opens a stored MOU through a 60-second signed link (private storage, staff only). */
+export async function openAgencyDocument(path: string) {
+  if (!supabase) return;
+  const { data } = await supabase.storage.from(DOC_BUCKET).createSignedUrl(path, 60);
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+/** The agency's historical MOUs (newest version first). */
+export function useAgencyMous(agencyId: string, rev?: unknown) {
+  const [docs, setDocs] = useState<MouDoc[]>([]);
+  useEffect(() => {
+    if (!supabase) return;
+    let alive = true;
+    void supabase.from('agency_documents').select('id,file_name,version,uploaded_at,storage_path').eq('agency_id', agencyId).eq('kind', 'historical_mou')
+      .order('version', { ascending: false }).then(({ data }) => { if (alive) setDocs((data ?? []) as MouDoc[]); });
+    return () => { alive = false; };
+  }, [agencyId, rev]);
+  return docs;
+}
+
+/** Complete Historical Onboarding: review the agency, attach the existing MOU, confirm — done. The agency
+ *  becomes Onboarded and is added to Clients & Partnerships in the same step; no second approval, no
+ *  partner search, no login, password or email. Already onboarded: the MOU is attached without restarting. */
 export function VerifyHistoricalDialog({ agency, onClose, onDone }: {
   agency: { id: string; name: string; reference: string; status?: string }; onClose: () => void; onDone?: () => void;
 }) {
   const toast = useToast();
+  const [facts, setFacts] = useState<AgencyFacts | null>(null);
+  const docs = useAgencyMous(agency.id);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [fileErr, setFileErr] = useState('');
+  const [originalDate, setOriginalDate] = useState('');
+  const [emailRef, setEmailRef] = useState('');
+  const [notes, setNotes] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [belongs, setBelongs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [res, setRes] = useState<VerifyResult | null>(null);
-  const [review, setReview] = useState(false);
-  const verify = async () => {
+  const [res, setRes] = useState<CompleteResult | null>(null);
+  const requestId = useMemo(() => crypto.randomUUID(), []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    void supabase.from('agency_prospects').select('stage,source,source_status,historical_status,partner_id,historical_original_date,historical_evidence')
+      .eq('id', agency.id).maybeSingle().then(({ data }) => setFacts((data ?? null) as AgencyFacts | null));
+  }, [agency.id]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  const already = facts?.stage === 'onboarded';
+  const pick = async (f: File | undefined) => {
+    setFileErr(''); setBelongs(false);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null); setFile(null);
+    if (!f) return;
+    try {
+      const p = await prepareUpload(f);
+      if (p.ext !== 'pdf') throw new UploadError('Attach the MOU as a PDF.');
+      setFile(f);
+      setPreview(URL.createObjectURL(f));
+    } catch (e) {
+      setFileErr(e instanceof UploadError ? e.message : 'This file cannot be used.');
+    }
+  };
+
+  const complete = async () => {
+    if (!file || !confirmed || !belongs || busy || !supabase) return;
     setBusy(true); setErr('');
-    const r = await rpc<VerifyResult>('verify_historical_agency', { p_id: agency.id });
+    const path = `${agency.id}/${crypto.randomUUID()}.pdf`;
+    const up = await supabase.storage.from(DOC_BUCKET).upload(path, file, { contentType: 'application/pdf', upsert: false });
+    if (up.error) { setBusy(false); return setErr('The MOU could not be uploaded. Check the file and try again.'); }
+    const r = await rpc<CompleteResult>('complete_historical_onboarding', {
+      p_id: agency.id, p_path: path, p_file_name: file.name, p_size: file.size, p_confirm: true,
+      p_original_date: originalDate || null, p_email_ref: emailRef.trim() || null, p_notes: notes.trim() || null, p_request: requestId,
+    });
     setBusy(false);
-    if (!r.ok) return setErr(/verify_historical_agency|schema cache|0034/.test(r.error) ? 'Run migration 0062 to enable one-click verification.' : r.error);
+    if (!r.ok) {
+      void supabase.storage.from(DOC_BUCKET).remove([path]);   // nothing was recorded: remove the upload
+      return setErr(r.error);
+    }
     setRes(r.data);
     onDone?.();
-    if (r.data.status !== 'review') toast.success('Historical onboarding verified', `${agency.name} is now in Clients & Partnerships. No login or email was created.`);
+    toast.success(r.data.status === 'attached' ? 'MOU attached' : 'Historical onboarding completed',
+      r.data.status === 'attached' ? `${agency.name} stays onboarded; the MOU is on its record.` : `${agency.name} has been added to Clients & Partnerships. No login or email was created.`);
   };
-  if (review) return <ReconcileDialog ids={[agency.id]} onClose={onClose} onDone={onDone} />;
-  const done = res && res.status !== 'review';
+
+  if (res) {
+    return (
+      <Modal open onClose={onClose} title={res.status === 'attached' ? 'MOU attached' : 'Historical Onboarding Completed'} subtitle={`${agency.name} · ${agency.reference}`}
+        footer={<Button onClick={onClose}>Done</Button>}>
+        <Alert tone="success">
+          {res.status === 'attached' ? 'The MOU is attached to the existing record. Onboarding was not restarted.' : 'The Agency has been added to Clients and Partnerships.'}
+          {res.partner_name ? ` Client record: ${res.partner_name}.` : ''}
+        </Alert>
+        <p className="mt-3 text-sm text-ink-soft">Portal access is separate: no partner login, password or email was created.</p>
+      </Modal>
+    );
+  }
+  const canSubmit = !!file && confirmed && belongs && !busy;
   return (
-    <Modal open onClose={onClose} title="Verify historical onboarding" subtitle={`${agency.name} · ${agency.reference}`}
-      footer={done ? <Button onClick={onClose}>Done</Button> : res?.status === 'review' ? (
-        <><Button variant="ghost" onClick={onClose}>Close</Button><Button variant="secondary" onClick={() => setReview(true)}>Review matches…</Button></>
-      ) : (
-        <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} disabled={busy} onClick={() => void verify()}>Verify</Button></>
-      )}>
+    <Modal open onClose={onClose} title={already ? 'Attach historical MOU' : 'Complete Historical Onboarding'} subtitle={`${agency.name} · ${agency.reference}`}
+      dirty={!!file || !!notes.trim()}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button loading={busy} disabled={!canSubmit} onClick={() => void complete()}>{already ? 'Attach MOU' : 'Verify and Complete'}</Button></>}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-ink-mute">Agency</dt><dd className="font-semibold text-heading">{agency.name}</dd>
-        <dt className="text-ink-mute">Agency ID</dt><dd className="text-heading">{agency.reference}</dd>
-        <dt className="text-ink-mute">Historical onboarding</dt>
-        <dd>{done ? <Badge tone="green" dot>Verified · in Clients & Partnerships</Badge> : <Badge tone="amber" dot>{agency.status ?? 'Historically onboarded · pending verification'}</Badge>}</dd>
+        <dt className="text-ink-mute">Current status</dt><dd className="text-heading">{facts ? STAGE_LABEL[facts.stage] ?? facts.stage : '…'}{facts?.source_status ? ` · original sheet: “${facts.source_status}”` : ''}</dd>
+        <dt className="text-ink-mute">Onboarding</dt>
+        <dd>{facts?.partner_id ? <Badge tone="green" dot>In Clients & Partnerships</Badge> : already ? <Badge tone="amber" dot>Onboarded · not in Clients & Partnerships yet</Badge> : <Badge tone="slate" dot>Not onboarded in the CRM</Badge>}</dd>
+        {docs.length > 0 && <><dt className="text-ink-mute">MOU on file</dt><dd className="space-y-1">{docs.map((d) => (
+          <button key={d.id} type="button" className="block text-left text-rust underline-offset-2 hover:underline" onClick={() => void openAgencyDocument(d.storage_path)}>{d.file_name} · v{d.version}</button>
+        ))}</dd></>}
       </dl>
-      {!res && <p className="mt-4 text-sm text-ink-soft">Verifying adds this agency to Clients & Partnerships using its own details, officer and history. No partner login, password or email is created — portal access stays a separate step.</p>}
-      {done && <Alert tone="success" className="mt-4">{res.status === 'created' ? 'Client record created' : res.status === 'linked' ? 'Linked to its existing client record' : 'Already in Clients & Partnerships'}{res.partner_name ? ` — ${res.partner_name}` : ''}.</Alert>}
-      {res?.status === 'review' && <Alert tone="warning" className="mt-4" title="Needs an administrator's review">{res.reason ?? 'A conflicting match was found.'} Nothing was linked; the agency is flagged for review.</Alert>}
-      {err && <Alert tone="error" className="mt-4">{err}</Alert>}
+
+      <div className="mt-5 space-y-4">
+        <Field label="Attach Existing MOU or Partnership Agreement" required hint={fileErr || 'PDF up to 10 MB — the signed copy exchanged by email. It is stored privately and not changed.'}>
+          <input type="file" accept="application/pdf,.pdf" aria-label="Attach Existing MOU or Partnership Agreement" onChange={(e) => void pick(e.target.files?.[0])}
+            className="block w-full text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-rust hover:file:bg-brand-100 dark:file:bg-brand-500/10" />
+        </Field>
+        {file && (
+          <div className="rounded-xl border border-line p-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 break-all font-medium text-heading">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>
+              {preview && <a href={preview} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-rust hover:underline">Preview</a>}
+            </div>
+            <div className="mt-2"><Checkbox checked={belongs} onCheckedChange={setBelongs} label={`This document belongs to ${agency.name}`} /></div>
+          </div>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Original partnership date" hint="Only if known">
+            <input type="date" value={originalDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setOriginalDate(e.target.value)}
+              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink dark:bg-canvas/50" />
+          </Field>
+          <Field label="Email reference" hint="Optional — e.g. subject and date">
+            <input value={emailRef} maxLength={500} onChange={(e) => setEmailRef(e.target.value)} placeholder="e.g. “Signed MOU” · 12 Jun 2024"
+              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink dark:bg-canvas/50" />
+          </Field>
+        </div>
+        <Field label="Historical notes" hint="Optional"><Textarea rows={2} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Checkbox checked={confirmed} onCheckedChange={setConfirmed}
+          label="I confirm that this Agency was previously approved and onboarded under SSI GLOBAL's historical partnership process." />
+        {!already && facts && facts.stage !== 'onboarded' && (
+          <p className="text-xs text-ink-mute">A proposal or MOU that was only sent is not enough — complete this only for a partnership that was actually agreed. Otherwise leave the agency at its current stage.</p>
+        )}
+        {err && <Alert tone="error">{err}</Alert>}
+      </div>
     </Modal>
   );
 }

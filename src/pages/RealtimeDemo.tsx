@@ -7,6 +7,7 @@ import { Button } from '../components/ui';
 import { PartnerDialog } from './admin/UserManagement';
 import { CatalogueImportDialog } from '../components/catalogue';
 import { ApplicationDetailsModal } from '../components/ApplicationDetailsModal';
+import { VerifyHistoricalDialog } from '../components/ClientReconcile';
 import { StoreContext, useStore } from '../store/store';
 import type { Application, Session } from '../data/types';
 import type { Activity } from '../data/types';
@@ -34,6 +35,7 @@ export default function RealtimeDemo() {
   const [open, setOpen] = useState(false);
   const [imp, setImp] = useState(false);
   const [app, setApp] = useState(false);
+  const [hist, setHist] = useState(false);
   // Application details as an employee of each portal (sample sessions; the server is not called with them).
   const [as, setAs] = useState<'admin' | 'po' | 'sirm' | 'pso' | 'app'>('admin');
   const real = useStore();
@@ -61,6 +63,7 @@ export default function RealtimeDemo() {
         <Button variant="secondary" onClick={() => setOpen(true)}>Open Add Partner form</Button>
         <Button variant="secondary" onClick={() => setImp(true)}>Open course import</Button>
         <Button variant="secondary" onClick={() => setApp(true)}>Open application details</Button>
+        <Button variant="secondary" onClick={() => setHist(true)}>Complete historical onboarding</Button>
         <select aria-label="Open application details as" value={as} onChange={(e) => setAs(e.target.value as typeof as)} className="rounded-xl border border-line bg-surface px-3 text-sm">
           <option value="admin">as Admin</option><option value="po">as Partnership Officer</option><option value="sirm">as Senior IRM</option>
           <option value="pso">as Partner Success Officer</option><option value="app">as Application Team</option>
@@ -70,6 +73,7 @@ export default function RealtimeDemo() {
       <StoreContext.Provider value={asStaff}>
         <ApplicationDetailsModal app={app ? sampleApp : undefined} onClose={() => setApp(false)} />
       </StoreContext.Provider>
+      {hist && <VerifyHistoricalDialog agency={{ id: 'demo-agency', name: 'Sample Agency (demo)', reference: 'AG-00-DEMO' }} onClose={() => setHist(false)} />}
       <CatalogueImportDialog open={imp} onClose={() => setImp(false)} />
       <PartnerDialog open={open} onClose={() => setOpen(false)} onCreated={async () => setOpen(false)} />
     </div>

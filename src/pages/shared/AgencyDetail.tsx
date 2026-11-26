@@ -1,7 +1,7 @@
 // Agency details: contact status, pipeline stage, follow-ups, proposals (commission from the
 // commission master, partner-facing values only), MOUs, registration progress and full history.
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, CalendarClock, CalendarPlus, MapPin, MoreHorizontal, CheckCircle2, Eye, FileSignature, Handshake, Link2, Mail, Pencil, PhoneCall, PhoneMissed, Send, StickyNote, UserCheck, UserCog, UserX, Users, XCircle,
   Trash2,
@@ -23,7 +23,7 @@ import {
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 import { ContactCorrection } from '../../components/ContactCorrection';
-import { OnboardingProgress, VerifyHistoricalDialog } from '../../components/ClientReconcile';
+import { OnboardingProgress, VerifyHistoricalDialog, openAgencyDocument, useAgencyMous } from '../../components/ClientReconcile';
 import { AgencyTypeBadge, AssignOfficerModal, AssignSubOfficerModal, OfficerHistory, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 // The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
@@ -67,6 +67,10 @@ export default function AgencyDetail() {
   const [busy, setBusy] = useState('');
 
   const a = data?.agencies.find((x) => x.id === id);
+  // Agency List → "Historical" opens Complete Historical Onboarding directly.
+  const [qs, setQs] = useSearchParams();
+  useEffect(() => { if (qs.get('historical') === '1') { setReconciling(true); const n = new URLSearchParams(qs); n.delete('historical'); setQs(n, { replace: true }); } }, [qs, setQs]);
+  const historicalMous = useAgencyMous(id, reconciling);   // historical MOUs (0065), re-read after the dialog closes
   const proposals = useMemo(() => (data?.proposals ?? []).filter((p) => p.prospect_id === id), [data, id]);
   const mous = useMemo(() => (data?.mous ?? []).filter((m) => m.prospect_id === id), [data, id]);
   const reg = a?.registration_id ? data?.registrations.find((r) => r.id === a.registration_id) : undefined;
@@ -127,6 +131,8 @@ export default function AgencyDetail() {
   if (!allowed) return <Card><EmptyState icon={Users} title="Agencies are not available" /></Card>;
   if (!data) return <div className="p-6 text-sm text-ink-soft" role="status">Loading agency…</div>;
   if (!a) return <Card><EmptyState icon={Users} title="Agency not found" description="It may have been assigned to someone else." action={<Button variant="secondary" onClick={() => navigate('..', { relative: 'path' })}>Back to Agencies</Button>} /></Card>;
+  // Historical onboarding is only for records that existed before the CRM (imported / already historical).
+  const historicalEligible = a.source === 'import' || !!a.historical_onboarded || a.onboarding_type === 'historical';
 
   const closed = a.stage === 'closed' || a.stage === 'onboarded';
   const openProposal = proposals.find((p) => ['draft', 'pending_approval', 'sending', 'delivery_failed', 'awaiting_confirmation'].includes(p.status));
@@ -164,11 +170,11 @@ export default function AgencyDetail() {
           title={HISTORICAL_STATUS[a.historical_status].label}>
           {a.historical_status === 'requested' ? a.historical_request_note : a.historical_reason}
           {a.historical_status === 'approved' && ` · reconciled ${fmtDate(a.historical_reviewed_at)}${a.historical_original_date ? ` · originally onboarded ${fmtDate(a.historical_original_date)}` : ' · original onboarding date not recorded'}`}
-          {canApproveHistorical && a.stage !== 'onboarded' && <Button size="sm" variant="secondary" className="ml-2" onClick={() => setHistorical('review')}>Review</Button>}
+          {canApproveHistorical && a.stage !== 'onboarded' && historicalEligible && <Button size="sm" variant="secondary" className="ml-2" onClick={() => setReconciling(true)}>Complete Historical Onboarding</Button>}
         </Alert>
       )}
-      {!a.historical_status && canApproveHistorical && a.stage !== 'onboarded' && a.stage !== 'closed' && (
-        <div className="mb-4 flex justify-end"><Button size="sm" variant="ghost" icon={HistoryIcon} onClick={() => setHistorical('review')}>Approve historical onboarding…</Button></div>
+      {!a.historical_status && canApproveHistorical && a.stage !== 'onboarded' && historicalEligible && (
+        <div className="mb-4 flex justify-end"><Button size="sm" variant="secondary" icon={HistoryIcon} onClick={() => setReconciling(true)}>Complete Historical Onboarding</Button></div>
       )}
       {historical === 'request' && <RequestHistoricalOnboarding agencyId={a.id} name={agencyName(a)} onClose={() => setHistorical(null)} onDone={() => void reload()} />}
       {historical === 'review' && <ReviewHistoricalOnboarding ids={[a.id]} onClose={() => setHistorical(null)} onDone={() => void reload()} />}
@@ -180,12 +186,15 @@ export default function AgencyDetail() {
       {a.stage === 'onboarded' && !a.partner_id && (
         <Alert tone="warning" className="mb-4" title="Onboarded, but not in Clients & Branches yet">
           This agency has no client record, so it does not appear in Clients & Branches or its search.
-          {canApproveHistorical ? ' Verify it to add it to Clients & Partnerships (no login, no email).' : ' An administrator verifies it.'}
-          {canApproveHistorical && <Button size="sm" className="ml-2" onClick={() => setReconciling(true)}>Verify historical onboarding</Button>}
+          {canApproveHistorical ? ' Complete its historical onboarding with the existing MOU to add it to Clients & Partnerships (no login, no email).' : ' An administrator completes it.'}
+          {canApproveHistorical && <Button size="sm" className="ml-2" onClick={() => setReconciling(true)}>Complete Historical Onboarding</Button>}
         </Alert>
       )}
       {reconciling && <VerifyHistoricalDialog agency={{ id: a.id, name: agencyName(a), reference: a.reference }} onClose={() => setReconciling(false)} onDone={() => void reload()} />}
-      {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
+      {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.
+        {historicalMous.length > 0 && <> Historical MOU: {historicalMous.map((d, i) => <span key={d.id}>{i ? ', ' : ' '}<button type="button" className="underline" onClick={() => void openAgencyDocument(d.storage_path)}>{d.file_name} (v{d.version})</button></span>)}.</>}
+        {canApproveHistorical && historicalEligible && <Button size="sm" variant="secondary" className="ml-2" onClick={() => setReconciling(true)}>{historicalMous.length ? 'Replace historical MOU' : 'Attach historical MOU'}</Button>}
+      </Alert>}
 
       <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
         <Card className="min-w-0 lg:col-span-1">
@@ -362,7 +371,7 @@ export default function AgencyDetail() {
       {modal?.kind === 'edit' && <EditAgency a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'log' && <LogActivity a={a} kind={modal.log} task={modal.task} tasks={tasks ?? []} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'stage' && <ChangeStage a={a} hasSentMou={mous.some((m) => m.status === 'sent')} onClose={() => setModal(null)} onSaved={reload}
-        onHistorical={() => { setModal(null); setHistorical(canApproveHistorical ? 'review' : 'request'); }}
+        onHistorical={() => { setModal(null); if (canApproveHistorical && historicalEligible) setReconciling(true); else setHistorical('request'); }}
         onProposal={() => startProposal()} onMou={() => { const m = mous.find((x) => x.status === 'sent'); setModal(m ? { kind: 'sign', m } : { kind: 'mou' }); }} />}
       {modal?.kind === 'mou' && <RecordMou a={a} onClose={() => setModal(null)} onSaved={reload} />}
       {modal?.kind === 'sign' && <UpdateMou m={modal.m} onClose={() => setModal(null)} onSaved={reload} />}

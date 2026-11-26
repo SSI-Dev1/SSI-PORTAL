@@ -147,7 +147,13 @@ export default function Agencies({ addNew = false }: { addNew?: boolean }) {
                     <td className={`whitespace-nowrap text-sm ${overdue ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>{fmtDate(a.next_follow_up)}</td>
                     <td>{p ? <Badge tone={PROPOSAL[p.status].tone}>{PROPOSAL[p.status].label}</Badge> : <span className="text-xs text-ink-mute">{a.source === 'import' && ['proposal_sent', 'mou_sent'].includes(a.stage) ? 'Before the CRM' : '—'}</span>}</td>
                     <td className="text-sm">{reg ? reg.reference : a.registration_id ? 'Issued' : '—'}</td>
-                    <td><Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(a.id); }}>Open</Button></td>
+                    <td className="whitespace-nowrap">
+                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(a.id); }}>Open</Button>
+                      {canHistorical && !a.partner_id && (a.source === 'import' || a.historical_onboarded) && (
+                        <Button size="sm" variant="ghost" icon={History} title="Complete Historical Onboarding" aria-label={`Complete historical onboarding for ${a.company_name ?? a.reference}`}
+                          onClick={(e) => { e.stopPropagation(); navigate(`${a.id}?historical=1`); }}>Historical</Button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

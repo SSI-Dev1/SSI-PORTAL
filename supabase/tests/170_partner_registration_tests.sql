@@ -58,6 +58,10 @@ begin;
 select pg_temp.act_as(:super);
 select public.create_partner_registration('Sterling Education', null, null, 14, 'Met at the Kochi fair') as created \gset
 select (:'created'::jsonb ->> 'token') as tok, (:'created'::jsonb ->> 'id') as rid \gset
+-- the agreement step is covered by 390 / 480 (0063: no submission without an issued agreement)
+select pg_temp.trusted();
+update public.partner_registrations set agreement_required = false where id = :'rid';
+select pg_temp.act_as(:super);
 select pg_temp.check(:'tok' ~ '^[0-9a-f]{64}$', 'a 64-character random token is returned once');
 select pg_temp.check((select token_hash <> :'tok' and token_hash = public.registration_token_hash(:'tok') and status = 'link_generated' and company_name = 'Sterling Education'
   from public.partner_registrations where id = :'rid'), 'only the hash of the token is stored; status Link generated');
@@ -122,6 +126,8 @@ commit;
 \echo '== approval and provisioning (TEST H, M)'
 begin;
 select id as rid from public.partner_registrations where status = 'submitted' and company_name = 'Sterling Education' \gset
+-- Agreement pending: approval alone does not onboard (0063 onboards once the agreement is countersigned — 480).
+update public.partner_registrations set agreement_required = true where id = :'rid';
 select pg_temp.act_as(:super);
 select pg_temp.denied(format($$select public.begin_registration_provisioning(%L, %L)$$, :'rid', :super), 'provisioning hooks are not callable by users', '%permission denied%');
 select public.approve_registration(:'rid', 'Good fit');
@@ -146,6 +152,7 @@ select pg_temp.act_as(:super);
 select public.create_partner_registration('Other Agency') as c2 \gset
 select (:'c2'::jsonb ->> 'token') as t2, (:'c2'::jsonb ->> 'id') as r2 \gset
 select pg_temp.trusted();
+update public.partner_registrations set agreement_required = false where id = :'r2';
 select public.submit_partner_registration(:'t2', '{"contact_full_name":"X Y"}', 'v1', 'k');
 select pg_temp.act_as(:super);
 select pg_temp.denied(format($$select public.reject_registration(%L, '')$$, :'r2'), 'rejecting needs an internal reason', '%internal reason%');

@@ -15,6 +15,8 @@
 //   my_agreement         download URL of the partner's own countersigned agreement
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.117.3';
 import { LAYOUTS, fillAgreement, inspectPdf, sha256, type Particulars } from '../_shared/agreementPdf.ts';
+import { annexureFromProposal } from '../_shared/annexurePdf.ts';
+import type { ProposalArrangement } from '../_shared/proposal.ts';
 import { sendViaBrevo, escapeHtml, type MailConfig } from '../_shared/credentials.ts';
 import { safeFileName, sha256Hex } from '../_shared/registration.ts';
 
@@ -87,6 +89,28 @@ async function supersede(admin: SupabaseClient, regId: string, kind: string, exc
 const event = (admin: SupabaseClient, regId: string, action: string, detail: Record<string, unknown> = {}, actor: string | null = null) =>
   admin.from('partner_registration_events').insert({ registration_id: regId, actor, action, detail });
 
+/** Annexure A from the proposal this agency accepted (0063); null when there is no accepted proposal with rates. */
+async function annexureFromAcceptedProposal(admin: SupabaseClient, reg: { id: string; reference: string; company_name: string }, templateId: string) {
+  const { data: agency } = await admin.from('agency_prospects').select('id').eq('registration_id', reg.id).limit(1).maybeSingle();
+  if (!agency) return null;
+  const { data: pr } = await admin.from('agency_proposals').select('id, reference, arrangement, confirmed_at, confirmed_name, company_name')
+    .eq('prospect_id', agency.id).eq('status', 'confirmed').order('confirmed_at', { ascending: false }).limit(1).maybeSingle();
+  if (!pr) return null;
+  let out: { bytes: Uint8Array; pages: number };
+  try {
+    out = await annexureFromProposal(pr.arrangement as ProposalArrangement, {
+      companyName: String(pr.company_name ?? reg.company_name), proposalReference: String(pr.reference), registrationReference: reg.reference,
+      confirmedAt: pr.confirmed_at ? new Date(String(pr.confirmed_at)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : null,
+      confirmedBy: (pr.confirmed_name as string | null) ?? null,
+    });
+  } catch {
+    return null;
+  }
+  const file = await storeFile(admin, reg.id, 'annexure', out.bytes, { name: `Annexure-A-${reg.reference}.pdf`, pages: out.pages, templateId });
+  await event(admin, reg.id, 'agreement_annexure_from_proposal', { proposal: pr.reference, version: file.version, sha256: file.sha256 });
+  return file;
+}
+
 const SIGNED_STATES = ['pending_review', 'approved_for_countersign', 'countersigned', 'sent', 'completed', 'rejected'];
 
 /**
@@ -106,11 +130,14 @@ export async function ensureAgreement(admin: SupabaseClient, reg: { id: string; 
   if (SIGNED_STATES.includes(ag.status)) return { required: true as const, status: ag.status as string };
 
   const { data: agency } = await admin.from('agency_prospects').select('agency_type').eq('registration_id', reg.id).limit(1).maybeSingle();
-  const type = (agency?.agency_type as string | null) ?? null;
-  if (!type) { await setStatus('template_missing', { agency_type: null }); return { required: true as const, status: 'template_missing', reason: 'type' }; }
+  // The agency's type, or the one a registration manager set on the registration (0063).
+  const type = (agency?.agency_type as string | null) ?? (ag.agency_type as string | null) ?? null;
+  if (!type) { await setStatus('template_missing'); return { required: true as const, status: 'template_missing', reason: 'type' }; }
   const { data: tpl } = await admin.from('agreement_templates').select('*').eq('agency_type', type).eq('status', 'approved').maybeSingle();
   if (!tpl) { await setStatus('template_missing', { agency_type: type }); return { required: true as const, status: 'template_missing', reason: 'template' }; }
-  const annexure = tpl.requires_annexure ? await currentFile(admin, reg.id, 'annexure') : null;
+  let annexure = tpl.requires_annexure ? await currentFile(admin, reg.id, 'annexure') : null;
+  // No Annexure A uploaded: build it from the accepted proposal's confirmed rates (0063).
+  if (tpl.requires_annexure && !annexure && !ag.annexure_resolution) annexure = await annexureFromAcceptedProposal(admin, reg, String(tpl.id));
   if (tpl.requires_annexure && !annexure && !ag.annexure_resolution) {
     await setStatus('annexure_missing', { agency_type: type, template_id: tpl.id });
     return { required: true as const, status: 'annexure_missing' };

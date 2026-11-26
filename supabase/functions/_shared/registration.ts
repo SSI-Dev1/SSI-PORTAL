@@ -54,12 +54,12 @@ export function linkEmail(kind: 'invite' | 'changes', company: string, url: stri
     : `You have been invited to register <b>${escapeHtml(company)}</b> as an SSI GLOBAL partner.`;
   const extra = changes && detail ? `<div style="background:#fff7e8;border-left:4px solid #FBA51E;padding:12px 14px;margin:14px 0;font-size:14px;line-height:1.5">
 <b>What to change:</b> ${escapeHtml(detail.reason ?? '')}${detail.fields?.length ? `<br><b>Fields:</b> ${escapeHtml(detail.fields.join(', '))}` : ''}${detail.instructions ? `<br>${escapeHtml(detail.instructions)}` : ''}</div>` : '';
-  const text = `${changes ? `SSI GLOBAL needs corrections to the partner registration for ${company}.${detail?.reason ? ` ${detail.reason}.` : ''}` : `You have been invited to register ${company} as an SSI GLOBAL partner.`}\n\nOpen your registration form: ${url}\nThe link expires on ${expires}.\n\nSubmitting the form does not create a partnership agreement or give portal access; SSI GLOBAL reviews every registration first.`;
+  const text = `${changes ? `SSI GLOBAL needs corrections to the partner registration for ${company}.${detail?.reason ? ` ${detail.reason}.` : ''}` : `You have been invited to register ${company} as an SSI GLOBAL partner.`}\n\nOpen your registration form: ${url}\nThe link expires on ${expires}.\n\nThe form includes the SSI GLOBAL Partnership Agreement (MOU): download it, sign it and upload the signed PDF before you submit. Submitting does not give portal access; SSI GLOBAL reviews and countersigns first.`;
   return {
     subject: changes ? `SSI GLOBAL — corrections needed for ${company}'s registration` : `SSI GLOBAL — partner registration for ${company}`,
     text,
     html: shell(title, `<p style="font-size:15px;line-height:1.5">${intro}</p>${extra}
 <p style="margin:20px 0"><a href="${escapeHtml(url)}" style="background:#B94A12;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:bold;display:inline-block">${changes ? 'Update registration' : 'Open registration form'}</a></p>
-<p style="font-size:13px;color:#5b6b73">This link is personal to ${escapeHtml(company)} and expires on ${escapeHtml(expires)}. Submitting the form does not create a partnership agreement or give portal access — SSI GLOBAL reviews every registration first.</p>`),
+<p style="font-size:13px;color:#5b6b73">This link is personal to ${escapeHtml(company)} and expires on ${escapeHtml(expires)}. The form includes the SSI GLOBAL Partnership Agreement (MOU): download it, sign it and upload the signed PDF before you submit. Submitting does not give portal access — SSI GLOBAL reviews and countersigns first.</p>`),
   };
 }

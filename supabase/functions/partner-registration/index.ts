@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
     }
     const { data, error } = await admin.rpc('submit_partner_registration', { p_token: token, p_answers: answers, p_form_version: FORM_VERSION, p_idempotency: idem });
     if (error) {
+      if (error.message.includes('AGREEMENT_NOT_READY')) return json(409, { error: 'SSI GLOBAL is still preparing your Partnership Agreement. Your answers are saved — you can submit as soon as the agreement is available to download and sign. SSI GLOBAL has been notified.', problems: { signed_agreement: 'Agreement not available yet' } }, origin);
       if (error.message.includes('AGREEMENT_REQUIRED')) return json(422, { error: 'Upload the signed Partnership Agreement before submitting.', problems: { signed_agreement: 'Upload the signed agreement' } }, origin);
       throw new Fail(409, 'This form can no longer be submitted. It may have been submitted already or the link was replaced.');
     }

@@ -190,6 +190,7 @@ select pg_temp.check((:'reg'::jsonb ->> 'state') = 'created' and (:'reg'::jsonb 
 select pg_temp.check((select registration_id is not null and stage = 'registration_pending' from public.agency_prospects where id = :'ag_name'), 'agency linked to its registration');
 select pg_temp.check((public.issue_registration_for_proposal(:'prop') ->> 'state') = 'exists', 'no second registration for the same agency');
 select (:'reg'::jsonb ->> 'token') as regtok, (:'reg'::jsonb ->> 'registration_id') as regid \gset
+update public.partner_registrations set agreement_required = false where id = :'regid';   -- agreement step: 390 / 480
 
 \echo '== registration and admin approval (TEST 9, 10)'
 select public.submit_partner_registration(:'regtok', '{"company_name":"Ravi Overseas"}', 'v1-2026-11', 'idem-1') is not null;
@@ -202,15 +203,15 @@ begin; select pg_temp.act_as(:admin);
 select public.start_registration_review(:'regid');
 select public.approve_registration(:'regid', 'ok');
 commit;
-select pg_temp.check((select stage = 'approved' from public.agency_prospects where id = :'ag_name'), 'approval reaches the agency');
+-- 0063: no agreement required here, so the approval completes business onboarding at once —
+-- the client record is created from the registration (no login); portal access stays separate.
 select pg_temp.trusted();
-insert into public.partners (id, name, code, contact_name, email, phone, city, status) values ('p_ravi', 'Ravi Overseas', 'RAVI', 'Ravi Kumar', 'ravi@example.com', '+91 9847000000', 'Kochi', 'Active');
-update public.partner_registrations set agreement_required = false where id = :'regid';   -- agreement step: 390
-select public.begin_registration_provisioning(:'regid', :admin) is not null;
-select public.finish_registration_provisioning(:'regid', 'p_ravi', gen_random_uuid(), :admin);
-select pg_temp.check((select stage = 'onboarded' and partner_id = 'p_ravi' from public.agency_prospects where id = :'ag_name'), 'activated: agency onboarded and linked to the partner (TEST 10)');
-select pg_temp.check((select partnership_officer_id = :po from public.partners where id = 'p_ravi'), 'the officer becomes the partner''s Partnership Officer');
-select pg_temp.check((select count(*) from public.agency_prospects where partner_id = 'p_ravi') = 1, 'one agency per partner');
+select pg_temp.check((select a.stage = 'onboarded' and o.name = 'Ravi Overseas' and not o.portal_enabled and o.status = 'Active'
+  from public.agency_prospects a join public.partners o on o.id = a.partner_id where a.id = :'ag_name'), 'approved: agency onboarded and in Clients & Partnerships, portal off (TEST 10)');
+select id as p_ravi from public.partners where name = 'Ravi Overseas' \gset
+select pg_temp.check((select partnership_officer_id = :po from public.partners where id = :'p_ravi'), 'the officer becomes the partner''s Partnership Officer');
+select pg_temp.check((select count(*) from public.agency_prospects where partner_id = :'p_ravi') = 1, 'one agency per partner');
+select pg_temp.check(not exists (select 1 from public.profiles where partner_id = :'p_ravi'), 'no login created by the approval');
 select pg_temp.denied(format($$select public.begin_registration_provisioning(%L, %L)$$, :'regid', :admin), 'a second activation is refused (no duplicate partner)', '%ALREADY_ACTIVATED%');
 
 \echo '== MOU, closing and the daily report (TEST 11)'

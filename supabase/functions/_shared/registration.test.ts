@@ -49,5 +49,5 @@ Deno.test('codes, tokens and emails', () => {
   assert(TOKEN_RE.test('a'.repeat(64)) && !TOKEN_RE.test('a'.repeat(63)) && !TOKEN_RE.test('A'.repeat(64)));
   assert(codeEmail('Agency <b>', '123456').html.includes('Agency &lt;b&gt;'));
   const m = linkEmail('changes', 'Agency', 'https://portal.ssiglobal.uk/#/partner-registration/abc', '1 Dec 2026', { reason: 'Address <missing>', fields: ['City'] });
-  assert(m.html.includes('Address &lt;missing&gt;') && m.text.includes('does not create a partnership agreement'));
+  assert(m.html.includes('Address &lt;missing&gt;') && m.text.includes('Partnership Agreement (MOU)') && m.text.includes('upload the signed PDF') && m.text.includes('does not give portal access'));
 });

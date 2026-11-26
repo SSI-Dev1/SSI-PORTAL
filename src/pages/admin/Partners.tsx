@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Eye, Globe, Globe2, History, Trash2, UserPlus, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
+import { Building2, Eye, FilterX, GitMerge, Globe, Globe2, History, Trash2, UserPlus, KeyRound, Link2, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, SlidersHorizontal } from 'lucide-react';
 import { Badge, Button, Card, Checkbox, EmptyState, Field, FilterSelect, Input, Menu, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs } from '../../components/ui';
 import { LogoMark } from '../../components/brand';
 import { useToast } from '../../components/feedback';
@@ -11,6 +11,7 @@ import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type 
 import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, LinkPartnerModal, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
 import { PartnerUserDialog } from './UserManagement';
 import { PermanentDeleteDialog } from '../../components/PermanentDelete';
+import { ReconcileDialog } from '../../components/ClientReconcile';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, initials, matches, type Tone } from '../../lib/utils';
@@ -73,6 +74,8 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
   const names = useOfficerNames(true);
   const appCounts = useApplicationCounts(true);
   const [linking, setLinking] = useState<OnboardedAgency | null>(null);
+  // Reconcile to Clients & Branches (0060): undefined = closed, null = every unlinked onboarded agency.
+  const [reconciling, setReconciling] = useState<string[] | null | undefined>(undefined);
   const canVerify = canManageRegistrations(realSession);
   const { rows: onboarded } = useOnboardedDirectory(true);
   const candidates = useOfficerCandidates(true);
@@ -118,6 +121,9 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
     }
   };
   const reviewAll = (onboarded ?? []).filter((a) => a.verification === 'pending' && matchesType(a.agency_type, typeF));
+  // Search and filters (the agency type is kept in the URL, so it can stay active unnoticed): one reset.
+  const filtersActive = !!(q || status || tier || country || officerF || typeF || subF);
+  const resetFilters = () => { setQ(''); setStatus(''); setTier(''); setCountry(''); setOfficerF(''); setSubF(''); setTypeF(''); };
   const reviewMine = reviewAll.filter((a) => a.assigned_officer === session?.userId);
   // Onboarded = onboarded organisations + onboarded agencies still to be linked: the dashboard KPI.
   const count = (k: DirTab) => (k === 'review' ? reviewAll.length : live.filter((p) => inTab(p, k) && matchesType(ptype(p), typeF)).length + (k === 'onboarded' ? reviewAll.length : k === 'mine' ? reviewMine.length : 0));
@@ -164,6 +170,11 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
         actions={
           <>
             <Segmented value={view} onChange={setView} options={[{ value: 'grid', label: 'Cards' }, { value: 'table', label: 'Table' }]} />
+            {canVerify && !manage && (
+              <Button variant="secondary" icon={GitMerge} onClick={() => setReconciling(null)}>
+                Reconcile historical clients{reviewAll.length ? ` (${reviewAll.length})` : ''}
+              </Button>
+            )}
             {canManageRegistrations(realSession) && (
               <Button variant="secondary" icon={Link2} onClick={() => navigate('registrations')}>
                 Partner Registrations
@@ -198,16 +209,23 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
             <FilterSelect label="Officer" value={officerF} onChange={setOfficerF} options={[{ value: '', label: 'Any officer' }, ...officers.map((o) => ({ value: o, label: officerName(o) }))]} />
             {tab !== 'review' && <FilterSelect label="All tiers" value={tier} onChange={setTier} options={['Platinum', 'Gold', 'Silver']} />}
             {tab === 'all' && <FilterSelect label="All statuses" value={status} onChange={setStatus} options={['Active', 'Onboarding', 'Inactive']} />}
+            {filtersActive && <Button size="sm" variant="ghost" icon={FilterX} onClick={resetFilters}>Reset filters</Button>}
           </div>
         </div>
       </Card>
 
       {tab === 'review' ? (
-        <PendingVerification rows={pending} loading={!onboarded} canVerify={canVerify} officerName={officerName} onLink={setLinking}
+        <PendingVerification rows={pending} loading={!onboarded} canVerify={canVerify} officerName={officerName} onLink={setLinking} onReconcile={(a) => setReconciling([a.agency_id])}
           onOpen={(a) => navigate(`../agencies/${a.agency_id}`, { relative: 'path' })} />
       ) : rows.length === 0 ? (
         <Card>
-          <EmptyState icon={Building2} title="No partners found" description="Try another search or add a new consultancy partner." action={canAdd ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
+          {pending.length > 0 && (tab === 'onboarded' || tab === 'mine' || tab === 'all') ? (
+            <EmptyState icon={Building2} title={`No client records match — ${pending.length} onboarded agenc${pending.length === 1 ? 'y' : 'ies'} below`}
+              description="These are onboarded in the Agency List but not linked to a client record yet. An administrator reconciles them to Clients & Branches." />
+          ) : (
+            <EmptyState icon={Building2} title="No partners found" description={filtersActive ? 'A search or filter is active.' : 'Try another search or add a new consultancy partner.'}
+              action={filtersActive ? <Button variant="secondary" icon={FilterX} onClick={resetFilters}>Reset filters</Button> : canAdd ? <Button icon={Plus} onClick={openAdd}>Add Partner</Button> : undefined} />
+          )}
         </Card>
       ) : view === 'grid' ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -306,10 +324,10 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
         </Card>
       )}
 
-      {(tab === 'onboarded' || tab === 'mine') && (tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending).length > 0 && (
+      {(tab === 'onboarded' || tab === 'mine' || tab === 'all') && (tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending).length > 0 && (
         <div className="mt-6">
           <h3 className="mb-2 font-display text-[15px] font-semibold text-heading">Onboarded — needs review</h3>
-          <PendingVerification rows={tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending} loading={false} canVerify={canVerify} officerName={officerName} onLink={setLinking}
+          <PendingVerification rows={tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending} loading={false} canVerify={canVerify} officerName={officerName} onLink={setLinking} onReconcile={(a) => setReconciling([a.agency_id])}
             onOpen={(x) => navigate(`../agencies/${x.agency_id}`, { relative: 'path' })} />
         </div>
       )}
@@ -343,6 +361,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
           setCreated(createdAccount('Partner account created for an existing client', email, password, delivery));
           await actions.reload();
         }} />
+      {reconciling !== undefined && <ReconcileDialog ids={reconciling} onClose={() => setReconciling(undefined)} onDone={() => void actions.reload(['partners'])} />}
       {linking && <LinkPartnerModal agency={linking} onClose={() => setLinking(null)}
         partners={live.filter((p) => !agencyOf.has(p.id)).map((p) => ({ id: p.id, name: p.name, status: p.status, portalEnabled: p.portalEnabled }))} />}
     </>
@@ -350,9 +369,9 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
 }
 
 // Historically onboarded agencies without a verified partner account: listed, never given portal access.
-function PendingVerification({ rows, loading, canVerify, officerName, onLink, onOpen }: {
+function PendingVerification({ rows, loading, canVerify, officerName, onLink, onReconcile, onOpen }: {
   rows: OnboardedAgency[]; loading: boolean; canVerify: boolean; officerName: (id: string | null) => string;
-  onLink: (a: OnboardedAgency) => void; onOpen: (a: OnboardedAgency) => void;
+  onLink: (a: OnboardedAgency) => void; onReconcile: (a: OnboardedAgency) => void; onOpen: (a: OnboardedAgency) => void;
 }) {
   if (loading) return <Card><div className="p-6 text-sm text-ink-soft" role="status">Loading onboarded agencies…</div></Card>;
   if (rows.length === 0) return <Card><EmptyState icon={History} title="Nothing waiting for verification" description="Onboarded agencies without a verified partner account appear here." /></Card>;
@@ -373,7 +392,8 @@ function PendingVerification({ rows, loading, canVerify, officerName, onLink, on
             </td>
             <td className="px-5 py-3.5 text-sm">{a.suggested_partner_name ? <span className="text-heading">{a.suggested_partner_name}</span> : <span className="text-ink-mute">—</span>}</td>
             <td className="whitespace-nowrap px-5 py-3.5 text-right">
-              {canVerify && <Button size="sm" className="mr-1.5" onClick={() => onLink(a)}>Verify…</Button>}
+              {canVerify && <Button size="sm" className="mr-1.5" onClick={() => onReconcile(a)}>Reconcile…</Button>}
+              {canVerify && <Button size="sm" variant="secondary" className="mr-1.5" onClick={() => onLink(a)}>Link manually…</Button>}
               <Button size="sm" variant="secondary" onClick={() => onOpen(a)}>Open agency</Button>
             </td>
           </tr>

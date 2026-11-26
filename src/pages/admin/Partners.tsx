@@ -8,10 +8,10 @@ import { useStore } from '../../store/store';
 import { useAuth } from '../../auth/AuthProvider';
 import { canAddPartner, canManageRegistrations } from '../../auth/roles';
 import { TYPE_FILTERS, agencyAccess, matchesType, partnershipFocused, rpc, type AgencyType, type AgencyTypeFilter } from '../../lib/agencies';
-import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, LinkPartnerModal, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
+import { AgencyTypeBadge, AssignSubOfficerModal, BUSINESS, useApplicationCounts, useOfficerNames, PORTAL, useOfficerCandidates, useOnboardedDirectory, usePartnerStatus, type BusinessStatus, type OnboardedAgency, type PortalStatus } from '../shared/AgencyBulk';
 import { PartnerUserDialog } from './UserManagement';
 import { PermanentDeleteDialog } from '../../components/PermanentDelete';
-import { ReconcileDialog } from '../../components/ClientReconcile';
+import { ReconcileDialog, VerifyHistoricalDialog } from '../../components/ClientReconcile';
 import { CredentialsOnce, PartnerDialog, createdAccount, type CreatedAccount } from './UserManagement';
 import type { Partner, PartnerStatus, PartnerTier } from '../../data/types';
 import { avatarColor, countryFlag, initials, matches, type Tone } from '../../lib/utils';
@@ -73,7 +73,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
   const [subF, setSubF] = useState('');
   const names = useOfficerNames(true);
   const appCounts = useApplicationCounts(true);
-  const [linking, setLinking] = useState<OnboardedAgency | null>(null);
+  const [verifying, setVerifying] = useState<OnboardedAgency | null>(null);
   // Reconcile to Clients & Branches (0060): undefined = closed, null = every unlinked onboarded agency.
   const [reconciling, setReconciling] = useState<string[] | null | undefined>(undefined);
   const canVerify = canManageRegistrations(realSession);
@@ -215,7 +215,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
       </Card>
 
       {tab === 'review' ? (
-        <PendingVerification rows={pending} loading={!onboarded} canVerify={canVerify} officerName={officerName} onLink={setLinking} onReconcile={(a) => setReconciling([a.agency_id])}
+        <PendingVerification rows={pending} loading={!onboarded} canVerify={canVerify} officerName={officerName} onVerify={setVerifying}
           onOpen={(a) => navigate(`../agencies/${a.agency_id}`, { relative: 'path' })} />
       ) : rows.length === 0 ? (
         <Card>
@@ -327,7 +327,7 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
       {(tab === 'onboarded' || tab === 'mine' || tab === 'all') && (tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending).length > 0 && (
         <div className="mt-6">
           <h3 className="mb-2 font-display text-[15px] font-semibold text-heading">Onboarded — needs review</h3>
-          <PendingVerification rows={tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending} loading={false} canVerify={canVerify} officerName={officerName} onLink={setLinking} onReconcile={(a) => setReconciling([a.agency_id])}
+          <PendingVerification rows={tab === 'mine' ? pending.filter((x) => x.assigned_officer === session?.userId) : pending} loading={false} canVerify={canVerify} officerName={officerName} onVerify={setVerifying}
             onOpen={(x) => navigate(`../agencies/${x.agency_id}`, { relative: 'path' })} />
         </div>
       )}
@@ -362,22 +362,22 @@ export default function Partners({ manage = false }: { manage?: boolean }) {
           await actions.reload();
         }} />
       {reconciling !== undefined && <ReconcileDialog ids={reconciling} onClose={() => setReconciling(undefined)} onDone={() => void actions.reload(['partners'])} />}
-      {linking && <LinkPartnerModal agency={linking} onClose={() => setLinking(null)}
-        partners={live.filter((p) => !agencyOf.has(p.id)).map((p) => ({ id: p.id, name: p.name, status: p.status, portalEnabled: p.portalEnabled }))} />}
+      {verifying && <VerifyHistoricalDialog agency={{ id: verifying.agency_id, name: verifying.company_name ?? verifying.reference, reference: verifying.reference }}
+        onClose={() => setVerifying(null)} onDone={() => void actions.reload(['partners'])} />}
     </>
   );
 }
 
 // Historically onboarded agencies without a verified partner account: listed, never given portal access.
-function PendingVerification({ rows, loading, canVerify, officerName, onLink, onReconcile, onOpen }: {
+function PendingVerification({ rows, loading, canVerify, officerName, onVerify, onOpen }: {
   rows: OnboardedAgency[]; loading: boolean; canVerify: boolean; officerName: (id: string | null) => string;
-  onLink: (a: OnboardedAgency) => void; onReconcile: (a: OnboardedAgency) => void; onOpen: (a: OnboardedAgency) => void;
+  onVerify: (a: OnboardedAgency) => void; onOpen: (a: OnboardedAgency) => void;
 }) {
   if (loading) return <Card><div className="p-6 text-sm text-ink-soft" role="status">Loading onboarded agencies…</div></Card>;
   if (rows.length === 0) return <Card><EmptyState icon={History} title="Nothing waiting for verification" description="Onboarded agencies without a verified partner account appear here." /></Card>;
   return (
     <Card>
-      <p className="border-b border-line px-5 py-3 text-xs text-ink-soft">Onboarded before the CRM (or without a linked account). They have <b className="text-heading">no portal access</b> until an administrator links them to an existing partner or completes their registration and activation.</p>
+      <p className="border-b border-line px-5 py-3 text-xs text-ink-soft">Onboarded before the CRM (or without a linked account). They have <b className="text-heading">no portal access</b> until an administrator verifies them (one click — they then move into the client list) and, separately, activates a portal account.</p>
       <Table head={['Agency', 'Contact', 'Country', 'Partnership Officer', 'Verification', 'Suggested match', '']}>
         {rows.map((a) => (
           <tr key={a.agency_id}>
@@ -392,8 +392,7 @@ function PendingVerification({ rows, loading, canVerify, officerName, onLink, on
             </td>
             <td className="px-5 py-3.5 text-sm">{a.suggested_partner_name ? <span className="text-heading">{a.suggested_partner_name}</span> : <span className="text-ink-mute">—</span>}</td>
             <td className="whitespace-nowrap px-5 py-3.5 text-right">
-              {canVerify && <Button size="sm" className="mr-1.5" onClick={() => onReconcile(a)}>Reconcile…</Button>}
-              {canVerify && <Button size="sm" variant="secondary" className="mr-1.5" onClick={() => onLink(a)}>Link manually…</Button>}
+              {canVerify && <Button size="sm" className="mr-1.5" onClick={() => onVerify(a)}>Verify</Button>}
               <Button size="sm" variant="secondary" onClick={() => onOpen(a)}>Open agency</Button>
             </td>
           </tr>

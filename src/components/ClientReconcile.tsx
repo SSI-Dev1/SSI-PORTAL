@@ -151,3 +151,48 @@ export function OnboardingProgress({ agencyId, rev }: { agencyId: string; rev?: 
     </Card>
   );
 }
+
+// ------------------------------------------------------------------ one-click verification (0062)
+type VerifyResult = { status: 'created' | 'linked' | 'already' | 'review'; partner_id: string | null; partner_name: string | null; reason: string | null; candidates?: { id: string; name: string }[] };
+
+/** Verify → Done. Uses the agency's own record: links its exact client match or creates its client record.
+ *  No partner search, no login, no password, no email. Conflicts are flagged for review, never guessed. */
+export function VerifyHistoricalDialog({ agency, onClose, onDone }: {
+  agency: { id: string; name: string; reference: string; status?: string }; onClose: () => void; onDone?: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [res, setRes] = useState<VerifyResult | null>(null);
+  const [review, setReview] = useState(false);
+  const verify = async () => {
+    setBusy(true); setErr('');
+    const r = await rpc<VerifyResult>('verify_historical_agency', { p_id: agency.id });
+    setBusy(false);
+    if (!r.ok) return setErr(/verify_historical_agency|schema cache|0034/.test(r.error) ? 'Run migration 0062 to enable one-click verification.' : r.error);
+    setRes(r.data);
+    onDone?.();
+    if (r.data.status !== 'review') toast.success('Historical onboarding verified', `${agency.name} is now in Clients & Partnerships. No login or email was created.`);
+  };
+  if (review) return <ReconcileDialog ids={[agency.id]} onClose={onClose} onDone={onDone} />;
+  const done = res && res.status !== 'review';
+  return (
+    <Modal open onClose={onClose} title="Verify historical onboarding" subtitle={`${agency.name} · ${agency.reference}`}
+      footer={done ? <Button onClick={onClose}>Done</Button> : res?.status === 'review' ? (
+        <><Button variant="ghost" onClick={onClose}>Close</Button><Button variant="secondary" onClick={() => setReview(true)}>Review matches…</Button></>
+      ) : (
+        <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} disabled={busy} onClick={() => void verify()}>Verify</Button></>
+      )}>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        <dt className="text-ink-mute">Agency</dt><dd className="font-semibold text-heading">{agency.name}</dd>
+        <dt className="text-ink-mute">Agency ID</dt><dd className="text-heading">{agency.reference}</dd>
+        <dt className="text-ink-mute">Historical onboarding</dt>
+        <dd>{done ? <Badge tone="green" dot>Verified · in Clients & Partnerships</Badge> : <Badge tone="amber" dot>{agency.status ?? 'Historically onboarded · pending verification'}</Badge>}</dd>
+      </dl>
+      {!res && <p className="mt-4 text-sm text-ink-soft">Verifying adds this agency to Clients & Partnerships using its own details, officer and history. No partner login, password or email is created — portal access stays a separate step.</p>}
+      {done && <Alert tone="success" className="mt-4">{res.status === 'created' ? 'Client record created' : res.status === 'linked' ? 'Linked to its existing client record' : 'Already in Clients & Partnerships'}{res.partner_name ? ` — ${res.partner_name}` : ''}.</Alert>}
+      {res?.status === 'review' && <Alert tone="warning" className="mt-4" title="Needs an administrator's review">{res.reason ?? 'A conflicting match was found.'} Nothing was linked; the agency is flagged for review.</Alert>}
+      {err && <Alert tone="error" className="mt-4">{err}</Alert>}
+    </Modal>
+  );
+}

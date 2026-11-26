@@ -23,7 +23,7 @@ import {
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 import { ContactCorrection } from '../../components/ContactCorrection';
-import { OnboardingProgress, ReconcileDialog } from '../../components/ClientReconcile';
+import { OnboardingProgress, VerifyHistoricalDialog } from '../../components/ClientReconcile';
 import { AgencyTypeBadge, AssignOfficerModal, AssignSubOfficerModal, OfficerHistory, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 // The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
@@ -180,11 +180,11 @@ export default function AgencyDetail() {
       {a.stage === 'onboarded' && !a.partner_id && (
         <Alert tone="warning" className="mb-4" title="Onboarded, but not in Clients & Branches yet">
           This agency has no client record, so it does not appear in Clients & Branches or its search.
-          {canApproveHistorical ? ' Reconcile it to create or link its client record (no login, no email).' : ' An administrator reconciles it.'}
-          {canApproveHistorical && <Button size="sm" className="ml-2" onClick={() => setReconciling(true)}>Reconcile to Clients & Branches…</Button>}
+          {canApproveHistorical ? ' Verify it to add it to Clients & Partnerships (no login, no email).' : ' An administrator verifies it.'}
+          {canApproveHistorical && <Button size="sm" className="ml-2" onClick={() => setReconciling(true)}>Verify historical onboarding</Button>}
         </Alert>
       )}
-      {reconciling && <ReconcileDialog ids={[a.id]} onClose={() => setReconciling(false)} onDone={() => void reload()} />}
+      {reconciling && <VerifyHistoricalDialog agency={{ id: a.id, name: agencyName(a), reference: a.reference }} onClose={() => setReconciling(false)} onDone={() => void reload()} />}
       {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
 
       <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">

@@ -369,39 +369,6 @@ export function useOnboardedDirectory(enabled = true) {
   return { rows, error };
 }
 
-/** Administrators: link a historically onboarded agency to an existing partner (never creates one). */
-export function LinkPartnerModal({ agency, partners, onClose }: {
-  agency: OnboardedAgency; partners: { id: string; name: string; status: string; portalEnabled?: boolean }[]; onClose: () => void;
-}) {
-  const toast = useToast();
-  const [partner, setPartner] = useState(agency.suggested_partner_id ?? '');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const save = async () => {
-    setBusy(true); setErr('');
-    const r = await rpc('reconcile_agency', { p_id: agency.agency_id, p_partner: partner, p_note: note.trim() || null });
-    setBusy(false);
-    if (!r.ok) return setErr(r.error);
-    toast.success('Linked and verified', `${agency.company_name ?? agency.reference} now shows as this partner.`);
-    onClose();
-  };
-  return (
-    <Modal open onClose={onClose} title="Verify historical partner" subtitle={`${agency.company_name ?? agency.reference} · ${agency.reference}`}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || !partner} onClick={() => void save()}>Link and verify</Button></>}>
-      <p className="mb-3 text-sm text-ink-soft">Link this agency to the partner organisation that already exists in Clients & Branches. Nothing new is created: no organisation, no login and no change to its portal access.</p>
-      <Field label="Existing partner" required>
-        <SelectMenu value={partner} onChange={setPartner} searchable placeholder="Search partners…" aria-label="Existing partner"
-          options={partners.map((p) => ({ value: p.id, label: p.name, group: p.status === 'Active' && p.portalEnabled !== false ? 'Active' : p.status }))} />
-      </Field>
-      {agency.suggested_partner_id && partner === agency.suggested_partner_id && <Alert tone="info" className="mt-3">Suggested because the names match. Check it is the same company before linking.</Alert>}
-      <Field label="Verification note" className="mt-3"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="e.g. Same company — confirmed with the owner by phone" /></Field>
-      <p className="mt-3 text-xs text-ink-mute">No matching partner? Open the agency and issue its registration link — the partner appears here automatically once the registration is approved and the account activated.</p>
-      {err && <Alert tone="error" className="mt-3">{err}</Alert>}
-    </Modal>
-  );
-}
-
 // ------------------------------------------------------------------ business onboarding vs portal access (0042)
 export type BusinessStatus = 'historical' | 'verified' | 'not_onboarded';
 export type PortalStatus = 'no_account' | 'pending' | 'active' | 'suspended' | 'deactivated';

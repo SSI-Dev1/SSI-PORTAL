@@ -75,6 +75,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f migrations/0058_assignment_delete_tasks.sql
 "${PSQL[@]}" -f migrations/0059_record_tasks_escalation.sql
 "${PSQL[@]}" -f migrations/0060_client_reconciliation.sql
+"${PSQL[@]}" -f migrations/0061_student_import.sql
 "${PSQL[@]}" -f seed.sql
 "${PSQL[@]}" -f tests/10_rls_tests.sql
 "${PSQL[@]}" -f tests/20_account_tests.sql
@@ -126,6 +127,7 @@ PSQL=(psql -h "$DIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -f tests/430_assignment_delete_tasks_tests.sql
 "${PSQL[@]}" -f tests/440_record_tasks_escalation_tests.sql
 "${PSQL[@]}" -f tests/450_client_reconciliation_tests.sql
+"${PSQL[@]}" -f tests/460_student_import_tests.sql
 # Optional: an extra local-only SQL file (e.g. a real-data import check that is never committed).
 if [ -n "${EXTRA_SQL:-}" ]; then "${PSQL[@]}" -f "$EXTRA_SQL"; fi
 # Optional: dump the imported CourseFinder records for scripts/verify-coursefinder.py.

@@ -32,6 +32,7 @@ import { studentTone } from './Students';
 import { docTone } from './Documents';
 import { partnerCan } from '../../auth/roles';
 import { StudentActivityCard } from '../../components/StudentActivity';
+import { UniversityPreferencesCard } from '../../components/StudentPreferences';
 import { RecordTaskHistory, RecordTaskModal, canRaiseRecordTasks } from '../../components/RecordTaskModal';
 
 type Tab = 'overview' | 'applications' | 'documents';
@@ -100,6 +101,8 @@ export default function StudentProfile() {
             <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-soft">
               <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{s.email}</span>
               <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{s.phone}</span>
+              {s.priorityIntake && <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Priority intake: {s.priorityIntake}</span>}
+              {session?.role !== 'client' && s.agentNameSource && <span className="text-xs text-ink-mute" title="Agent name as written in the imported sheet">Sheet agent: {s.agentNameSource}</span>}
               {scoped.isAdmin && scoped.base === '/admin' && !partner?.internal ? (
                 <Link to={`/admin/partners/${s.partnerId}`} className="flex items-center gap-1.5 hover:text-rust">
                   <Building2 className="h-3.5 w-3.5" />
@@ -210,6 +213,7 @@ export default function StudentProfile() {
               </Button>
             )}
           </div>
+          {session?.role !== 'client' && <UniversityPreferencesCard studentId={s.id} conflict={s.priorityConflict} />}
           {session?.role !== 'client' && <StudentActivityCard studentId={s.id} apps={apps} />}
           <RecordTaskModal open={taskOpen} onClose={() => setTaskOpen(false)} studentId={s.id} recordLabel={`Student · ${fullName(s)}`} onSaved={() => setTaskRev((n) => n + 1)} />
         </div>

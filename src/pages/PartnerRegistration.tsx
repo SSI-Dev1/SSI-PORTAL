@@ -478,8 +478,8 @@ function AgreementStep({ token, onState }: { token: string; onState: (canSubmit:
     const r = await call<AgreementInfo>({ action: 'agreement', token });
     if (!r.ok) { setErr(r.error); report.current(false, false); return; }
     setInfo(r.data);
-    const issued = !!r.data.agreement;
-    report.current(!r.data.required || (!issued && (r.data.status === 'template_missing' || r.data.status === 'annexure_missing')) || !!r.data.signed, !!r.data.signed);
+    // The signed agreement is part of the submission: no agreement yet means not ready to submit (0063).
+    report.current(!r.data.required || !!r.data.signed, !!r.data.signed);
   }, [token]);
   useEffect(() => { void load(); }, [load]);
 
@@ -525,8 +525,10 @@ function AgreementStep({ token, onState }: { token: string; onState: (canSubmit:
     return <>{header}<Alert tone="warning" title="Some details are needed for the agreement">The agreement is prepared from your answers. Please complete: {info.missing.join(', ')}. Use “Previous” to go back.</Alert></>;
   }
   if (!info.agreement) {
-    return <>{header}<Alert tone="info" title="Your agreement is being prepared">
-      SSI GLOBAL is finalising the agreement for your organisation{info.status === 'annexure_missing' ? ' (the commission annexure)' : ''}. You can submit your registration now — we will send the agreement for signature before your partnership is activated.
+    return <>{header}<Alert tone="warning" title="Your agreement is being prepared">
+      SSI GLOBAL is finalising the agreement for your organisation{info.status === 'annexure_missing' ? ' (the commission annexure)' : ''} and has been notified. Your answers are saved.
+      Open this same link again shortly — the agreement will be here to download, sign and upload, and you can then submit your registration.
+      <Button size="sm" variant="secondary" className="mt-2" icon={RefreshCw} onClick={() => void load()}>Check again</Button>
     </Alert></>;
   }
   const a = info.agreement;

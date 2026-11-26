@@ -15,7 +15,8 @@
     "test:roles": "node --test scripts/roles.test.ts",
     "test:commission": "node --test scripts/commission.test.ts",
     "test:agencies": "node --test scripts/agencyImport.test.ts",
-    "test:scroll": "node --test scripts/scrollLock.test.ts"
+    "test:scroll": "node --test scripts/scrollLock.test.ts",
+    "test:students": "node --test scripts/studentImport.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "5.3.0",

@@ -23,6 +23,7 @@ import {
 } from '../../lib/agencies';
 import { fmtCommission, type ValueKind } from '../../lib/commissions';
 import { ContactCorrection } from '../../components/ContactCorrection';
+import { OnboardingProgress, VerifyHistoricalDialog } from '../../components/ClientReconcile';
 import { AgencyTypeBadge, AssignOfficerModal, AssignSubOfficerModal, OfficerHistory, useApplicationCounts, useOfficerCandidates, useOfficerNames } from './AgencyBulk';
 
 // The nine Agency log actions (Abigail's Portal Development Specification). Each one is saved by
@@ -50,6 +51,7 @@ export default function AgencyDetail() {
   /** Super Admin / "Partner registrations": may approve historical onboarding (checked again by the database). */
   const canApproveHistorical = canManageRegistrations(realSession);
   const [historical, setHistorical] = useState<'request' | 'review' | null>(null);
+  const [reconciling, setReconciling] = useState(false);
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -175,6 +177,14 @@ export default function AgencyDetail() {
       {changingSub && <AssignSubOfficerModal ids={[a.id]} title={agencyName(a)} main={a.assigned_officer} mainName={a.assigned_officer ? staffName(a.assigned_officer) : ''}
         current={a.sub_officer} currentName={a.sub_officer ? staffName(a.sub_officer) : ''} onClose={() => setChangingSub(false)} onDone={() => void reload()} />}
       {changingOfficer && <AssignOfficerModal ids={[a.id]} current={a.assigned_officer} candidates={candidates} onClose={() => setChangingOfficer(false)} />}
+      {a.stage === 'onboarded' && !a.partner_id && (
+        <Alert tone="warning" className="mb-4" title="Onboarded, but not in Clients & Branches yet">
+          This agency has no client record, so it does not appear in Clients & Branches or its search.
+          {canApproveHistorical ? ' Verify it to add it to Clients & Partnerships (no login, no email).' : ' An administrator verifies it.'}
+          {canApproveHistorical && <Button size="sm" className="ml-2" onClick={() => setReconciling(true)}>Verify historical onboarding</Button>}
+        </Alert>
+      )}
+      {reconciling && <VerifyHistoricalDialog agency={{ id: a.id, name: agencyName(a), reference: a.reference }} onClose={() => setReconciling(false)} onDone={() => void reload()} />}
       {a.partner_id && <Alert tone="success" className="mb-4">Onboarded — linked to the partner in Clients & Branches{manager ? <> · <Link className="underline" to={`../../partners/${a.partner_id}`} relative="path">open partner</Link></> : null}.</Alert>}
 
       <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
@@ -244,6 +254,8 @@ export default function AgencyDetail() {
             )}
             {openProposal?.status === 'pending_approval' && !commissionManager && <Alert tone="info" className="mx-5 mb-5">The custom commission is waiting for a commission manager's approval. You can send it once approved.</Alert>}
           </Card>
+
+          <OnboardingProgress agencyId={a.id} rev={a.updated_at} />
 
           <div className="grid gap-4 md:grid-cols-2 [&>*]:min-w-0">
             <Card className="min-w-0">

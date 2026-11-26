@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, FilePlus2, ListChecks, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
+import { Eye, FilePlus2, FileSpreadsheet, ListChecks, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { Avatar, Badge, Button, Card, EmptyState, FilterSelect, Menu, PageHeader, Pagination, SearchInput, Table, usePaged } from '../../components/ui';
 import { useConfirm, useToast } from '../../components/feedback';
 import { StudentForm } from '../../components/forms/StudentForm';
@@ -10,6 +10,8 @@ import { COUNTRIES } from '../../data/seed';
 import type { Student, StudentStatus } from '../../data/types';
 import { countryFlag, formatDate, fullName, matches, type Tone } from '../../lib/utils';
 import { partnerCan, type PartnerPermission } from '../../auth/roles';
+import { StudentImportDialog, canImportStudents } from '../../components/StudentImport';
+import { preferenceProgress, useUniversityPreferences, type UniversityPreference } from '../../lib/studentPreferences';
 import { RecordTaskModal, canRaiseRecordTasks } from '../../components/RecordTaskModal';
 
 export const studentTone: Record<StudentStatus, Tone> = { Lead: 'blue', Active: 'green', Enrolled: 'navy', 'On Hold': 'amber' };
@@ -31,6 +33,15 @@ export default function Students() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | undefined>();
   const [appFor, setAppFor] = useState<string | undefined>();
+  const [importing, setImporting] = useState(false);
+  // University choices (staff only): one row per student in the list, the primary choice shown.
+  const staff = session?.role !== 'client';
+  const prefs = useUniversityPreferences(staff);
+  const prefsBy = useMemo(() => {
+    const m = new Map<string, UniversityPreference[]>();
+    (prefs.rows ?? []).forEach((p) => { const a = m.get(p.student_id) ?? []; a.push(p); m.set(p.student_id, a); });
+    return m;
+  }, [prefs.rows]);
   const [taskFor, setTaskFor] = useState<Student | null>(null);
 
   useEffect(() => {
@@ -79,11 +90,14 @@ export default function Students() {
       <PageHeader
         title={scoped.isAdmin ? 'Students' : 'My Students'}
         subtitle={scoped.isAdmin ? 'Every student across all partner workspaces.' : 'Manage your students and start new applications.'}
-        actions={can('students.add') && (
-          <Button icon={UserPlus} onClick={() => { setEditing(undefined); setFormOpen(true); }}>
-            Add Student
-          </Button>
-        )}
+        actions={<>
+          {canImportStudents(session) && <Button variant="secondary" icon={FileSpreadsheet} onClick={() => setImporting(true)}>Import students (Excel)</Button>}
+          {can('students.add') && (
+            <Button icon={UserPlus} onClick={() => { setEditing(undefined); setFormOpen(true); }}>
+              Add Student
+            </Button>
+          )}
+        </>}
       />
 
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -120,7 +134,7 @@ export default function Students() {
           />
         ) : (
           <>
-            <Table head={['Student', ...(scoped.isAdmin ? ['Partner'] : []), 'Destinations', 'Level / Intake', 'Applications', 'Status', 'Added', '']}>
+            <Table head={['Student', ...(scoped.isAdmin ? ['Agent'] : []), 'Destinations', ...(staff ? ['Primary university'] : []), 'Level / Intake', 'Applications', 'Status', 'Added', '']}>
               {paged.rows.map((s) => (
                 <tr key={s.id} className="group cursor-pointer transition hover:bg-brand-50/30" onClick={() => navigate(`${scoped.base}/students/${s.id}`)}>
                   <td className="px-5 py-3.5">
@@ -132,7 +146,7 @@ export default function Students() {
                       </div>
                     </div>
                   </td>
-                  {scoped.isAdmin && <td className="px-5 py-3.5 text-ink-soft">{lk.partner.get(s.partnerId)?.name}</td>}
+                  {scoped.isAdmin && <td className="px-5 py-3.5 text-ink-soft">{lk.partner.get(s.partnerId)?.internal ? 'Direct' : lk.partner.get(s.partnerId)?.name}</td>}
                   <td className="px-5 py-3.5">
                     <div className="flex flex-wrap gap-1">
                       {s.preferredCountries.map((c) => (
@@ -142,9 +156,23 @@ export default function Students() {
                       ))}
                     </div>
                   </td>
+                  {staff && (() => {
+                    const list = prefsBy.get(s.id) ?? [];
+                    const pr = list.find((p) => p.is_primary);
+                    const prog = pr ? preferenceProgress(pr) : null;
+                    return (
+                      <td className="max-w-[260px] px-5 py-3.5">
+                        {pr ? <><div className="truncate font-medium text-heading" title={pr.university_name}>{pr.university_name}</div>
+                          <div className="truncate text-xs text-ink-mute" title={pr.course_name ?? ''}>{pr.course_name ?? '—'}</div>
+                          <div className="mt-1 flex flex-wrap gap-1"><Badge tone={prog!.tone}>{prog!.label}</Badge>{list.length > 1 && <Badge tone="slate">{list.length} choices</Badge>}</div></>
+                          : list.length ? <><Badge tone={s.priorityConflict ? 'amber' : 'slate'}>{s.priorityConflict ? 'Priority conflict' : 'No primary'}</Badge> <span className="text-xs text-ink-mute">{list.length} choices</span></>
+                          : <span className="text-ink-mute">—</span>}
+                      </td>
+                    );
+                  })()}
                   <td className="px-5 py-3.5">
                     <div className="text-heading">{s.preferredLevel}</div>
-                    <div className="text-xs text-ink-mute">{s.preferredIntake}</div>
+                    <div className="text-xs text-ink-mute">{s.priorityIntake ?? s.preferredIntake}</div>
                   </td>
                   <td className="px-5 py-3.5 font-semibold text-heading">{appCount.get(s.id) ?? 0}</td>
                   <td className="px-5 py-3.5">
@@ -177,6 +205,7 @@ export default function Students() {
         )}
       </Card>
 
+      {importing && <StudentImportDialog onClose={() => setImporting(false)} />}
       <StudentForm open={formOpen} onClose={() => setFormOpen(false)} student={editing} onSaved={(id) => !editing && navigate(`${scoped.base}/students/${id}`)} />
       <ApplicationForm open={!!appFor} onClose={() => setAppFor(undefined)} studentId={appFor} onSaved={() => navigate(`${scoped.base}/applications`)} />
       <RecordTaskModal open={!!taskFor} onClose={() => setTaskFor(null)} studentId={taskFor?.id} recordLabel={taskFor ? `Student · ${fullName(taskFor)}` : ''} />

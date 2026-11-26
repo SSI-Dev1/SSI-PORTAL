@@ -42,6 +42,9 @@ const EVENT: Record<string, string> = {
   agreement_changes_requested: 'Agreement corrections requested', agreement_approved_for_countersign: 'Agreement approved for countersigning',
   agreement_rejected: 'Agreement rejected', agreement_countersigned: 'Agreement countersigned', agreement_sent: 'Countersigned agreement sent',
   agreement_downloaded_by_partner: 'Agency downloaded the final agreement', agreement_file_viewed: 'Agreement document opened',
+  agreement_blocked: 'Agreement could not be issued', agreement_annexure_from_proposal: 'Annexure A built from the accepted proposal', agreement_type_set: 'Agreement type set',
+  client_record_linked: 'Onboarded — added to Clients & Partnerships (portal not activated)', onboarding_needs_review: 'Onboarding needs a decision (client record)',
+  onboarding_failed: 'Adding to Clients & Partnerships failed',
 };
 const linkUrl = (token: string) => `${window.location.origin}${window.location.pathname}#/partner-registration/${token}`;
 const linkState = (r: Registration) => (r.link_status !== 'active' ? r.link_status : r.link_expires_at && new Date(r.link_expires_at) < new Date() ? 'expired' : 'active');
@@ -111,7 +114,7 @@ export default function PartnerRegistrations() {
         <KPI icon={FileText} tone="navy" label="In progress" value={count('in_progress')} onClick={() => setTab('in_progress')} />
         <KPI icon={Send} tone="orange" label="Pending review" value={count('submitted') + count('in_review')} hint={`${count('submitted')} new · ${count('in_review')} in review`} onClick={() => setTab('submitted')} />
         <KPI icon={MessageSquareWarning} tone="amber" label="Changes requested" value={count('changes_requested')} onClick={() => setTab('changes_requested')} />
-        <KPI icon={CheckCircle2} tone="green" label="Approved" value={count('approved')} hint="Awaiting partner account" onClick={() => setTab('approved')} />
+        <KPI icon={CheckCircle2} tone="green" label="Approved" value={count('approved')} hint="Waiting for countersignature or a decision" onClick={() => setTab('approved')} />
         <KPI icon={XCircle} tone="red" label="Rejected" value={count('rejected')} onClick={() => setTab('rejected')} />
         <KPI icon={UserPlus} tone="navy" label="Activated partners" value={count('activated')} onClick={() => setTab('activated')} />
       </div>
@@ -296,6 +299,16 @@ function DetailsModal({ reg, staffName, onClose, onLink, reload }: {
     const emails = [reg.answers.registered_email, reg.answers.company_email, reg.answers.contact_email].map((e) => String(e ?? '').toLowerCase()).filter(Boolean);
     return db.partners.find((p) => p.name.trim().toLowerCase() === name || emails.includes(String(p.email ?? '').toLowerCase()));
   }, [db.partners, reg]);
+  const onboardNow = async () => {
+    const r = await rpc<{ state: string; partner_name?: string }>('onboard_registration', { p_id: reg.id });
+    if (!r.ok) return toast.error('Not done', /onboard_registration|schema cache/.test(r.error) ? 'Run migration 0063 first.' : r.error);
+    const st = r.data?.state;
+    if (st === 'created' || st === 'linked' || st === 'chosen' || st === 'existing') toast.success('Added to Clients & Partnerships', `${r.data.partner_name ?? reg.company_name} · portal not activated`);
+    else if (st === 'awaiting_countersignature') toast.error('Not yet', 'The Partnership Agreement must be countersigned first.');
+    else if (st === 'conflict') toast.error('Needs a decision', 'Several client records match this company. Check Clients & Partnerships before continuing.');
+    else toast.success('Nothing to change');
+    void reload(); void loadExtra();
+  };
   const act = async (fn: string, args: Record<string, unknown>, ok: string) => {
     const r = await rpc(fn, args);
     if (!r.ok) { toast.error('Not done', r.error); return false; }
@@ -339,13 +352,15 @@ function DetailsModal({ reg, staffName, onClose, onLink, reload }: {
             </>}
             {reg.status === 'approved' && <>
               <Button size="sm" variant="danger" icon={XCircle} onClick={() => setDialog('reject')}>Reject</Button>
-              {isSuper ? <Button size="sm" icon={UserPlus} disabled={!!reg.provisioning_since} onClick={() => setDialog('create')}>Approve &amp; Create Partner</Button>
-                : <span className="self-center text-xs text-ink-mute">A Super Admin creates the partner account.</span>}
+              <Button size="sm" variant="secondary" onClick={() => void onboardNow()}>Add to Clients &amp; Partnerships</Button>
+              {isSuper && <Button size="sm" icon={UserPlus} disabled={!!reg.provisioning_since} onClick={() => setDialog('create')}>Approve &amp; Create Partner</Button>}
             </>}
           </div>
         </div>}>
         <div className="space-y-5">
-          {reg.status === 'activated' && <Alert tone="success" title="Partner activated">Partner account created {fmt(reg.activated_at)}. <Link to={`../partners/${reg.partner_id}`} className="font-semibold underline" onClick={onClose}>Open partner</Link></Alert>}
+          {reg.status === 'approved' && <Alert tone="info" title="Approved — onboarding completes automatically">The agency is added to Clients &amp; Partnerships as soon as the Partnership Agreement is countersigned (or straight away when none is required). Portal access is a separate step.</Alert>}
+          {reg.status === 'activated' && !reg.partner_admin_id && <Alert tone="success" title="Onboarded — in Clients &amp; Partnerships">Business onboarding completed {fmt(reg.activated_at)}. Portal access is not activated yet — create the Partner Admin from the client's page when needed. <Link to={`../partners/${reg.partner_id}`} className="font-semibold underline" onClick={onClose}>Open client</Link></Alert>}
+          {reg.status === 'activated' && !!reg.partner_admin_id && <Alert tone="success" title="Partner activated">Partner account created {fmt(reg.activated_at)}. <Link to={`../partners/${reg.partner_id}`} className="font-semibold underline" onClick={onClose}>Open partner</Link></Alert>}
           {reg.status === 'approved' && duplicate && <Alert tone="warning" title="A similar partner already exists">“{duplicate.name}” has the same name or email. Check before creating another partner.</Alert>}
           {reg.status === 'rejected' && <Alert tone="error" title="Rejected">{reg.decision_reason} · {staffName(reg.reviewed_by)}, {fmt(reg.reviewed_at)}</Alert>}
           {reg.status === 'changes_requested' && reg.change_request && <Alert tone="warning" title="Changes requested">{reg.change_request.reason}{reg.change_request.fields.length ? ` · ${reg.change_request.fields.map((k) => (k === 'signed_agreement' ? 'Signed Partnership Agreement' : fieldByKey.get(k)?.label ?? k)).join(', ')}` : ''}</Alert>}

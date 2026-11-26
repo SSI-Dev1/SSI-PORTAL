@@ -62,6 +62,12 @@ export interface Student {
   preferredIntake: string;
   budget: string;
   status: StudentStatus;
+  /** 0061 student import: priority intake (text and month), the agent as written in the sheet, two Priority 1 rows. */
+  priorityIntake?: string | null;
+  priorityIntakeMonth?: string | null;
+  agentNameSource?: string | null;
+  priorityConflict?: boolean;
+  importKey?: string | null;
   createdAt: string;
 }
 

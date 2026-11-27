@@ -303,6 +303,7 @@ const partnershipNav: NavSection[] = [
     { to: 'agencies', label: 'Agency List', icon: Handshake },
     { to: 'agencies/linkedin', label: 'LinkedIn Outreach', icon: Linkedin },
     { to: 'partners', label: 'Clients & Branches', icon: Building2 },
+    { to: 'students', label: 'Students', icon: Users },
     { to: 'partners/manage', label: 'Partner Management', icon: UserPlus },
     { to: 'university-partnerships', label: 'University Partnerships', icon: GraduationCap },
     { to: 'providers', label: 'Education Providers', icon: Landmark },

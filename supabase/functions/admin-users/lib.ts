@@ -4,7 +4,7 @@ export const STAFF_ROLES = ['super_admin', 'admin_staff', 'application_manager',
 export const PARTNER_ROLES = ['partner_admin', 'partner_staff'] as const;
 export const STAFF_MODULES = ['partners', 'students', 'applications', 'assessments', 'documents', 'finance', 'catalogue', 'tasks', 'updates', 'reports',
   'work_reports', 'hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding',
-  'agency_outreach', 'partner_accounts', 'partner_success', 'partner_create', 'agreement_countersign', 'leads'] as const;
+  'agency_outreach', 'partner_accounts', 'partner_success', 'partner_create', 'agreement_countersign', 'leads', 'students_view'] as const;
 /** Permissions only a Super Admin may grant or remove. */
 export const HR_MODULES = ['hr', 'hr_accounts', 'hr_salary', 'commission_view', 'commission_tag', 'commission_manage', 'commission_internal', 'commission_edit', 'partner_onboarding', 'partner_accounts', 'partner_create', 'agreement_countersign'] as const;
 /** Permissions HR account managers may not grant (HR rights and financial access). */

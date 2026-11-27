@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { supabase } from '../../auth/auth';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -52,6 +53,14 @@ export default function StudentProfile() {
   const [openApp, setOpenApp] = useState<string>();
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskRev, setTaskRev] = useState(0);
+  // Agency, Main Officer and Sub Officer (0066), for anyone who may read this student.
+  const [officers, setOfficers] = useState<{ partner: string | null; agency_reference: string | null; main_officer: string | null; sub_officer: string | null } | null>(null);
+  useEffect(() => {
+    if (!supabase || !id) return;
+    let alive = true;
+    void supabase.rpc('student_officers', { p_student: id }).then(({ data }) => { if (alive) setOfficers((data ?? null) as typeof officers); });
+    return () => { alive = false; };
+  }, [id]);
 
   const s = scoped.students.find((x) => x.id === id);
   if (!s)
@@ -187,6 +196,14 @@ export default function StudentProfile() {
                   <Detail icon={CalendarDays} label="Added" value={formatDate(s.createdAt)} />
                 </dl>
               </div>
+            </Card>
+            <Card>
+              <CardHeader title="Agency & officers" />
+              <dl className="grid grid-cols-2 gap-3 p-5 pt-0">
+                <Detail icon={Building2} label="Agency / partner" value={officers?.partner ?? partner?.name ?? '—'} wide />
+                <Detail icon={User} label="Main officer" value={officers?.main_officer ?? '—'} />
+                <Detail icon={User} label="Sub officer" value={officers?.sub_officer ?? '—'} />
+              </dl>
             </Card>
             <Card>
               <CardHeader title="Applications" action={<button className="text-xs font-semibold text-rust hover:underline" onClick={() => setTab('applications')}>View all</button>} />

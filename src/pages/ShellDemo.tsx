@@ -9,7 +9,20 @@ import { ThemeMenu } from '../components/ThemeSwitcher';
 import { cn } from '../lib/utils';
 import { orderSections } from '../lib/navOrder';
 
+// "?as=" shows the menu of one department, with that department's live permission set (sample session).
+const AS: Record<string, { role: 'admin' | 'staff'; userRole: string; title: string; permissions: string[]; hasTeam: boolean }> = {
+  po: { role: 'admin', userRole: 'admin_staff', title: 'Partnership Officer', hasTeam: false,
+    permissions: ['partners', 'tasks', 'work_reports', 'partner_onboarding', 'agency_outreach', 'partner_accounts', 'partner_create', 'students_view'] },
+  sirm: { role: 'admin', userRole: 'admin_staff', title: 'Senior International Recruitment Manager', hasTeam: true,
+    permissions: ['partners', 'students', 'applications', 'assessments', 'documents', 'catalogue', 'tasks', 'updates', 'reports', 'work_reports', 'hr', 'agency_outreach'] },
+  pso: { role: 'staff', userRole: 'support_staff', title: 'Partner Success Officer', hasTeam: true,
+    permissions: ['students', 'applications', 'catalogue', 'tasks', 'assessments', 'documents', 'updates', 'partner_success', 'leads'] },
+  app: { role: 'staff', userRole: 'application_manager', title: 'Application Team', hasTeam: false,
+    permissions: ['students', 'applications', 'documents', 'catalogue', 'tasks', 'assessments', 'updates', 'work_reports'] },
+};
+
 export default function ShellDemo() {
+  const as = AS[new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('as') ?? ''];
   const prefs = useSidebarPrefs();
   const [drawer, setDrawer] = useState(false);
   const [client, setClient] = useState(false);
@@ -18,11 +31,14 @@ export default function ShellDemo() {
   const [order, setOrder] = useState<string[] | null>(null);
   const shared = {
     customize: { onSave: async (ids: string[] | null) => { setOrder(ids); return true; } },
-    sections: orderSections(navFor({
+    sections: orderSections(navFor((as && !client ? {
+      role: as.role, userRole: as.userRole, userId: 'demo', name: 'Demo Employee', email: 'demo@example.com', title: as.title,
+      permissions: as.permissions, partnerModules: [], employee: true, hasTeam: as.hasTeam, designations: [],
+    } : {
       role: client ? 'client' : 'admin', userRole: client ? 'partner_staff' : 'super_admin', userId: 'demo', name: 'Demo User', email: 'demo@example.com', title: '',
       permissions: ['partners', 'students', 'applications', 'assessments', 'documents', 'finance', 'catalogue', 'tasks', 'updates', 'reports'],
       partnerModules: ['students', 'applications', 'course_finder', 'assessments', 'documents', 'updates'],
-    }), order),
+    }) as Parameters<typeof navFor>[0]), order),
     base: '/ui/shell',
     portal: (client ? 'client' : 'admin') as 'client' | 'admin',
     orgName: 'Demo Partner Pvt Ltd',

@@ -26,10 +26,11 @@ export const portalFor = (r: UserRole): 'admin' | 'staff' | 'client' =>
 
 export type StaffModule = 'partners' | 'students' | 'applications' | 'assessments' | 'documents' | 'finance' | 'catalogue' | 'tasks' | 'updates' | 'reports'
   | 'work_reports' | 'hr' | 'hr_accounts' | 'hr_salary'
-  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success' | 'partner_create' | 'agreement_countersign' | 'leads';
+  | 'commission_view' | 'commission_tag' | 'commission_manage' | 'commission_internal' | 'commission_edit' | 'partner_onboarding' | 'agency_outreach' | 'partner_accounts' | 'partner_success' | 'partner_create' | 'agreement_countersign' | 'leads' | 'students_view';
 export const STAFF_MODULES: { id: StaffModule; label: string; hint: string }[] = [
   { id: 'partners', label: 'Clients & Branches', hint: 'Partner organisations and contacts' },
   { id: 'students', label: 'Students', hint: 'Student records of every partner' },
+  { id: 'students_view', label: 'Students · View only', hint: 'Read students and their applications (status, university, course, intake). No adding, editing, documents or deleting' },
   { id: 'applications', label: 'Applications', hint: 'Applications, offers and visa stages' },
   { id: 'assessments', label: 'Assessments', hint: 'Eligibility reviews' },
   { id: 'documents', label: 'Documents', hint: 'Student files and verification' },
@@ -144,8 +145,17 @@ export const CLIENT_ROUTE_PERMISSION: Record<string, PartnerPermission> = {
   'team-management': 'team.manage',
 };
 /** May this partner session do this? Internal users: always (their access is RLS-checked separately). */
-export const partnerCan = (session: { role: string; partnerPermissions?: string[] } | null, p: PartnerPermission) =>
-  !!session && (session.role !== 'client' || (session.partnerPermissions ?? []).includes(p));
+export const partnerCan = (session: { role: string; userRole?: string; permissions?: string[]; partnerPermissions?: string[] } | null, p: PartnerPermission) => {
+  if (!session) return false;
+  if (session.role === 'client') return (session.partnerPermissions ?? []).includes(p);
+  // Internal users: the matching module (the database enforces the same). "Students · View only" never edits.
+  if (session.userRole === 'super_admin') return true;
+  const perms = session.permissions ?? [];
+  const module = p.startsWith('students.') ? 'students' : p.startsWith('applications.') || p === 'chat' ? 'applications' : p.startsWith('documents.') ? 'documents' : null;
+  if (p === 'students.view') return perms.includes('students') || perms.includes('students_view');
+  if (p === 'chat') return perms.includes('applications') || perms.includes('students');
+  return module ? perms.includes(module) : true;
+};
 
 /** Client route segment → partner module (finance also needs the Partner Admin role). */
 export const CLIENT_ROUTE_MODULE: Record<string, PartnerModule> = {
@@ -210,6 +220,8 @@ export function canOpen(session: { role: 'admin' | 'staff' | 'client'; userRole:
     if (segment === 'leads') return session.userRole === 'super_admin' || session.permissions.includes('leads') || !!(session as { hasTeam?: boolean }).hasTeam;
     // Messages (application chat) belongs to student / application work.
     if (segment === 'messages') return session.userRole === 'super_admin' || session.permissions.includes('applications') || session.permissions.includes('students');
+    // Students: view (and edit) with "Students", read only with "Students · View only" (0066).
+    if (segment === 'students') return session.userRole === 'super_admin' || session.permissions.includes('students') || session.permissions.includes('students_view');
     if (segment === 'work-reports') return session.userRole === 'super_admin' || session.permissions.includes('work_reports') || session.permissions.includes('hr');
     // The Staff Portal has no partner directory or account management.
     if (session.role === 'staff' && segment === 'users') return false;
